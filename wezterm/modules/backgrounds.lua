@@ -16,7 +16,7 @@ local background_files = {
 }
 
 local background_hsb = {
-  brightness = 0.10,
+  brightness = 0.40,
   saturation = 0.90,
 }
 

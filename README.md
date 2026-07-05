@@ -127,7 +127,7 @@ Supported WezTerm local settings include:
 ```lua
 return {
   background_hsb = {
-    brightness = 0.16,
+    brightness = 0.40,
     saturation = 0.90,
   },
   background_rotation_seconds = 2 * 60 * 60,
