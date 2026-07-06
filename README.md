@@ -14,7 +14,7 @@ terminal backgrounds.
 - `Ctrl-a h/j/k/l` moves between panes.
 - `Ctrl-Shift-Space` opens selected paths in VS Code and web targets in the
   browser.
-- WezTerm backgrounds rotate every two hours.
+- WezTerm backgrounds rotate every hour.
 
 ## Layout
 

@@ -1,6 +1,6 @@
 local M = {}
 
-local rotation_seconds = 2 * 60 * 60
+local rotation_seconds = 60 * 60
 local refresh_interval_ms = 60 * 1000
 
 local background_files = {
