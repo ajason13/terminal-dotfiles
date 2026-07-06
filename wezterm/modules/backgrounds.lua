@@ -14,6 +14,8 @@ local background_files = {
   '70-mini-cooper-s-foggy-mountain-pass.png',
   '80-1955-chevy-gasser-night-drag.png',
   '90-honda-odyssey-elite-costco-night.png',
+  '91-aot-colossal-face-wall.png',
+  '92-aot-forest-maneuver-gear.png',
 }
 
 local background_hsb = {
