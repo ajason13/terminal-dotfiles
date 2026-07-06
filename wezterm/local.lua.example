@@ -17,8 +17,8 @@ return {
   -- (default: { brightness = 0.40, saturation = 0.90 })
   -- background_hsb = { brightness = 0.40, saturation = 0.90, hue = 1.0 },
 
-  -- How often the wallpaper rotates, in seconds. (default: 2 hours)
-  -- background_rotation_seconds = 2 * 60 * 60,
+  -- How often the wallpaper rotates, in seconds. (default: 1 hour)
+  -- background_rotation_seconds = 60 * 60,
 
   -- Opacity of cells using the DEFAULT background (shell output, empty areas).
   -- Lower = the wallpaper shows through more. Only applied when a wallpaper is
