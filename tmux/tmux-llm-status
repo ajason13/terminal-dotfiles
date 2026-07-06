@@ -20,6 +20,13 @@ tmux_cmd() {
   fi
 }
 
+# LLM presence is detected PRIMARILY from the terminal title (see the title
+# helpers below and the classification order in window_status). Claude Code and
+# Codex animate/label their titles, and their pane_current_command is an
+# unstable value (Claude reports a version string such as "2.1.198", not
+# "claude"), so they are matched by title, not command. This list is only a
+# fallback for CLIs that expose a stable process name. Do NOT add version
+# strings here - fix the title matchers instead.
 is_llm_command() {
   case "$1" in
     codex | claude | gemini | aider | opencode)

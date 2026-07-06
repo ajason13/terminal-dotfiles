@@ -206,9 +206,12 @@ Add image files under `wezterm/assets/backgrounds` and list them in
 
 ## Notes
 
-The LLM activity marker relies on pane titles and foreground command names. It
-works best with CLIs that expose active/waiting state in terminal titles, such
-as Codex. Other LLM CLIs may only show a generic detected marker.
+The LLM activity marker is driven primarily by pane titles: it recognizes the
+working spinner and idle state of both Claude Code and Codex, which animate and
+label their terminal titles. Foreground command names are only a fallback for
+other CLIs - Claude and Codex report an unstable process name (e.g. a version
+string), so they are detected by title, not command. CLIs that expose neither
+may only show a generic detected marker.
 
 ## License
 
