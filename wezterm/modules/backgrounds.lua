@@ -23,6 +23,15 @@ local background_hsb = {
   saturation = 0.90,
 }
 
+-- Opacity is only lowered when a background image is active, so an image-less
+-- setup stays fully opaque. window_background_opacity affects cells using the
+-- default background (shell output, empty regions); text_background_opacity
+-- affects cells with an explicit background color (full-screen TUIs, styled
+-- tmux status segments). Both must be below 1.0 or the wallpaper is hidden
+-- behind opaque cell backgrounds.
+local window_background_opacity = 0.90
+local text_background_opacity = 0.55
+
 local last_background_by_window = {}
 
 local function file_exists(path)
@@ -77,11 +86,15 @@ function M.apply(config, wezterm, env)
   local local_config = env.local_config or {}
   local hsb = local_config.background_hsb or background_hsb
   local interval = local_config.background_rotation_seconds or rotation_seconds
+  local window_opacity = local_config.window_background_opacity or window_background_opacity
+  local text_opacity = local_config.text_background_opacity or text_background_opacity
   local initial_background = current_background(backgrounds, interval)
 
   if initial_background then
     config.window_background_image = initial_background
     config.window_background_image_hsb = hsb
+    config.window_background_opacity = window_opacity
+    config.text_background_opacity = text_opacity
   end
 
   config.status_update_interval = refresh_interval_ms

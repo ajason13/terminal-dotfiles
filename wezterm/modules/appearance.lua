@@ -19,7 +19,9 @@ function M.apply(config, wezterm, env)
     top = 8,
     bottom = 8,
   }
-  config.window_background_opacity = 1.0
+  -- window_background_opacity / text_background_opacity are managed in
+  -- backgrounds.lua so the wallpaper stays visible. Leaving them at the WezTerm
+  -- default of 1.0 here would paint an opaque layer over the background image.
 end
 
 return M
