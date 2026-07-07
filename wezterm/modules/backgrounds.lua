@@ -78,7 +78,7 @@ local function current_background(backgrounds, interval)
   return backgrounds[index]
 end
 
-local function apply_window_background(window, background, hsb)
+local function apply_window_background(window, background, hsb, window_opacity, text_opacity)
   local id = tostring(window:window_id())
   if last_background_by_window[id] == background then
     return
@@ -87,6 +87,8 @@ local function apply_window_background(window, background, hsb)
   local overrides = window:get_config_overrides() or {}
   overrides.window_background_image = background
   overrides.window_background_image_hsb = hsb
+  overrides.window_background_opacity = window_opacity
+  overrides.text_background_opacity = text_opacity
   window:set_config_overrides(overrides)
   last_background_by_window[id] = background
 end
@@ -112,7 +114,7 @@ function M.apply(config, wezterm, env)
   wezterm.on('update-status', function(window)
     local background = current_background(backgrounds, interval)
     if background then
-      apply_window_background(window, background, hsb)
+      apply_window_background(window, background, hsb, window_opacity, text_opacity)
     end
   end)
 end
