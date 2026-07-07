@@ -1,4 +1,24 @@
-# Machine-local tmux overrides. Copy to ~/.tmux.local.conf.
+# Personal tmux overrides for THIS machine.
 #
-# Example:
-# set -g status-position bottom
+# Copy this file to ~/.tmux.local.conf to activate it. tmux.conf sources that
+# path last (see the `if-shell` near the bottom of tmux.conf), so anything here
+# overrides the shared config. Note: it lives in your HOME directory, not this
+# repo dir, because tmux.conf sources it by an absolute path.
+#
+#     cp tmux.local.conf.example ~/.tmux.local.conf
+#
+# Reload after editing with `prefix + r` or `tmux source-file ~/.tmux.conf`.
+
+# --- Examples (uncomment to use) ---
+
+# Put the status bar at the top instead of the bottom:
+# set -g status-position top
+
+# Override the status-bar colors:
+# set -g status-style 'bg=#1a1b26,fg=#c0caf5'
+
+# Refresh the status line (and the LLM activity indicator) more often, in seconds:
+# set -g status-interval 1
+
+# Enable mouse support:
+# set -g mouse on

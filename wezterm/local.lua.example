@@ -1,7 +1,39 @@
+-- Personal WezTerm overrides for THIS machine.
+--
+-- Copy this file to `local.lua` (same directory) to activate it. `local.lua` is
+-- gitignored, so your machine-specific tweaks never touch the shared config:
+--
+--     cp local.lua.example local.lua
+--
+-- It is loaded LAST, after every module in modules/, so anything set here wins.
+-- Return a table of override knobs (read by the modules) and/or an
+-- `apply(config, wezterm, env)` function for arbitrary WezTerm settings.
+-- Everything below is commented out; uncomment only what you want to change.
+
 return {
-  background_hsb = {
-    brightness = 0.40,
-    saturation = 0.90,
-  },
-  background_rotation_seconds = 2 * 60 * 60,
+  -- === Background knobs (see modules/backgrounds.lua) ===
+
+  -- Dim / tint the rotating wallpaper. Lower brightness = darker image.
+  -- (default: { brightness = 0.40, saturation = 0.90 })
+  -- background_hsb = { brightness = 0.40, saturation = 0.90, hue = 1.0 },
+
+  -- How often the wallpaper rotates, in seconds. (default: 1 hour)
+  -- background_rotation_seconds = 60 * 60,
+
+  -- Opacity of cells using the DEFAULT background (shell output, empty areas).
+  -- Lower = the wallpaper shows through more. Only applied when a wallpaper is
+  -- active. (default: 0.90)
+  -- window_background_opacity = 0.90,
+
+  -- Opacity of cells with an EXPLICIT background color (full-screen TUIs such as
+  -- editors or Claude Code, and styled tmux status segments). Lower = wallpaper
+  -- shows through them too, at the cost of text contrast. (default: 0.55)
+  -- text_background_opacity = 0.55,
+
+  -- === Arbitrary overrides ===
+  -- Runs last, so it can set or override ANY WezTerm option.
+  -- apply = function(config, wezterm, env)
+  --   config.font_size = 14.0
+  --   config.color_scheme = 'Catppuccin Mocha'
+  -- end,
 }
