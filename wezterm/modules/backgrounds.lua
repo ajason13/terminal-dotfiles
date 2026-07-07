@@ -17,6 +17,9 @@ local background_files = {
   '91-aot-colossal-face-wall.png',
   '92-aot-forest-maneuver-gear.png',
   '93-one-punch-canyon-moon.png',
+  '94-haikyuu-minus-tempo-quick.png',
+  '95-haikyuu-slide-hit-night.png',
+  '96-haikyuu-spotlight-quick.png',
 }
 
 local background_hsb = {
