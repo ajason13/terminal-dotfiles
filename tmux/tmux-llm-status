@@ -20,6 +20,13 @@ tmux_cmd() {
   fi
 }
 
+# LLM presence is detected PRIMARILY from the terminal title (see the title
+# helpers below and the classification order in window_status). Claude Code and
+# Codex animate/label their titles, and their pane_current_command is an
+# unstable value (Claude reports a version string such as "2.1.198", not
+# "claude"), so they are matched by title, not command. This list is only a
+# fallback for CLIs that expose a stable process name. Do NOT add version
+# strings here - fix the title matchers instead.
 is_llm_command() {
   case "$1" in
     codex | claude | gemini | aider | opencode)
@@ -33,8 +40,15 @@ is_llm_command() {
 
 has_spinner_title() {
   case "$1" in
-    "⠋ "* | "⠙ "* | "⠹ "* | "⠸ "* | "⠼ "* | "⠴ "* | "⠦ "* | "⠧ "* | "⠇ "* | "⠏ "* | \
-      "◐ "* | "◓ "* | "◑ "* | "◒ "* | "- "* | "\\ "* | "| "* | "/ "*)
+    # Braille spinner frames (U+2800-U+28FF). Claude Code animates the terminal
+    # title with braille dots while actively working, and the classic dot
+    # spinner lives in the same block. Matching the UTF-8 byte prefixes (E2 A0
+    # through E2 A3) covers every frame without depending on which one is shown.
+    $'\xe2\xa0'* | $'\xe2\xa1'* | $'\xe2\xa2'* | $'\xe2\xa3'*)
+      return 0
+      ;;
+    # Circle / ASCII spinners (glyph followed by a space).
+    "◐ "* | "◓ "* | "◑ "* | "◒ "* | "- "* | "\\ "* | "| "* | "/ "*)
       return 0
       ;;
     *)
@@ -52,6 +66,20 @@ spinner_frame() {
 
 is_codex_title() {
   [[ "$1" == \[*\]\ *\|* ]]
+}
+
+is_claude_title() {
+  # Claude Code shows a static "✳ " prefix (U+2733) while present but idle /
+  # awaiting input. The animated braille frames (handled by has_spinner_title)
+  # cover the actively-working state.
+  case "$1" in
+    "✳ "* | "✳"*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 }
 
 is_waiting_title() {
@@ -91,6 +119,8 @@ window_status() {
     elif is_waiting_title "${title:-}"; then
       waiting_count=$((waiting_count + 1))
     elif is_codex_title "${title:-}"; then
+      llm_count=$((llm_count + 1))
+    elif is_claude_title "${title:-}"; then
       llm_count=$((llm_count + 1))
     elif is_llm_command "${command##*/}"; then
       llm_count=$((llm_count + 1))
