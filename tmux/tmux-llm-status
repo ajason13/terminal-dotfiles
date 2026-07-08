@@ -2,7 +2,8 @@
 set -euo pipefail
 
 tmux_cmd() {
-  local default_socket="/private/tmp/tmux-$(id -u)/default"
+  local default_socket
+  default_socket="/private/tmp/tmux-$(id -u)/default"
   local tmux_bin="tmux"
 
   if [[ -x "/opt/homebrew/bin/tmux" ]]; then

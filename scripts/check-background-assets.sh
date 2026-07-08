@@ -18,7 +18,7 @@ while IFS= read -r file; do
   bytes=$(stat -f '%z' "$file")
   total_bytes=$((total_bytes + bytes))
   if (( bytes > max_file_bytes )); then
-    rel="${file#$repo_root/}"
+    rel="${file#"$repo_root"/}"
     fail "$rel is ${bytes} bytes, above the ${max_file_bytes} byte limit"
   fi
 done <<EOF
