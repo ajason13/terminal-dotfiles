@@ -15,7 +15,8 @@ total_bytes=0
 file_count=0
 while IFS= read -r file; do
   file_count=$((file_count + 1))
-  bytes=$(stat -f '%z' "$file")
+  # wc -c is portable; `stat` size flags differ between macOS (-f%z) and Linux (-c%s).
+  bytes=$(wc -c < "$file")
   total_bytes=$((total_bytes + bytes))
   if (( bytes > max_file_bytes )); then
     rel="${file#$repo_root/}"
