@@ -92,14 +92,15 @@ local function pane_cwd(pane)
   return cwd
 end
 
-local function tmux_active_pane_cwd(wezterm)
-  local success, stdout = wezterm.run_child_process({
-    tmux_path(),
-    'display-message',
-    '-p',
-    '#{pane_current_path}',
-  })
+local function tmux_display_cwd(wezterm, extra_args)
+  local args = { tmux_path(), 'display-message' }
+  for _, arg in ipairs(extra_args) do
+    table.insert(args, arg)
+  end
+  table.insert(args, '-p')
+  table.insert(args, '#{pane_current_path}')
 
+  local success, stdout = wezterm.run_child_process(args)
   if not success or not stdout then
     return nil
   end
@@ -112,6 +113,11 @@ local function tmux_active_pane_cwd(wezterm)
   return cwd
 end
 
+local function pane_runs_tmux(pane)
+  local proc = pane and pane:get_foreground_process_name()
+  return proc ~= nil and proc:find('tmux') ~= nil
+end
+
 local function resolve_editor_path(wezterm, pane, path)
   if path:sub(1, 2) == '~/' then
     return (os.getenv('HOME') or '~') .. path:sub(2)
@@ -121,7 +127,22 @@ local function resolve_editor_path(wezterm, pane, path)
     return path
   end
 
-  local cwd = tmux_active_pane_cwd(wezterm) or pane_cwd(pane)
+  -- Resolve relative paths against the pane that triggered the action.
+  -- Only ask tmux when this pane is actually running tmux, and then target the
+  -- pane's own client tty: an untargeted `display-message` returns whichever
+  -- pane tmux considers globally active, which may be a different window or an
+  -- unrelated tmux server. For a non-tmux pane, WezTerm's own cwd is
+  -- authoritative; querying tmux at all would return a stray path.
+  local cwd
+  if pane_runs_tmux(pane) then
+    local tty = pane:get_tty_name()
+    cwd = (tty and tmux_display_cwd(wezterm, { '-c', tty }))
+      or tmux_display_cwd(wezterm, {})
+      or pane_cwd(pane)
+  else
+    cwd = pane_cwd(pane) or tmux_display_cwd(wezterm, {})
+  end
+
   if cwd and #cwd > 0 then
     return cwd .. '/' .. path
   end
