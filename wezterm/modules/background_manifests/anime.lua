@@ -17,4 +17,7 @@ return {
   '200-anime/haikyuu/013-ball-action.png',
   '200-anime/haikyuu/014-pointing-black.png',
   '200-anime/haikyuu/015-floor-slide.png',
+  '200-anime/haikyuu/016-crows-warning.png',
+  '200-anime/haikyuu/017-red-aura-crossed-arms.png',
+  '200-anime/haikyuu/018-handshake-grip.png',
 }
