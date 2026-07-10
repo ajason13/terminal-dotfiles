@@ -40,3 +40,9 @@ jobs:
 
       - name: Check manifest paths
         run: ./scripts/check-manifest-paths.sh
+
+      - name: Run script test suites
+        run: |
+          ./scripts/test-check-manifest-paths.sh
+          ./scripts/test-publish-backgrounds.sh
+          ./scripts/test-fetch-backgrounds.sh
