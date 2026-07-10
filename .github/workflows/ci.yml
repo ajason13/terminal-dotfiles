@@ -11,10 +11,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Check shell syntax
-        run: bash -n install-macos.sh uninstall-macos.sh tmux/tmux-llm-status scripts/check-background-assets.sh scripts/check-background-inbox.sh scripts/test-check-background-inbox.sh scripts/check-manifest-paths.sh scripts/test-check-manifest-paths.sh scripts/publish-backgrounds.sh scripts/test-publish-backgrounds.sh scripts/fetch-backgrounds.sh scripts/test-fetch-backgrounds.sh
+        run: bash -n install-macos.sh uninstall-macos.sh tmux/tmux-llm-status scripts/check-background-assets.sh scripts/check-background-inbox.sh scripts/test-check-background-inbox.sh scripts/list-background-inbox.sh scripts/test-list-background-inbox.sh scripts/check-manifest-paths.sh scripts/test-check-manifest-paths.sh scripts/publish-backgrounds.sh scripts/test-publish-backgrounds.sh scripts/fetch-backgrounds.sh scripts/test-fetch-backgrounds.sh
 
       - name: Lint shell scripts (shellcheck)
-        run: shellcheck install-macos.sh uninstall-macos.sh tmux/tmux-llm-status scripts/check-background-assets.sh scripts/check-background-inbox.sh scripts/test-check-background-inbox.sh scripts/check-manifest-paths.sh scripts/test-check-manifest-paths.sh scripts/publish-backgrounds.sh scripts/test-publish-backgrounds.sh scripts/fetch-backgrounds.sh scripts/test-fetch-backgrounds.sh
+        run: shellcheck install-macos.sh uninstall-macos.sh tmux/tmux-llm-status scripts/check-background-assets.sh scripts/check-background-inbox.sh scripts/test-check-background-inbox.sh scripts/list-background-inbox.sh scripts/test-list-background-inbox.sh scripts/check-manifest-paths.sh scripts/test-check-manifest-paths.sh scripts/publish-backgrounds.sh scripts/test-publish-backgrounds.sh scripts/fetch-backgrounds.sh scripts/test-fetch-backgrounds.sh
 
       - name: Check executable scripts
         run: |
@@ -23,6 +23,8 @@ jobs:
           test -x tmux/tmux-llm-status
           test -x scripts/check-background-inbox.sh
           test -x scripts/test-check-background-inbox.sh
+          test -x scripts/list-background-inbox.sh
+          test -x scripts/test-list-background-inbox.sh
           test -x scripts/check-manifest-paths.sh
           test -x scripts/test-check-manifest-paths.sh
           test -x scripts/check-background-assets.sh
@@ -46,3 +48,4 @@ jobs:
           ./scripts/test-check-manifest-paths.sh
           ./scripts/test-publish-backgrounds.sh
           ./scripts/test-fetch-backgrounds.sh
+          ./scripts/test-list-background-inbox.sh

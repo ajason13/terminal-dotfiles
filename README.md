@@ -337,6 +337,7 @@ Validate the queue before asking Codex to process it:
 
 ```sh
 ./scripts/check-background-inbox.sh
+./scripts/list-background-inbox.sh
 ```
 
 Then hand off the queue with a prompt like:
@@ -349,6 +350,17 @@ Codex should use the inbox file, apply the default dark/warm terminal treatment,
 respect any optional `focus` direction, route the output into the right
 background folder for the declared series, and update the relevant manifest
 file.
+
+`./scripts/list-background-inbox.sh` is the quick preflight view. It prints the
+pending inbox items, their series/mode metadata, and the inferred destination
+path based on the current library numbering. If you want to override the
+generated filename slug, add an optional `slug` field:
+
+```yaml
+series: haikyuu
+mode: stylized
+slug: tsukishima-ushijima-celebration
+```
 
 ## Asset Scaling
 
