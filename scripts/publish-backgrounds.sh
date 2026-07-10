@@ -27,7 +27,7 @@ fi
 
 # Validate against the real repo tree only (skipped for fixture/--build-only tests).
 if [[ "$asset_dir" == "$repo_root/wezterm/assets/backgrounds" ]]; then
-  [[ -x "$repo_root/scripts/check-background-assets.sh" ]] && "$repo_root/scripts/check-background-assets.sh"
+  bash "$repo_root/scripts/check-background-assets.sh"
 
   manifest_dir="$repo_root/wezterm/modules/background_manifests"
   if [[ -d "$manifest_dir" ]]; then
@@ -49,7 +49,7 @@ fi
 tarball="$out_dir/backgrounds.tar.gz"
 checksum="$out_dir/backgrounds.sha256"
 
-tar -czf "$tarball" -C "$asset_dir" .
+tar --exclude='.DS_Store' --exclude='._*' -czf "$tarball" -C "$asset_dir" .
 ( cd "$out_dir" && shasum -a 256 "backgrounds.tar.gz" > "backgrounds.sha256" )
 
 echo "built $tarball ($(wc -c < "$tarball") bytes)"

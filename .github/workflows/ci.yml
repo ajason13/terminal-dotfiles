@@ -25,6 +25,7 @@ jobs:
           test -x scripts/test-check-background-inbox.sh
           test -x scripts/check-manifest-paths.sh
           test -x scripts/test-check-manifest-paths.sh
+          test -x scripts/check-background-assets.sh
           test -x scripts/publish-backgrounds.sh
           test -x scripts/test-publish-backgrounds.sh
           test -x scripts/fetch-backgrounds.sh

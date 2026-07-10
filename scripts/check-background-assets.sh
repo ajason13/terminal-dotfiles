@@ -23,7 +23,7 @@ while IFS= read -r file; do
     fail "$rel is ${bytes} bytes, above the ${max_file_bytes} byte limit"
   fi
 done <<EOF
-$(find "$background_dir" -type f \( -name '*.png' -o -name '*.jpg' \) | sort)
+$(find "$background_dir" -type f \( -name '*.png' -o -name '*.jpg' -o -name '*.jpeg' \) | sort)
 EOF
 
 (( file_count > 0 )) || fail "no background assets found"
