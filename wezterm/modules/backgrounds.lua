@@ -87,14 +87,36 @@ local function collect_backgrounds(env)
   return backgrounds
 end
 
+-- Pseudo-random but repeat-free rotation: each pass through the list uses a
+-- fresh Fisher-Yates shuffle (every wallpaper shows once before any repeat),
+-- reshuffled each pass. Stateless and time-derived, so machines with the same
+-- list stay in sync.
+local function shuffled_index(count, slot)
+  local order = {}
+  for i = 1, count do
+    order[i] = i
+  end
+
+  -- Seed a small local LCG from the cycle number, so we never touch the global
+  -- math.random state.
+  local cycle = math.floor(slot / count)
+  local seed = (cycle * 2654435761 + 1) % 2147483647
+  for i = count, 2, -1 do
+    seed = (seed * 1103515245 + 12345) % 2147483648
+    local j = (seed % i) + 1
+    order[i], order[j] = order[j], order[i]
+  end
+
+  return order[(slot % count) + 1]
+end
+
 local function current_background(backgrounds, interval)
   if #backgrounds == 0 then
     return nil
   end
 
   local slot = math.floor(os.time() / interval)
-  local index = (slot % #backgrounds) + 1
-  return backgrounds[index]
+  return backgrounds[shuffled_index(#backgrounds, slot)]
 end
 
 local function forced_background(env, local_config)
