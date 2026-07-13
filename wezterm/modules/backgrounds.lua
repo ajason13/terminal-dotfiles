@@ -6,6 +6,12 @@ local rotation_seconds = 15 * 60
 -- minute of a slot boundary, while short (test) intervals poll just as often.
 local poll_interval_seconds = 60
 
+-- A rotation timer is treated as dead if it has not refreshed its heartbeat
+-- within this window, at which point another timer takes over. Comfortably
+-- longer than the maximum poll interval so a healthy owner is never mistaken
+-- for dead.
+local timer_stale_seconds = 2 * poll_interval_seconds + 30
+
 local background_hsb = {
   brightness = 0.40,
   saturation = 0.90,
@@ -19,8 +25,6 @@ local background_vertical_align = 'Middle'
 -- cells that paint an explicit background color (full-screen TUIs like editors
 -- or Claude Code, and styled tmux status segments); at 1.0 those cells hide it.
 local text_background_opacity = 0.55
-
-local last_background_by_window = {}
 
 local function file_exists(path)
   local file = io.open(path, 'r')
@@ -153,9 +157,15 @@ local function build_background_layers(background, hsb, fit, h_align, v_align)
   }
 end
 
-local function apply_window_background(window, background, hsb, text_opacity, fit, h_align, v_align)
+local function apply_window_background(wezterm, window, background, hsb, text_opacity, fit, h_align, v_align)
   local id = tostring(window:window_id())
-  if last_background_by_window[id] == background then
+
+  -- Cache the last-applied wallpaper per window in wezterm.GLOBAL so the cache
+  -- is shared across every rotation timer alive in the process (see the timer
+  -- comment in M.apply). This collapses redundant work: when several timers
+  -- coexist, only the first to observe a change re-renders; the rest no-op.
+  local cache = wezterm.GLOBAL.last_background_by_window or {}
+  if cache[id] == background then
     return
   end
 
@@ -163,7 +173,25 @@ local function apply_window_background(window, background, hsb, text_opacity, fi
   overrides.background = build_background_layers(background, hsb, fit, h_align, v_align)
   overrides.text_background_opacity = text_opacity
   window:set_config_overrides(overrides)
-  last_background_by_window[id] = background
+
+  cache[id] = background
+  wezterm.GLOBAL.last_background_by_window = cache
+end
+
+-- Pure ownership decision for the rotation timer, factored out so it can be
+-- unit-tested without WezTerm (see scripts/test-backgrounds-lua.sh). Given the
+-- current owner claim (`{ id, beat }` or nil), this timer's id, the current
+-- time, and the staleness window, returns true if this timer should keep
+-- running (claim or refresh ownership) and false if it should retire because a
+-- different timer is alive and owns rotation. The decision is made purely by
+-- proof-of-life -- a fresh heartbeat -- never by id ordering; see the timer
+-- comment in M.apply for why that distinction is load-bearing.
+local function should_keep_running(owner, my_id, now, stale)
+  if owner and owner.id ~= my_id and (now - owner.beat) < stale then
+    return false
+  end
+
+  return true
 end
 
 function M.apply(config, wezterm, env)
@@ -184,9 +212,9 @@ function M.apply(config, wezterm, env)
   end
 
   -- Publish the current rotation state where the timer can read it.
-  -- wezterm.GLOBAL persists across config reloads, so the once-installed timer
-  -- always sees the latest values (list, interval, opacity, forced). Everything
-  -- stored here is JSON-serializable (no functions).
+  -- wezterm.GLOBAL persists across config reloads, so the timer always sees the
+  -- latest values (list, interval, opacity, forced). Everything stored here is
+  -- JSON-serializable (no functions).
   wezterm.GLOBAL.background_state = {
     images = backgrounds,
     interval = interval,
@@ -198,56 +226,79 @@ function M.apply(config, wezterm, env)
     forced = forced,
   }
 
-  -- Neutralize any legacy generation-guarded update-status handlers still
-  -- registered in a long-lived process from before this change: bumping the
-  -- counter they compare against makes them all go stale and no-op, so they
-  -- can't fight the timer below until the next full restart clears them.
-  wezterm.GLOBAL.background_generation = (wezterm.GLOBAL.background_generation or 0) + 1
+  -- Drive rotation with a chained call_after timer. The obvious choice,
+  -- update-status, is unreliable for this: WezTerm suspends that event's
+  -- periodic firing whenever the terminal is idle (it is coupled to the
+  -- render/event loop), so an idle screen never rotates. call_after is a real
+  -- timer that fires regardless of idle state.
+  --
+  -- Every config load starts a timer, but at most one stays alive: timers
+  -- coordinate through a heartbeat in wezterm.GLOBAL. Whichever timer actually
+  -- *ticks* first claims ownership and refreshes a wall-clock heartbeat on every
+  -- tick; other timers see a fresh heartbeat under a different id and retire. If
+  -- the owner ever stops beating (e.g. a tick raised), another timer finds the
+  -- heartbeat stale and takes over, so rotation never strands.
+  --
+  -- Ownership is decided by proof-of-life (a fresh heartbeat), NOT by eval order
+  -- or a "newest wins" counter. WezTerm evaluates the config several times
+  -- (throwaway evaluations on startup and reload) and every evaluation mutates
+  -- GLOBAL, yet only some evaluations' call_after callbacks ever fire. A counter-
+  -- or flag-based scheme advances on an evaluation whose timer never runs and
+  -- disables the one that does -- which is exactly how earlier versions froze. A
+  -- throwaway evaluation's timer never ticks, so it never claims ownership and
+  -- never displaces a live timer. my_id is only an identity tag so the owner can
+  -- recognize its own heartbeat; it never orders or ranks timers.
+  local my_id = (wezterm.GLOBAL.rotation_timer_id or 0) + 1
+  wezterm.GLOBAL.rotation_timer_id = my_id
 
-  -- Drive rotation with a chained call_after timer, installed exactly once per
-  -- process. The obvious choice, update-status, is unreliable for this: WezTerm
-  -- suspends that event's periodic firing whenever the terminal is idle (it is
-  -- coupled to the render/event loop), so an idle screen never rotates.
-  -- call_after is a real timer that fires regardless of idle state. Installing
-  -- once (guarded via GLOBAL) also avoids the handler stacking that plagued the
-  -- update-status approach; the timer reads fresh state from GLOBAL each tick.
-  if not wezterm.GLOBAL.background_timer_installed then
-    wezterm.GLOBAL.background_timer_installed = true
+  local function rotation_tick()
+    local now = os.time()
+    if not should_keep_running(wezterm.GLOBAL.rotation_owner, my_id, now, timer_stale_seconds) then
+      -- A different timer is alive and owns rotation; retire this one.
+      return
+    end
+    wezterm.GLOBAL.rotation_owner = { id = my_id, beat = now }
 
-    local function rotation_tick()
-      local state = wezterm.GLOBAL.background_state
-      local delay = poll_interval_seconds
-      if state then
-        delay = math.max(1, math.min(state.interval, poll_interval_seconds))
-        local background = state.forced or current_background(state.images, state.interval)
-        if background then
-          -- call_after has no window argument, so reach live windows through the
-          -- mux. gui_window() is nil for windows not shown in a GUI (skip those).
-          for _, mux_window in ipairs(wezterm.mux.all_windows()) do
-            local gui_window = mux_window:gui_window()
-            if gui_window then
-              apply_window_background(
-                gui_window,
-                background,
-                state.hsb,
-                state.text_opacity,
-                state.fit,
-                state.h_align,
-                state.v_align
-              )
-            end
+    local state = wezterm.GLOBAL.background_state
+    local delay = poll_interval_seconds
+    if state then
+      delay = math.max(1, math.min(state.interval, poll_interval_seconds))
+      local background = state.forced or current_background(state.images, state.interval)
+      if background then
+        -- call_after has no window argument, so reach live windows through the
+        -- mux. gui_window() is nil for windows not shown in a GUI (skip those).
+        for _, mux_window in ipairs(wezterm.mux.all_windows()) do
+          local gui_window = mux_window:gui_window()
+          if gui_window then
+            apply_window_background(
+              wezterm,
+              gui_window,
+              background,
+              state.hsb,
+              state.text_opacity,
+              state.fit,
+              state.h_align,
+              state.v_align
+            )
           end
         end
       end
-      wezterm.time.call_after(delay, rotation_tick)
     end
 
-    -- Defer the first tick: during config evaluation the mux does not exist yet
-    -- (calling wezterm.mux here fails with "cannot get Mux!?"). The initial
-    -- wallpaper is already set via config.background above, so a short delay
-    -- before the timer takes over is invisible.
-    wezterm.time.call_after(1, rotation_tick)
+    wezterm.time.call_after(delay, rotation_tick)
   end
+
+  -- Defer the first tick: during config evaluation the mux does not exist yet
+  -- (calling wezterm.mux here fails with "cannot get Mux!?"). The initial
+  -- wallpaper is already set via config.background above, so a short delay
+  -- before the timer takes over is invisible.
+  wezterm.time.call_after(1, rotation_tick)
 end
+
+-- Exposed for unit tests only (see scripts/test-backgrounds-lua.sh); not part
+-- of the module's runtime API. These functions are pure and never touch WezTerm.
+M._should_keep_running = should_keep_running
+M._current_background = current_background
+M._shuffled_index = shuffled_index
 
 return M
