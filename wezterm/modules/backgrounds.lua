@@ -178,6 +178,22 @@ local function apply_window_background(wezterm, window, background, hsb, text_op
   wezterm.GLOBAL.last_background_by_window = cache
 end
 
+-- Pure ownership decision for the rotation timer, factored out so it can be
+-- unit-tested without WezTerm (see scripts/test-backgrounds-lua.sh). Given the
+-- current owner claim (`{ id, beat }` or nil), this timer's id, the current
+-- time, and the staleness window, returns true if this timer should keep
+-- running (claim or refresh ownership) and false if it should retire because a
+-- different timer is alive and owns rotation. The decision is made purely by
+-- proof-of-life -- a fresh heartbeat -- never by id ordering; see the timer
+-- comment in M.apply for why that distinction is load-bearing.
+local function should_keep_running(owner, my_id, now, stale)
+  if owner and owner.id ~= my_id and (now - owner.beat) < stale then
+    return false
+  end
+
+  return true
+end
+
 function M.apply(config, wezterm, env)
   local backgrounds = collect_backgrounds(env)
   local local_config = env.local_config or {}
@@ -237,8 +253,7 @@ function M.apply(config, wezterm, env)
 
   local function rotation_tick()
     local now = os.time()
-    local owner = wezterm.GLOBAL.rotation_owner
-    if owner and owner.id ~= my_id and (now - owner.beat) < timer_stale_seconds then
+    if not should_keep_running(wezterm.GLOBAL.rotation_owner, my_id, now, timer_stale_seconds) then
       -- A different timer is alive and owns rotation; retire this one.
       return
     end
@@ -279,5 +294,11 @@ function M.apply(config, wezterm, env)
   -- before the timer takes over is invisible.
   wezterm.time.call_after(1, rotation_tick)
 end
+
+-- Exposed for unit tests only (see scripts/test-backgrounds-lua.sh); not part
+-- of the module's runtime API. These functions are pure and never touch WezTerm.
+M._should_keep_running = should_keep_running
+M._current_background = current_background
+M._shuffled_index = shuffled_index
 
 return M
