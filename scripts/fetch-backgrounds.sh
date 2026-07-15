@@ -4,7 +4,7 @@ set -euo pipefail
 # shellcheck source=scripts/background-bundles.sh
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$repo_root/scripts/background-bundles.sh"
-base_url_prefix="${BACKGROUNDS_BASE_URL_PREFIX:-https://github.com/ajason13/wezterm-tmux-dotfiles/releases/download}"
+base_url_prefix="${BACKGROUNDS_BASE_URL_PREFIX:-https://github.com/ajason13/terminal-dotfiles/releases/download}"
 
 dest=""
 refresh=false
