@@ -258,13 +258,21 @@ brew install fzf
 ```
 
 A useful fzf-powered helper for jumping into git worktrees - handy since Claude
-Code creates them under `.claude/worktrees/` and typing those paths is tedious:
+Code creates them under `.claude/worktrees/` and typing those paths is tedious.
+Run `wt` for the picker, or `wt <filter>` to pre-filter - it jumps straight there
+when only one worktree matches. Worktrees are per-repo, so run it inside the repo:
 
 ```sh
-# ~/.zshrc — jump to a worktree of the current repo by fuzzy pick (shows branch)
+# ~/.zshrc - jump to a git worktree of the current repo by fuzzy pick.
+# `wt` opens the picker; `wt <filter>` pre-filters (jumps if a single match).
 wt() {
   local dir
-  dir=$(git worktree list | fzf --prompt='worktree> ' | awk '{print $1}') && cd "$dir"
+  dir=$(git worktree list 2>/dev/null | fzf --prompt='worktree> ' --query="$*" --select-1 --exit-0 | awk '{print $1}')
+  if [ -n "$dir" ]; then
+    cd "$dir"
+  else
+    echo "wt: no worktree matched (run inside the repo - worktrees are per-repo)" >&2
+  fi
 }
 ```
 
