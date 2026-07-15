@@ -53,8 +53,15 @@ jobs:
           ./scripts/test-fetch-backgrounds.sh
           ./scripts/test-list-background-inbox.sh
 
-      - name: Install Neovim (for config headless-load test)
-        run: sudo apt-get update && sudo apt-get install -y neovim
+      - name: Install Neovim (current stable, for config headless-load test)
+        run: |
+          curl -fsSL -o /tmp/nvim.tar.gz \
+            https://github.com/neovim/neovim/releases/download/stable/nvim-linux-x86_64.tar.gz
+          sudo tar -C /opt -xzf /tmp/nvim.tar.gz
+          echo "/opt/nvim-linux-x86_64/bin" >> "$GITHUB_PATH"
+
+      - name: Install tree-sitter CLI (nvim-treesitter main compiles parsers with it)
+        run: npm install -g tree-sitter-cli
 
       - name: Neovim config loads clean
         run: ./scripts/test-nvim.sh
