@@ -22,6 +22,18 @@ local function tmux_path()
   return 'tmux'
 end
 
+local function nvim_path()
+  if file_exists('/opt/homebrew/bin/nvim') then
+    return '/opt/homebrew/bin/nvim'
+  end
+
+  if file_exists('/usr/local/bin/nvim') then
+    return '/usr/local/bin/nvim'
+  end
+
+  return 'nvim'
+end
+
 local function split_file_uri_payload(payload)
   local path, line, column = payload:match('^(.-):(%d+):(%d+)$')
   if path then
@@ -48,6 +60,12 @@ end
 
 local function uri_escape_path(path)
   return (path:gsub(' ', '%%20'))
+end
+
+-- Wrap a value in single quotes for a POSIX shell, escaping embedded quotes,
+-- so tmux can hand it to `sh -c` intact (paths may contain spaces).
+local function shell_single_quote(value)
+  return "'" .. value:gsub("'", "'\\''") .. "'"
 end
 
 local web_tlds = {
@@ -118,6 +136,49 @@ local function pane_runs_tmux(pane)
   return proc ~= nil and proc:find('tmux') ~= nil
 end
 
+-- The working directory of the pane that triggered the action.
+-- Only ask tmux when this pane is actually running tmux, and then target the
+-- pane's own client tty: an untargeted `display-message` returns whichever
+-- pane tmux considers globally active, which may be a different window or an
+-- unrelated tmux server. For a non-tmux pane, WezTerm's own cwd is
+-- authoritative; querying tmux at all would return a stray path.
+local function pane_effective_cwd(wezterm, pane)
+  if pane_runs_tmux(pane) then
+    local tty = pane:get_tty_name()
+    return (tty and tmux_display_cwd(wezterm, { '-c', tty }))
+      or tmux_display_cwd(wezterm, {})
+      or pane_cwd(pane)
+  end
+
+  return pane_cwd(pane) or tmux_display_cwd(wezterm, {})
+end
+
+-- The tmux pane id (e.g. "%5") for the WezTerm pane that triggered the action,
+-- found via its client tty, or nil when this pane is not running tmux.
+local function tmux_target_pane(wezterm, pane)
+  if not pane_runs_tmux(pane) then
+    return nil
+  end
+
+  local tty = pane:get_tty_name()
+  if not tty then
+    return nil
+  end
+
+  local success, stdout =
+    wezterm.run_child_process({ tmux_path(), 'display-message', '-c', tty, '-p', '#{pane_id}' })
+  if not success or not stdout then
+    return nil
+  end
+
+  local id = stdout:gsub('%s+$', '')
+  if #id == 0 then
+    return nil
+  end
+
+  return id
+end
+
 local function resolve_editor_path(wezterm, pane, path)
   if path:sub(1, 2) == '~/' then
     return (os.getenv('HOME') or '~') .. path:sub(2)
@@ -128,21 +189,7 @@ local function resolve_editor_path(wezterm, pane, path)
   end
 
   -- Resolve relative paths against the pane that triggered the action.
-  -- Only ask tmux when this pane is actually running tmux, and then target the
-  -- pane's own client tty: an untargeted `display-message` returns whichever
-  -- pane tmux considers globally active, which may be a different window or an
-  -- unrelated tmux server. For a non-tmux pane, WezTerm's own cwd is
-  -- authoritative; querying tmux at all would return a stray path.
-  local cwd
-  if pane_runs_tmux(pane) then
-    local tty = pane:get_tty_name()
-    cwd = (tty and tmux_display_cwd(wezterm, { '-c', tty }))
-      or tmux_display_cwd(wezterm, {})
-      or pane_cwd(pane)
-  else
-    cwd = pane_cwd(pane) or tmux_display_cwd(wezterm, {})
-  end
-
+  local cwd = pane_effective_cwd(wezterm, pane)
   if cwd and #cwd > 0 then
     return cwd .. '/' .. path
   end
@@ -217,6 +264,40 @@ local function open_vscode_target(wezterm, pane, target)
   open_external_uri(wezterm, editor_uri)
 end
 
+-- Open a file path in nvim, in a new tmux pane split to the right of the pane
+-- that triggered the action. Falls back to the editor when there is no tmux
+-- pane to split (e.g. a bare WezTerm pane not running tmux).
+local function open_in_tmux_nvim(wezterm, pane, target)
+  local tmux_pane = tmux_target_pane(wezterm, pane)
+  if not tmux_pane then
+    open_vscode_target(wezterm, pane, target)
+    return
+  end
+
+  local path, line = split_file_uri_payload(target)
+  path = trim_trailing_path_punctuation(path)
+  local resolved = resolve_editor_path(wezterm, pane, path)
+
+  -- Invoke nvim by absolute path: tmux runs the split's shell-command with a
+  -- non-interactive `sh -c`, which does not source shell rc files, so
+  -- /opt/homebrew/bin is not on PATH and a bare `nvim` fails with exit 127.
+  local editor = nvim_path()
+  if line then
+    editor = editor .. ' +' .. line
+  end
+  editor = editor .. ' -- ' .. shell_single_quote(resolved)
+
+  local args = { tmux_path(), 'split-window', '-h', '-t', tmux_pane }
+  local cwd = pane_effective_cwd(wezterm, pane)
+  if cwd and #cwd > 0 then
+    table.insert(args, '-c')
+    table.insert(args, cwd)
+  end
+  table.insert(args, editor)
+
+  wezterm.background_child_process(args)
+end
+
 local function open_selected_text(wezterm, window, pane)
   local target = trim_selection(window:get_selection_text_for_pane(pane))
   if #target == 0 then
@@ -228,7 +309,7 @@ local function open_selected_text(wezterm, window, pane)
     return
   end
 
-  open_vscode_target(wezterm, pane, target)
+  open_in_tmux_nvim(wezterm, pane, target)
 end
 
 function M.apply(config, wezterm)
