@@ -330,12 +330,30 @@ set -g @plugin 'tmux-plugins/tmux-resurrect'
 set -g @plugin 'tmux-plugins/tmux-continuum'
 set -g @plugin 'tmux-plugins/tmux-yank'
 set -g @plugin 'sainnhe/tmux-fzf'
+set -g @continuum-restore 'on'         # auto-restore the last save when tmux starts
+set -g @continuum-save-interval '15'   # auto-save every 15 minutes (0 disables)
 run '~/.tmux/plugins/tpm/tpm'
 ```
 
-Install with `Ctrl-a I`; save/restore with `Ctrl-a Ctrl-s` / `Ctrl-a Ctrl-r`.
-Because this config re-sources `~/.tmux.conf` on client attach, the `run tpm`
-line re-runs each attach - harmless, and it keeps plugins loaded in new windows.
+Install with `Ctrl-a I`; save/restore manually with `Ctrl-a Ctrl-s` /
+`Ctrl-a Ctrl-r`. Because this config re-sources `~/.tmux.conf` on client attach,
+the `run tpm` line re-runs each attach - harmless, and it keeps plugins loaded in
+new windows.
+
+`@continuum-restore 'on'` is the line that brings sessions back after a reboot:
+continuum auto-saves in the background and auto-restores the last save when the
+tmux server next starts. Without it, continuum still saves, but you would restore
+by hand with `Ctrl-a Ctrl-r`.
+
+**What survives, and what does not.** Restore brings back windows, panes,
+layout, and each pane's working directory - but not live program state. After a
+reboot your Claude Code / Codex panes come back as plain shells in the right
+directories, not resumed conversations. To resume the conversation itself, use
+the agent's own mechanism from that directory: `claude --continue` (most recent
+conversation in that dir) or `claude --resume` (pick one); Codex has
+`codex resume`. Claude keys history by directory and resurrect restores the
+directory, so `claude --continue` in a restored pane lands on that project's last
+conversation.
 
 ### Reference
 
