@@ -67,6 +67,10 @@ markdown syntax. Run `:RenderMarkdown toggle` to switch back to the raw
 source (and again to re-render), which is handy when you need to copy exact
 text or edit the raw markup directly.
 
+Long lines soft-wrap to the window width (prose filetypes only - code stays
+unwrapped), so a narrow split stays readable. This is on by default via a
+FileType autocmd; nothing to toggle.
+
 **Open a file / grep for something**
 
 `<leader>ff` to find a file by name, `<leader>fg` to live-grep across the
