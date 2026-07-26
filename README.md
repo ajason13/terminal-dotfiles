@@ -12,8 +12,8 @@ Select file opening, local branch review, and rotating terminal backgrounds.
 - `Ctrl-a` is the tmux prefix.
 - `Ctrl-a \` splits horizontally and `Ctrl-a -` splits vertically.
 - `Ctrl-a h/j/k/l` moves between panes.
-- `Ctrl-Shift-Space` opens selected paths in VS Code and web targets in the
-  browser.
+- `Ctrl-Shift-Space` opens selected text paths in a tmux Neovim split, PNG
+  images in Preview, and web targets in the browser.
 - WezTerm backgrounds rotate every 15 minutes by default.
 - Codex defaults to `gpt-5.6-sol` with `medium` reasoning and includes pinned role
   profiles for research, architecture, coordination, and implementation.
@@ -188,6 +188,35 @@ instructions can guide routing, but they cannot guarantee that a top-level
 session changes model after it has started. If a pinned model or level is not
 available, Codex should surface that as an exception rather than silently
 downshifting.
+
+### Hybrid Delivery Workflow
+
+The installed role guidance uses two delivery modes. Choose the smallest mode
+that safely fits the task rather than running every task through every role.
+
+**Advisor Mode is the default** for scoped, low-risk work such as routine bug
+fixes, local tooling, documentation, small UI changes, and exploration. One
+primary role owns the outcome and consults a specialist only for a bounded
+question. A Builder usually owns implementation; a Lead Architect owns an
+ambiguous decision. Research findings and QA feedback are advisory, and the
+primary records the decision, assumptions, and verification in its handoff.
+
+**Gated Delivery Mode** is required for new architecture, cross-module or
+public contracts, privacy, safety, security, licensing, auth, payments,
+external integrations, release candidates, and explicitly requested independent
+reviews. The Lead Architect selects the gate, defines the implementation-ready
+plan, and the Builder starts only after that review passes. The Workflow
+Coordinator records state and evidence but never changes the technical decision.
+
+Examples:
+
+```text
+Advisor: "Use the builder agent to fix this focused test failure; consult the
+deep-researcher only if the library behavior is uncertain."
+
+Gated: "Use the lead-architect agent to classify this authentication change,
+write the spec and QA gate, then hand the approved scope to the builder."
+```
 
 WezTerm has automatic reload enabled, but module edits through symlinks may not
 always reload immediately. Press `Cmd-r` in WezTerm if needed. Reload tmux with
@@ -444,6 +473,15 @@ unlocks **reviewing branches locally instead of in the browser**:
 - `gitsigns` + `lazygit` - inline hunks, blame, and a full git TUI (`<leader>gg`).
 - `render-markdown.nvim` - renders `.md` inline for read-heavy work.
 
+Copy the entire current file from normal mode:
+
+```vim
+:%y+
+```
+
+This uses the system clipboard. If the active Neovim build does not expose
+clipboard support, use `:%y` to yank into Neovim's default register instead.
+
 Full loop: `gh pr checkout <n>` -> `wt` -> `nvim` -> `<leader>gd`. See
 [`nvim/README.md`](nvim/README.md) for the keymap cheat sheet. Before Neovim is
 installed, `gh pr diff <n>` (piped through `delta`) or `lazygit` cover branch
@@ -564,6 +602,8 @@ That command:
 - moves or copies the image files into `wezterm/assets/inbox/`
 - creates matching `.yaml` sidecars from `_sample/scene-001.yaml`
 - optionally stamps the same `series` / `mode` onto every imported file
+- enforces a maximum of **10 pending images** in the inbox; process or archive
+  the current batch before importing more
 
 Useful variants:
 

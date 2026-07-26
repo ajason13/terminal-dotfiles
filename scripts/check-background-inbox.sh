@@ -3,6 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 inbox_dir="${BACKGROUND_INBOX_DIR:-$repo_root/wezterm/assets/inbox}"
+max_images=10
 
 fail() {
   echo "background inbox check failed: $*" >&2
@@ -51,6 +52,8 @@ $(find "$inbox_dir" \
   -path "$inbox_dir/_processed" -prune -o \
   -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \) -print | sort)
 EOF
+
+(( image_count <= max_images )) || fail "inbox has ${image_count} image(s); maximum is ${max_images} before processing"
 
 while IFS= read -r yaml; do
   [[ -n "$yaml" ]] || continue

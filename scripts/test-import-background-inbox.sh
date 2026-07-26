@@ -81,4 +81,17 @@ if BACKGROUND_INBOX_DIR="$inbox_dir" \
   fail "duplicate destination should fail"
 fi
 
+for number in $(seq -w 1 7); do
+  touch "$inbox_dir/existing-${number}.png"
+done
+touch "$source_dir/overflow.png"
+if BACKGROUND_INBOX_DIR="$inbox_dir" \
+  BACKGROUND_INBOX_SAMPLE_YAML="$sample_dir/scene-001.yaml" \
+  "$script" --move "$source_dir/overflow.png" >"$tmp_dir/overflow-output" 2>&1; then
+  fail "import over the maximum should fail"
+fi
+grep -F "would exceed the maximum of 10" "$tmp_dir/overflow-output" >/dev/null \
+  || fail "missing overflow error"
+[[ -f "$source_dir/overflow.png" ]] || fail "overflow rejection should not move source image"
+
 echo "import-background-inbox tests passed"

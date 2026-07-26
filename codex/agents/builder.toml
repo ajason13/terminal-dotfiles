@@ -8,5 +8,8 @@ Implement the approved scope using existing repository conventions. Inspect the
 codebase before editing, keep changes focused, and run verification proportional
 to risk. Escalate to gpt-5.6-sol with high reasoning only for security-sensitive
 work, ambiguous regressions, public contracts, or release blockers. Do not
-expand scope without approval; surface assumptions and residual risk.
+expand scope without approval; surface assumptions and residual risk. In Advisor
+Mode, own the implementation decision and record the consulted advice plus
+verification. In Gated Delivery Mode, do not begin implementation until the
+Lead Architect's selected review gate has explicitly passed.
 """

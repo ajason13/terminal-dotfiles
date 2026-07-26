@@ -98,4 +98,14 @@ mode: as_is
 EOF
 run_fail "$orphan_yaml_dir" "does not have a matching image file"
 
+overflow_dir="$(make_case_dir overflow)"
+for number in $(seq -w 1 11); do
+  touch "$overflow_dir/scene-${number}.png"
+  cat >"$overflow_dir/scene-${number}.yaml" <<'EOF'
+series: haikyuu
+mode: stylized
+EOF
+done
+run_fail "$overflow_dir" "maximum is 10 before processing"
+
 echo "check-background-inbox tests passed"

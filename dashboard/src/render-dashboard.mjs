@@ -1,0 +1,337 @@
+import { STATE_PRESENTATION, buildAccessibleText } from './session-contract.mjs';
+import { allocateSessions } from './track-layout.mjs';
+
+const NEUTRAL_READOUT = 'Focus or hover a car for exact activity time. Enter or Space pins; Escape clears.';
+const ROUTE_LAP_SECONDS = 64;
+const ROUTE_PHASE_SECONDS = ROUTE_LAP_SECONDS / 16;
+const PIT_SELECTORS = Object.freeze({
+  error: '#pit-error',
+  permission: '#pit-permission',
+  pitstop: '#pit-pitstop',
+  unknown: '#pit-unknown',
+});
+
+function element(documentRef, tagName, className, text) {
+  const node = documentRef.createElement(tagName);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function svgElement(documentRef, tagName, className, attributes = {}) {
+  const node = documentRef.createElementNS('http://www.w3.org/2000/svg', tagName);
+  if (className) node.setAttribute('class', className);
+  for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, value);
+  return node;
+}
+
+function makeCarSilhouette(documentRef) {
+  const svg = svgElement(documentRef, 'svg', 'car-silhouette', {
+    viewBox: '0 0 32 48',
+    'aria-hidden': 'true',
+    focusable: 'false',
+  });
+  const wheels = [
+    ['3', '10'], ['25', '10'], ['3', '32'], ['25', '32'],
+  ].map(([x, y]) => svgElement(documentRef, 'rect', 'car-wheel', {
+    x, y, width: '4', height: '9', rx: '2',
+  }));
+  const chassis = svgElement(documentRef, 'path', 'car-chassis', {
+    d: 'M10 2Q16 0 22 2L25 9 27 18V38Q26 44 21 46H11Q6 44 5 38V18L7 9Z',
+  });
+  const frontGlass = svgElement(documentRef, 'path', 'car-glass car-glass-front', {
+    d: 'M9 13Q16 10 23 13L22 19H10Z',
+  });
+  const rearGlass = svgElement(documentRef, 'path', 'car-glass car-glass-rear', {
+    d: 'M10 31H22L23 36Q16 39 9 36Z',
+  });
+  const roof = svgElement(documentRef, 'path', 'car-roof', {
+    d: 'M10 20Q16 18 22 20V30H10Z',
+  });
+  const centerline = svgElement(documentRef, 'path', 'car-centerline', {
+    d: 'M12 9 16 6 20 9',
+  });
+  const lamps = [
+    ['10', '5'], ['22', '5'],
+  ].map(([cx, cy]) => svgElement(documentRef, 'circle', 'car-headlamp', {
+    cx, cy, r: '1.6',
+  }));
+  svg.append(...wheels, chassis, frontGlass, rearGlass, roof, centerline, ...lamps);
+  return svg;
+}
+
+function requiredMount(root, selector) {
+  const mount = root.querySelector(selector);
+  if (!mount) throw new Error(`Dashboard mount is missing: ${selector}`);
+  return mount;
+}
+
+function stateClass(status) {
+  return `state-${status.replaceAll('_', '-')}`;
+}
+
+function appendActivity(documentRef, parent, activity) {
+  parent.append(`${activity.label}: `);
+  const time = element(documentRef, 'time', 'activity-time', activity.exact);
+  time.dateTime = activity.datetime;
+  parent.append(time, ` (${activity.relative})`);
+}
+
+function makeTooltip(documentRef, session, presentation, text, tooltipId) {
+  const tooltip = element(documentRef, 'span', 'session-tooltip');
+  tooltip.id = tooltipId;
+  tooltip.setAttribute('role', 'tooltip');
+  tooltip.append(
+    element(documentRef, 'strong', '', `${session.mapCode} · ${session.displayName}`),
+    element(documentRef, 'span', '', `${presentation.label} · ${text.location}`),
+  );
+  const details = element(documentRef, 'span', 'tooltip-details');
+  const nonActivity = text.details.split(`. ${text.activity.label}:`)[0];
+  if (nonActivity && nonActivity !== text.details) details.append(`${nonActivity}. `);
+  appendActivity(documentRef, details, text.activity);
+  if (session.errorSummary) details.append(`. Error: ${session.errorSummary}`);
+  tooltip.append(details);
+  return tooltip;
+}
+
+function makeCar(documentRef, session, placement, text, target) {
+  const presentation = STATE_PRESENTATION[session.status];
+  const wrapper = element(
+    documentRef,
+    'div',
+    `${target === 'route' ? 'vehicle-anchor' : 'pit-vehicle'} ${stateClass(session.status)}`,
+  );
+  wrapper.dataset.sessionId = session.id;
+  wrapper.dataset.status = session.status;
+  if (target === 'route') {
+    wrapper.style.setProperty('--vehicle-x', `${placement.x / 10}%`);
+    wrapper.style.setProperty('--vehicle-y', `${placement.y / 7.6}%`);
+    wrapper.style.setProperty('--route-phase', `${-placement.slotIndex * ROUTE_PHASE_SECONDS}s`);
+    wrapper.dataset.routeSlot = String(placement.slotIndex);
+    if (placement.y >= 560) wrapper.classList.add('tooltip-up');
+    if (placement.x <= 210) wrapper.classList.add('edge-left');
+    if (placement.x >= 790) wrapper.classList.add('edge-right');
+  }
+  if (target === 'unknown') {
+    wrapper.style.gridColumn = String(placement.slotIndex + 1);
+    wrapper.style.gridRow = '1';
+  }
+
+  const button = element(documentRef, 'button', 'session-car');
+  button.type = 'button';
+  button.dataset.sessionId = session.id;
+  button.setAttribute('aria-label', text.label);
+  button.setAttribute('aria-pressed', 'false');
+  const tooltipId = `session-details-${session.mapCode.toLowerCase()}`;
+  button.setAttribute('aria-describedby', tooltipId);
+
+  const angle = element(documentRef, 'span', 'car-angle');
+  const vehicleAngle = target === 'route' ? placement.angle : 0;
+  angle.style.setProperty('--vehicle-angle', `${vehicleAngle}deg`);
+  angle.style.setProperty('--vehicle-upright-angle', `${-vehicleAngle}deg`);
+  const motion = element(documentRef, 'span', 'car-motion');
+  const body = element(documentRef, 'span', 'car-body');
+  const glyph = element(documentRef, 'span', 'car-glyph', presentation.glyph);
+  const code = element(documentRef, 'span', 'car-code', session.mapCode);
+  glyph.setAttribute('aria-hidden', 'true');
+  code.setAttribute('aria-hidden', 'true');
+  body.append(makeCarSilhouette(documentRef), glyph, code);
+  motion.append(body);
+  angle.append(motion);
+  button.append(angle);
+  wrapper.append(button, makeTooltip(documentRef, session, presentation, text, tooltipId));
+  return { wrapper, button };
+}
+
+function renderReadout(documentRef, readout, session, text) {
+  readout.replaceChildren();
+  if (!session || !text) {
+    readout.textContent = NEUTRAL_READOUT;
+    return;
+  }
+  const presentation = STATE_PRESENTATION[session.status];
+  readout.append(
+    element(documentRef, 'strong', 'readout-identity', `${session.mapCode} · ${session.displayName}`),
+    element(documentRef, 'span', 'readout-state', `${presentation.label} · ${text.location}`),
+  );
+  const activity = element(documentRef, 'span', 'readout-activity');
+  appendActivity(documentRef, activity, text.activity);
+  readout.append(activity);
+}
+
+function summaryText(snapshot) {
+  const counts = new Map();
+  for (const session of snapshot.sessions) {
+    counts.set(session.status, (counts.get(session.status) ?? 0) + 1);
+  }
+  return `${snapshot.sessions.length} sessions · ${[...counts]
+    .map(([status, count]) => `${count} ${STATE_PRESENTATION[status].label.toLowerCase()}`)
+    .join(' · ')}`;
+}
+
+function renderOnTrackSummary(documentRef, mount, sessions) {
+  mount.replaceChildren();
+  for (const status of ['active', 'thinking']) {
+    const presentation = STATE_PRESENTATION[status];
+    const count = sessions.filter((session) => session.status === status).length;
+    const item = element(documentRef, 'span', `on-track-count ${stateClass(status)}`);
+    item.setAttribute('aria-label', `${count} ${presentation.label.toLowerCase()} sessions on track`);
+    const glyph = element(documentRef, 'span', 'on-track-glyph', presentation.glyph);
+    glyph.setAttribute('aria-hidden', 'true');
+    item.append(glyph, element(documentRef, 'span', 'on-track-label', `${count} ${presentation.label}`));
+    mount.append(item);
+  }
+}
+
+function overflowSummary(session, text) {
+  return `${session.mapCode} ${session.displayName}: ${text.location}. ${text.details}`;
+}
+
+export function renderDashboard(snapshot, root = document) {
+  const renderController = new AbortController();
+  const { signal } = renderController;
+  const documentRef = root.ownerDocument ?? root;
+  const summary = requiredMount(root, '#snapshot-summary');
+  const vehicleLayer = requiredMount(root, '#vehicle-layer');
+  const tooltipLayer = requiredMount(root, '#tooltip-layer');
+  const mapOverflow = requiredMount(root, '#overflow-notice');
+  const readout = requiredMount(root, '#session-readout');
+  const onTrackSummary = requiredMount(root, '#on-track-summary');
+  const mapStage = requiredMount(root, '#map-stage');
+  const unknownHold = requiredMount(root, '#unknown-hold');
+  const pitMounts = new Map(Object.entries(PIT_SELECTORS)
+    .map(([pool, selector]) => [pool, requiredMount(root, selector)]));
+  const pitOverflows = new Map([...pitMounts.keys()].map((pool) => [
+    pool,
+    requiredMount(root, `#pit-${pool}-overflow`),
+  ]));
+
+  vehicleLayer.replaceChildren();
+  tooltipLayer.replaceChildren();
+  mapOverflow.replaceChildren();
+  mapOverflow.hidden = true;
+  for (const mount of pitMounts.values()) mount.replaceChildren();
+  for (let index = 0; index < 3; index += 1) {
+    const anchor = element(documentRef, 'span', 'unknown-anchor', '?');
+    anchor.setAttribute('aria-hidden', 'true');
+    anchor.style.gridColumn = String(index + 1);
+    anchor.style.gridRow = '1';
+    pitMounts.get('unknown').append(anchor);
+  }
+  for (const notice of pitOverflows.values()) {
+    notice.replaceChildren();
+    notice.hidden = true;
+  }
+  renderReadout(documentRef, readout);
+  renderOnTrackSummary(documentRef, onTrackSummary, snapshot.sessions);
+  unknownHold.hidden = !snapshot.sessions.some((session) => session.status === 'unknown');
+
+  const placements = allocateSessions(snapshot.sessions);
+  const placementsById = new Map(placements.map((placement) => [placement.id, placement]));
+  const sessionsById = new Map(snapshot.sessions.map((session) => [session.id, session]));
+  const textById = new Map();
+  const carsById = new Map();
+  const buttonsById = new Map();
+  const overflows = new Map();
+
+  for (const session of snapshot.sessions) {
+    const placement = placementsById.get(session.id);
+    const text = buildAccessibleText(session, placement, snapshot.generatedAt);
+    textById.set(session.id, text);
+    if (placement.overflow) {
+      if (!overflows.has(placement.pool)) overflows.set(placement.pool, []);
+      overflows.get(placement.pool).push(overflowSummary(session, text));
+      continue;
+    }
+    const target = placement.pool === 'route' ? 'route' : placement.pool;
+    const car = makeCar(documentRef, session, placement, text, target);
+    if (target === 'route') vehicleLayer.append(car.wrapper);
+    else pitMounts.get(target).append(car.wrapper);
+    carsById.set(session.id, car.wrapper);
+    buttonsById.set(session.id, car.button);
+  }
+
+  summary.textContent = summaryText(snapshot);
+  for (const [pool, messages] of overflows) {
+    const notice = pool === 'route' ? mapOverflow : pitOverflows.get(pool);
+    const capacityLabel = pool === 'route'
+      ? 'route'
+      : pool === 'unknown' ? 'Unclassified hold' : 'pit';
+    notice.textContent = `${messages.length} ${messages.length === 1 ? 'session exceeds' : 'sessions exceed'} ${capacityLabel} capacity. ${messages.join(' ')}`;
+    notice.hidden = false;
+  }
+
+  let pinnedId = null;
+
+  function show(id) {
+    renderReadout(documentRef, readout, sessionsById.get(id), textById.get(id));
+  }
+
+  function restore() {
+    if (pinnedId) show(pinnedId);
+    else renderReadout(documentRef, readout);
+  }
+
+  function setPinned(nextId) {
+    pinnedId = nextId;
+    for (const [id, car] of carsById) {
+      const selected = id === pinnedId;
+      if (selected) car.dataset.pinned = 'true';
+      else delete car.dataset.pinned;
+      buttonsById.get(id).setAttribute('aria-pressed', String(selected));
+    }
+    if (pinnedId) show(pinnedId);
+    else renderReadout(documentRef, readout);
+  }
+
+  for (const [id, button] of buttonsById) {
+    const car = carsById.get(id);
+    car.addEventListener('pointerenter', () => show(id), { signal });
+    car.addEventListener('pointerleave', restore, { signal });
+    button.addEventListener('focus', () => show(id), { signal });
+    button.addEventListener('blur', restore, { signal });
+    button.addEventListener('click', (event) => {
+      if (event.detail !== 0) setPinned(pinnedId === id ? null : id);
+    }, { signal });
+    button.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      setPinned(pinnedId === id ? null : id);
+    }, { signal });
+  }
+
+  root.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    setPinned(null);
+  }, { signal });
+
+  return Object.freeze({
+    placements,
+    overflowCount: [...overflows.values()].flat().length,
+    clearInteraction: () => {
+      setPinned(null);
+      const active = documentRef.activeElement;
+      if (active && root.contains?.(active) && typeof active.blur === 'function') active.blur();
+    },
+    destroy: () => renderController.abort(),
+  });
+}
+
+export function renderDashboardError(error, root = document) {
+  const documentRef = root.ownerDocument ?? root;
+  const dashboardRoot = requiredMount(root, '#dashboard-root');
+  const alert = element(documentRef, 'section', 'invalid-snapshot');
+  alert.setAttribute('role', 'alert');
+  alert.setAttribute('aria-labelledby', 'invalid-snapshot-title');
+  const title = element(documentRef, 'h1', '', 'Snapshot could not be displayed');
+  title.id = 'invalid-snapshot-title';
+  const explanation = element(documentRef, 'p', '', 'The complete fixture snapshot was rejected. No partial or potentially misleading session state is shown.');
+  const issues = element(documentRef, 'ul', 'invalid-snapshot-issues');
+  const messages = Array.isArray(error?.issues) && error.issues.length > 0
+    ? error.issues
+    : [error?.message ?? 'Unknown snapshot error'];
+  for (const message of messages) issues.append(element(documentRef, 'li', '', String(message)));
+  alert.append(title, explanation, issues);
+  dashboardRoot.replaceChildren(alert);
+}

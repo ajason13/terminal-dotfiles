@@ -3,6 +3,8 @@
 **Purpose:** Self-contained source context for pre-implementation Claude QA
 planning. No implementation diff exists.
 
+**Gate:** PASS / BUILDER AUTHORIZED. Claude re-review found no blockers.
+
 ## Repository and working state
 
 The repository is macOS terminal dotfiles for WezTerm, tmux, Neovim, and Codex.
@@ -70,7 +72,10 @@ visibly; it is never clamped. Error requires a summary; waiting requires
 requested or denied permission, while other statuses allow only not-required,
 granted, or unknown. A schema-v1 dashboard snapshot includes a
 parseable `generatedAt`, used as the deterministic clock, and a readonly session
-array. Duplicate IDs and invalid inputs fail visibly.
+array. Duplicate IDs fail visibly; duplicate display names are allowed. Every
+invalid field on any session - including malformed timestamp, missing required
+field, invalid status, progress, or permission - invalidates the whole snapshot
+visibly. A mixed valid/invalid set cannot partially render.
 
 The only v1 adapter reads a fixed fixture snapshot once. Rendering receives
 normalized snapshots and has no access to fixtures, terminal code, commands,
@@ -95,14 +100,20 @@ The shared active/thinking route pool has 16 anchors, four in each named
 segment. Each stationary zone has six bays. Present progress maps to
 `min(15, floor(progress*16))`; missing progress uses FNV-1a-32 modulo pool size.
 Canonical-ID sorting plus forward circular probing resolves collisions. The
-no-overflow envelope is at most 24 sessions, route total <=16, and each parked
-state <=6. The canonical fixture is 6 active, 6 thinking, and 3 per parked
-state. N+1 overflow is explicit and retains every detail in the rail.
+capacity is enforced per pool only: route total <=16 and each parked state <=6.
+The full geometry supports 40 sessions. The canonical fixture - 6 active, 6
+thinking, and 3 per parked state - is a 24-session visual-regression fixture,
+not an aggregate cap. N+1 overflow is explicit and retains every rail detail.
 
 Decorative SVG is hidden from accessibility APIs. Meaningful cars are 44px
 native buttons with visible focus, full accessible labels, described tooltips,
 and Enter/Space pin plus Escape clear. The compact ordered rail is not cards or
 chat and adds no duplicate tab stops. Names wrap and remain complete.
+Duplicate names are distinguished by unique deterministic map codes `S01`
+through `SNN`, assigned by canonical stable-ID sort and shown on car and rail.
+The concise aria-label contains map code, full name, state, and location;
+ordered described details contain applicable permission, phase/progress,
+activity, and error text.
 
 At 760px and wider the map dominates beside a narrow rail. On smaller screens
 the map remains first and the bounded rail stacks below. There is no document
@@ -113,14 +124,17 @@ animation and nonessential transitions without altering semantics or placement.
 
 Node tests cover six-state mappings, invariants, labels/activity age, malformed
 timestamps, strict progress validity and missing fallback, invalid/duplicate
-input, exact pool capacity, collision/reorder determinism, 24 unique anchors,
-N+1 overflow with rail detail, long names, and motion policy. CSS-token tests
+input, exact pool capacity, collision/reorder determinism, 24 canonical unique
+anchors, a 40-session within-pool no-overflow set, N+1 overflow with rail detail,
+duplicate-name map codes, an invalid non-progress field in a mixed set, long
+names, and motion policy. CSS-token tests
 calculate WCAG contrast without dependencies: 4.5:1 for text/glyphs and 3:1 for
 focus/meaningful non-text boundaries. Browser checks cover 1440x900 and
 390x844, normal/reduced motion, nonblank framing, semantic car/rail equivalents,
 in-map non-overlapping bounds, clipping/overflow, long names, computed animation,
 and screenshots. Normal motion is checked through computed animation name/play
-state, not screenshot diffs. Manual checks cover contrast states and the longest
+state, not screenshot diffs. Manual checks cover normal, hover, focus, pinned,
+error, and overflow contrast states and the longest
 accessible text with VoiceOver. The full existing repository suite runs after
 implementation.
 
@@ -149,7 +163,8 @@ external asset URLs.
 
 ## Known unknowns and exceptions
 
-- The tested baseline is 24 mixed sessions, not unlimited density.
+- The canonical visual-regression fixture has 24 sessions. Per-pool limits
+  allow 40 total when every pool is filled; capacity is not unlimited.
 - Browser tooling is locally present but is not a repository dependency.
 - Node is locally available but is not currently a documented root requirement.
 - Hyphenated native agent names could not be preserved by orchestration.
@@ -165,5 +180,12 @@ Also supply:
 - `docs/superpowers/specs/2026-07-19-visual-progress-dashboard-design.md`
 - `docs/superpowers/qa/2026-07-19-visual-progress-dashboard-claude-qa-planning.md`
 
-The initial Claude verdict was FAIL. The three blockers have been resolved in
-the updated design. Gate status: **FAIL / BLOCKED ON CLAUDE RE-REVIEW**.
+The initial Claude verdict was FAIL. The three blockers were resolved, and
+Claude re-review returned PASS with no blockers. All four non-blocking
+clarifications are accepted. **Builder may begin.**
+
+> PASS — all three original blockers (route/pool capacity arithmetic, strict
+> fail-visible progress validation, and dependency-free contrast verification)
+> are resolved with concrete, testable specifications; Builder may begin
+> implementation per the plan, and the listed non-blocking items should be
+> tracked as follow-up polish rather than gating conditions.

@@ -1,4 +1,5 @@
 .DS_Store
+nvim.log
 *.backup-*
 tmux/tmux.local.conf
 wezterm/local.lua

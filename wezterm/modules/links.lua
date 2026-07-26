@@ -219,6 +219,12 @@ local function is_web_target(target)
   return has_web_domain(lower)
 end
 
+local function is_preview_target(target)
+  local path = split_file_uri_payload(target)
+  path = trim_trailing_path_punctuation(path)
+  return path:lower():match('%.png$') ~= nil
+end
+
 local function open_external_uri(wezterm, uri)
   if wezterm.open_with then
     wezterm.open_with(uri)
@@ -264,6 +270,19 @@ local function open_vscode_target(wezterm, pane, target)
   open_external_uri(wezterm, editor_uri)
 end
 
+local function open_preview_target(wezterm, pane, target)
+  local path = split_file_uri_payload(target)
+  path = trim_trailing_path_punctuation(path)
+  local resolved = resolve_editor_path(wezterm, pane, path)
+
+  if wezterm.target_triple:find('darwin') then
+    wezterm.background_child_process({ 'open', '-a', 'Preview', resolved })
+    return
+  end
+
+  open_external_uri(wezterm, 'file://' .. uri_escape_path(resolved))
+end
+
 -- Open a file path in nvim, in a new tmux pane split to the right of the pane
 -- that triggered the action. Falls back to the editor when there is no tmux
 -- pane to split (e.g. a bare WezTerm pane not running tmux).
@@ -306,6 +325,11 @@ local function open_selected_text(wezterm, window, pane)
 
   if is_web_target(target) then
     open_browser_target(wezterm, pane, target)
+    return
+  end
+
+  if is_preview_target(target) then
+    open_preview_target(wezterm, pane, target)
     return
   end
 

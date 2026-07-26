@@ -4,6 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 inbox_dir="${BACKGROUND_INBOX_DIR:-$repo_root/wezterm/assets/inbox}"
 sample_yaml="${BACKGROUND_INBOX_SAMPLE_YAML:-$inbox_dir/_sample/scene-001.yaml}"
+max_images=10
 copy_mode="move"
 series=""
 mode=""
@@ -101,6 +102,15 @@ case "$mode" in
   ""|stylized|as_is) ;;
   *) fail "invalid mode '$mode' (expected stylized or as_is)" ;;
 esac
+
+existing_image_count="$(find "$inbox_dir" \
+  -path "$inbox_dir/_sample" -prune -o \
+  -path "$inbox_dir/_processed" -prune -o \
+  -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \) -print | wc -l | tr -d '[:space:]')"
+incoming_image_count="${#image_paths[@]}"
+
+(( existing_image_count + incoming_image_count <= max_images )) || \
+  fail "inbox has ${existing_image_count} image(s); importing ${incoming_image_count} would exceed the maximum of ${max_images}"
 
 imported_yamls=()
 count=0

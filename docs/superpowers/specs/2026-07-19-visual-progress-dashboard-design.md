@@ -1,6 +1,6 @@
 # Visual Progress Dashboard Design
 
-**Status:** QA revision approved; implementation blocked pending Claude re-review PASS.
+**Status:** PASS / BUILDER AUTHORIZED
 
 ## Goal
 
@@ -147,13 +147,14 @@ collisions use forward circular probing. Active and thinking compete in the
 same route pool; parked states never move to a different zone. Do not use
 `Math.random()`. Animation affects a nested car body only, never its anchor.
 
-The supported no-overflow envelope is any set of at most 24 sessions where the
-combined active/thinking count is at most 16 and each individual parked-state
-count is at most six. The canonical 24-session fixture is six active, six
-thinking, and three in each of waiting, idle, error, and complete. When a pool
-is full, never cross-map a state or reuse a coordinate: mark excess sessions as
-`map capacity exceeded`, show an explicit map indicator, and retain each full
-session state in the rail. This is not an unlimited-capacity design.
+Capacity is enforced only per pool: combined active/thinking is at most 16 and
+each individual parked-state pool is at most six. Full geometry therefore
+supports 40 sessions (16 route plus four times six parked bays). The canonical
+24-session fixture - six active, six thinking, and three in each parked state -
+is the visual-regression fixture, not an aggregate cap. When a pool is full,
+never cross-map a state or reuse a coordinate: mark excess sessions as `map
+capacity exceeded`, show an explicit map indicator, and retain each full session
+state in the rail.
 
 ## Interaction and accessible text
 
@@ -161,9 +162,12 @@ session state in the rail. This is not an unlimited-capacity design.
   visible focus treatment.
 - Hover/focus shows a tooltip. Enter/Space pins its tooltip and counterpart
   highlight; Escape clears it.
-- Each button has a concise `aria-label` ordered as full display name, textual
-  state, and route segment or named bay. It is never visually or accessibly
-  truncated.
+- Duplicate `displayName` values are allowed. Assign unique deterministic map
+  codes `S01` through `SNN` by canonical stable-ID sort and show each code on
+  both car and rail.
+- Each button has a concise `aria-label` ordered as map code, full display name,
+  textual state, and route segment or named bay. It is never visually or
+  accessibly truncated.
 - The connected `aria-describedby` text adds only applicable details in this
   order: permission, phase/progress, snapshot-relative activity age, and error
   summary. Permission is omitted for `not_required`; requested, denied, granted,
@@ -197,12 +201,15 @@ rendering.
 ## Verification contract
 
 Node tests cover all six state mappings, permission/error invariants,
-activity-age text, malformed timestamps, duplicate/unsupported input, missing
+activity-age text, malformed timestamps, duplicate IDs, allowed duplicate
+display names with deterministic map codes, unsupported input, a mixed set in
+which one session has an invalid non-progress required field, missing
 progress fallback, exact progress boundaries 0 and 1, and rejection of `NaN`,
 both infinities, strings, -0.01, and 1.01. Layout tests assert FNV-1a fallback,
-exact route/zone capacities, the canonical 24 unique anchors, deterministic
-hash/progress collision tie-breaking under input reordering, route session 17
-overflow, each stationary state's session 7 overflow, and complete rail detail
+exact route/zone capacities, the canonical 24 unique anchors, a 40-session
+within-pool no-overflow set, deterministic hash/progress collision tie-breaking
+under input reordering, route session 17 overflow, each stationary state's
+session 7 overflow, and complete rail detail
 for overflowed sessions. Long accessible names and motion-policy metadata are
 also tested.
 
@@ -218,7 +225,7 @@ all car/rail equivalents, in-map non-overlapping car bounds, no document
 overflow or clipped rail, long-name handling, computed non-`none` animation and
 running play state for active/thinking only, `animation-name: none` under reduced
 motion, and desktop/mobile screenshots. A manual desktop/mobile audit covers
-contrast in normal, hover, focus, selected, error, and overflow states plus a
+contrast in normal, hover, focus, pinned, error, and overflow states plus a
 VoiceOver sanity pass over the longest combined accessible text.
 
 Implementation verification commands include `node --check` for every module,
@@ -262,11 +269,15 @@ needed.
 ## Gate and role exceptions
 
 Claude returned FAIL on the first QA-planning review. The three blockers were
-accepted and resolved in this revision: named route/pool capacity, strict
-progress invalidity, and contrast verification. The Claude CLI is unavailable
-on the user's plan, so the focused re-review packet is prepared for manual
-Claude Chat. Gate status is **FAIL / BLOCKED ON CLAUDE RE-REVIEW**. Builder work
-may start only after PASS.
+accepted and resolved: named route/pool capacity, strict progress invalidity,
+and contrast verification. Claude re-review returned PASS with no blockers.
+The four non-blocking clarifications above are accepted. **Builder may begin.**
+
+> PASS — all three original blockers (route/pool capacity arithmetic, strict
+> fail-visible progress validation, and dependency-free contrast verification)
+> are resolved with concrete, testable specifications; Builder may begin
+> implementation per the plan, and the listed non-blocking items should be
+> tracked as follow-up polish rather than gating conditions.
 
 The orchestration API could not preserve hyphenated native agent names and did
 not expose child model/reasoning metadata. Checked-in role pins exist, but their
