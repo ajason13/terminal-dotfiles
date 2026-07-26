@@ -48,4 +48,8 @@ return {
   '200-anime/haikyuu/028-water-break-lineup.png',
   '200-anime/haikyuu/029-manager-turnstiles.png',
   '200-anime/haikyuu/030-practice-bib-lineup.png',
+  '200-anime/haikyuu/031-night-team-standstill.png',
+  '200-anime/haikyuu/032-dark-net-block.png',
+  '200-anime/haikyuu/033-serious-net-side.png',
+  '200-anime/haikyuu/034-desperate-dive.png',
 }
