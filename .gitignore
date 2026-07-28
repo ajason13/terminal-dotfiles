@@ -15,3 +15,9 @@ wezterm/assets/.backgrounds-version*
 # Local scratch: Lavish review artifacts and subagent-workflow working files.
 .lavish/
 .superpowers/
+
+# Dashboard-local browser test dependencies and generated evidence.
+dashboard/node_modules/
+dashboard/test-results/
+dashboard/playwright-report/
+dashboard/.playwright/

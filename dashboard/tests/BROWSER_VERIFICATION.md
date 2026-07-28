@@ -1,9 +1,26 @@
 # Dashboard browser verification
 
-This is a manual, `playwright-cli`-driven browser procedure. It is not an
-automated browser test suite. The dependency-free Node tests cover contracts
-and injected lifecycle/process boundaries; this procedure records real browser
-layout, interaction, accessibility, motion, and console evidence.
+The checked-in automated suite covers the stable, fixture-only browser
+regression surface in Chromium at 1440x900 and 390x844:
+
+```sh
+npm --prefix dashboard ci
+npm --prefix dashboard exec -- playwright install chromium
+npm --prefix dashboard run test:browser
+```
+
+The test runner starts and stops its own loopback-only Python static server.
+Normal dashboard use never starts that server. The suite fails on browser
+console warnings, console errors, and uncaught page errors; it retains
+screenshots and traces only on failure in ignored dashboard-local result
+directories.
+
+The rest of this document is the supplemental, manual
+`playwright-cli`-driven procedure. It covers generated live-import lifecycle,
+deeper accessibility inspection, exhaustive geometry sweeps, and intentional
+reference screenshots that would be brittle or inappropriate in the
+fixture-only automated suite. The dependency-free Node tests continue to cover
+contracts and injected lifecycle/process boundaries.
 
 The current Auto label is `Auto · workday schedule`. Exact browser-local
 08:30, 12:30, and 16:30 behavior, before-open/after-close selection, next-day
@@ -217,8 +234,9 @@ artifacts.
 
 ## Manual-only caveats
 
-- Browser coverage above is manually driven and recorded, not an automated
-  Playwright suite.
+- The generated live-import lifecycle, exhaustive animation timeline sweeps,
+  fine-grained route/road alignment measurements, and reference screenshot
+  review above remain manually driven.
 - The user's real/default tmux server is never queried during verification.
 - Executable, socket, process, parser, error, and privacy behavior is tested
   through injected synthetic boundaries.

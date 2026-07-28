@@ -68,7 +68,7 @@ timeout. Course choice is tab-only and is never stored. Stop the preview with
 Run syntax checks for every JavaScript module:
 
 ```sh
-find dashboard -name '*.mjs' -type f -exec node --check {} \;
+find dashboard -path dashboard/node_modules -prune -o -name '*.mjs' -type f -exec node --check {} \;
 ```
 
 Run all dependency-free tests:
@@ -77,9 +77,25 @@ Run all dependency-free tests:
 node --test dashboard/tests/*.test.mjs
 ```
 
-Build, lint, and type-check commands are **N/A**. This browser-native project
-has no package manifest, framework, dependency, generated bundle, or build
-toolchain.
+Install the dashboard-local browser-test tooling once, including its Chromium
+binary, then run the fixture-only browser suite:
+
+```sh
+npm --prefix dashboard ci
+npm --prefix dashboard exec -- playwright install chromium
+npm --prefix dashboard run test:browser
+```
+
+The Playwright runner owns a loopback-only static server for the test lifetime,
+uses no real or generated live snapshots, and shuts the server down after the
+run. It covers Chromium at 1440x900 and 390x844. Failure screenshots, traces,
+and the HTML report are written under ignored dashboard-local result
+directories; intentional manual reference screenshots remain tracked.
+
+Build, lint, and type-check commands are **N/A**. The browser-native app still
+has no framework, runtime dependency, generated bundle, or build toolchain.
+`dashboard/package.json` is dev-only browser-test tooling and is never loaded
+by the dashboard.
 
 ## Reproduce browser verification
 
@@ -93,8 +109,10 @@ python3 -m http.server 4173 --bind 127.0.0.1 --directory dashboard
 ```
 
 Use the two generated paths printed by the helper for the valid and rejection
-imports. The full manual `playwright-cli` procedure, assertions, screenshots,
-and cleanup commands are recorded in
+imports. The automated suite covers the stable fixture UI and core interaction
+regressions. The fuller manual `playwright-cli` procedure retains live-import,
+accessibility, exhaustive route sweep, geometry, and reference-screenshot
+checks in
 [`tests/BROWSER_VERIFICATION.md`](tests/BROWSER_VERIFICATION.md). After closing
 the browser and preview server, remove both generated files and their directory:
 
