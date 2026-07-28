@@ -27,6 +27,10 @@ import {
 const GENERATED_AT = '2026-07-19T20:30:00Z';
 const STYLES = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 const INDEX = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+const README = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+const BROWSER_VERIFICATION = readFileSync(
+  new URL('./BROWSER_VERIFICATION.md', import.meta.url), 'utf8',
+);
 const RENDERER = readFileSync(new URL('../src/render-dashboard.mjs', import.meta.url), 'utf8');
 
 function session(id, status = 'active', overrides = {}) {
@@ -222,43 +226,120 @@ test('exact timestamps are deterministic under fixed UTC and use state-specific 
   assert.equal(completeText.activity.datetime, '2026-07-19T20:29:00Z');
 });
 
-test('FNV-1a-32 matches known vectors and geometry has exact capacities', () => {
+test('FNV-1a-32 matches known vectors and the downhill touge has exact capacities', () => {
   assert.equal(fnv1a32(''), 0x811c9dc5);
   assert.equal(fnv1a32('hello'), 0x4f9f2cab);
+  assert.deepEqual(SEGMENTS, [
+    'High Moor',
+    'Pass Ladder',
+    'Cedar Chain',
+    'Cloud Ridge',
+    'Long Arc',
+    'Valley Gate',
+  ]);
   assert.equal(ROUTE_ANCHORS.length, 16);
-  for (const segment of SEGMENTS) {
-    assert.equal(ROUTE_ANCHORS.filter((item) => item.poolLabel === segment).length, 4);
-  }
+  assert.deepEqual(SEGMENTS.map((segment) => (
+    ROUTE_ANCHORS.filter((item) => item.poolLabel === segment).length
+  )), [2, 3, 3, 3, 3, 2]);
+  assert.deepEqual(ROUTE_ANCHORS.map((item) => item.poolLabel), [
+    'High Moor', 'High Moor',
+    'Pass Ladder', 'Pass Ladder', 'Pass Ladder',
+    'Cedar Chain', 'Cedar Chain', 'Cedar Chain',
+    'Cloud Ridge', 'Cloud Ridge', 'Cloud Ridge',
+    'Long Arc', 'Long Arc', 'Long Arc',
+    'Valley Gate', 'Valley Gate',
+  ]);
   assert.deepEqual(Object.keys(PARKED_ANCHORS).sort(), ['error', 'permission', 'pitstop']);
   for (const anchors of Object.values(PARKED_ANCHORS)) assert.equal(anchors.length, 6);
-  assert.equal(Math.min(...ROUTE_ANCHORS.map((item) => item.x)), 150);
-  assert.equal(Math.max(...ROUTE_ANCHORS.map((item) => item.x)), 850);
   assert.deepEqual(Object.values(ZONES), [
     'Permission Checkpoint', 'Service Bay', 'Pit Stop', 'Unclassified hold',
   ]);
 });
 
-test('all widened route anchors preserve 52px separation at the mobile map scale', () => {
+test('document keeps Ridge Pass as one original continuous six-part centerline', () => {
+  assert.match(INDEX, /id="ridge-pass-centerline"/);
+  assert.equal((INDEX.match(/href="#ridge-pass-centerline"/g) ?? []).length, 2);
+  for (const name of [
+    'HIGH MOOR', 'PASS LADDER', 'CEDAR CHAIN',
+    'CLOUD RIDGE', 'LONG ARC', 'VALLEY GATE',
+  ]) assert.match(INDEX, new RegExp(`>${name}<`));
+  for (const className of [
+    'segment-high-moor', 'segment-pass-ladder', 'segment-cedar-chain',
+    'segment-cloud-ridge', 'segment-long-arc', 'segment-valley-gate',
+  ]) {
+    assert.match(INDEX, new RegExp(`class="${className}"`));
+    assert.match(STYLES, new RegExp(`\\.${className}\\s*\\{`));
+  }
+  for (const removed of [
+    'Lower Hairpins', 'Cedar Bend', 'Ridge Run', 'Summit Approach',
+    'LOWER HAIRPINS', 'CEDAR BEND', 'RIDGE RUN', 'SUMMIT APPROACH',
+    'Summit Hook', 'Ridge Traverse', 'Rockcut Sweep', 'Cedar Esses',
+    'Needle Stack', 'Lower Gate',
+    'SUMMIT HOOK', 'RIDGE TRAVERSE', 'ROCKCUT SWEEP', 'CEDAR ESSES',
+    'NEEDLE STACK', 'LOWER GATE',
+    'Moonwatch', 'MOONWATCH', 'Shelter', 'SHELTER',
+  ]) {
+    for (const source of [INDEX, STYLES, README, BROWSER_VERIFICATION]) {
+      assert.equal(source.includes(removed), false, removed);
+    }
+    assert.equal(SEGMENTS.includes(removed), false, removed);
+  }
+  assert.doesNotMatch(INDEX, /M96 696 C278 612 716 730 904 626/);
+  assert.equal((INDEX.match(/id="ridge-pass-centerline"/g) ?? []).length, 1);
+});
+
+test('the approved touge is horizontally mirrored while traversal order and height stay fixed', () => {
+  const originalAnchors = [
+    [918, 72], [786, 126], [618, 160], [724, 220],
+    [732, 306], [568, 322], [460, 400], [330, 450],
+    [400, 520], [500, 560], [610, 585], [744, 612],
+    [654, 723], [432, 662], [240, 680], [88, 728],
+  ];
+  assert.deepEqual(ROUTE_ANCHORS.map(({ x, y }) => [x, y]), (
+    originalAnchors.map(([x, y]) => [1000 - x, y])
+  ));
+  assert.ok(ROUTE_ANCHORS[0].x < ROUTE_ANCHORS.at(-1).x);
+  assert.equal(ROUTE_ANCHORS[0].poolLabel, 'High Moor');
+  assert.equal(ROUTE_ANCHORS.at(-1).poolLabel, 'Valley Gate');
+
+  assert.match(INDEX, /data-track-art="ridge-pass"[\s\S]*?transform="translate\(1000 0\) scale\(-1 1\)"/);
+  assert.doesNotMatch(INDEX, /class="segment-labels"[^>]*transform=/);
+  for (const [className, x, y] of [
+    ['label-high-moor', 142, 50],
+    ['label-pass-ladder', 116, 246],
+    ['label-cedar-chain', 626, 358],
+    ['label-cloud-ridge', 568, 558],
+    ['label-long-arc', 350, 674],
+    ['label-valley-gate', 900, 688],
+  ]) {
+    assert.match(INDEX, new RegExp(`class="${className}" x="${x}" y="${y}"`));
+  }
+});
+
+test('all touge route anchors preserve non-overlapping 44px circular mobile targets', () => {
   const mapWidth = 370.4;
   const mapHeight = 580;
-  const target = 52;
+  const targetDiameter = 44;
+  const targetRadius = targetDiameter / 2;
   const anchors = ROUTE_ANCHORS;
-  const boxes = anchors.map((item) => ({
+  const targets = anchors.map((item) => ({
     id: item.id,
-    left: item.x * mapWidth / 1000 - target / 2,
-    right: item.x * mapWidth / 1000 + target / 2,
-    top: item.y * mapHeight / 760 - target / 2,
-    bottom: item.y * mapHeight / 760 + target / 2,
+    x: item.x * mapWidth / 1000,
+    y: item.y * mapHeight / 760,
   }));
-  assert.equal(boxes.every((box) => box.left >= 0 && box.right <= mapWidth
-    && box.top >= 0 && box.bottom <= mapHeight), true);
-  for (let first = 0; first < boxes.length; first += 1) {
-    for (let second = first + 1; second < boxes.length; second += 1) {
-      const left = boxes[first];
-      const right = boxes[second];
-      const overlaps = left.left < right.right && left.right > right.left
-        && left.top < right.bottom && left.bottom > right.top;
-      assert.equal(overlaps, false, `${left.id} overlaps ${right.id}`);
+  assert.equal(targets.every((target) => (
+    target.x - targetRadius >= 0 && target.x + targetRadius <= mapWidth
+    && target.y - targetRadius >= 0 && target.y + targetRadius <= mapHeight
+  )), true);
+  for (let first = 0; first < targets.length; first += 1) {
+    for (let second = first + 1; second < targets.length; second += 1) {
+      const left = targets[first];
+      const right = targets[second];
+      const centerDistance = Math.hypot(left.x - right.x, left.y - right.y);
+      assert.ok(
+        centerDistance >= targetDiameter,
+        `${left.id}/${right.id} centers are only ${centerDistance.toFixed(2)}px apart`,
+      );
     }
   }
 });
@@ -491,14 +572,54 @@ test('route cars share deterministic touge traversal phases and inspection pause
   assert.match(STYLES, /--route-lap-duration:\s*64s/);
   assert.match(
     STYLES,
-    /\.vehicle-anchor\.state-active,\s*\.vehicle-anchor\.state-thinking\s*\{[^}]*animation:\s*touge-traverse var\(--route-lap-duration\) linear infinite/si,
+    /data-track-id="ridge-pass"[\s\S]*?animation:\s*ridge-pass-traverse-desktop var\(--route-lap-duration\) linear infinite/si,
   );
   assert.match(STYLES, /animation-delay:\s*var\(--route-phase,\s*0s\)/);
-  assert.match(
-    STYLES,
-    /\.vehicle-anchor:hover,\s*\.vehicle-anchor:focus-within,\s*\.vehicle-anchor\[data-pinned="true"\]\s*\{[^}]*animation-play-state:\s*paused/si,
+  const ridgeAnimation = STYLES.indexOf('.dashboard-root[data-track-id="ridge-pass"]');
+  const cypressAnimation = STYLES.indexOf('.dashboard-root[data-track-id="cypress-run"]');
+  const nestedMotion = STYLES.indexOf('.state-thinking .car-motion');
+  const inspection = STYLES.indexOf(
+    '.dashboard-root[data-track-id] .vehicle-anchor:hover,',
   );
-  assert.match(STYLES, /@keyframes touge-traverse\s*\{[\s\S]*0%\s*\{[\s\S]*24\.7%[\s\S]*49\.4%[\s\S]*74\.1%[\s\S]*98\.8%[\s\S]*99\.2%[\s\S]*99\.6%[\s\S]*100%/);
+  assert.ok(inspection > ridgeAnimation, 'inspection pause must follow Ridge animation shorthand');
+  assert.ok(inspection > cypressAnimation, 'inspection pause must follow Cypress animation shorthand');
+  assert.ok(inspection > nestedMotion, 'inspection pause must follow nested motion shorthands');
+  assert.match(
+    STYLES.slice(inspection),
+    /\.dashboard-root\[data-track-id\] \.vehicle-anchor:hover,\s*\.dashboard-root\[data-track-id\] \.vehicle-anchor:focus-within,\s*\.dashboard-root\[data-track-id\] \.vehicle-anchor\[data-pinned="true"\]\s*\{[^}]*animation-play-state:\s*paused/si,
+  );
+  assert.match(
+    STYLES.slice(inspection),
+    /\.dashboard-root\[data-track-id\] \.vehicle-anchor:hover \.car-motion,\s*\.dashboard-root\[data-track-id\] \.vehicle-anchor:focus-within \.car-motion,\s*\.dashboard-root\[data-track-id\] \.vehicle-anchor\[data-pinned="true"\] \.car-motion\s*\{[^}]*animation-play-state:\s*paused/si,
+  );
+  assert.doesNotMatch(
+    STYLES,
+    /(?:^|\n)\.vehicle-anchor:hover,\s*\.vehicle-anchor:focus-within/si,
+    'unscoped low-specificity inspection rule must not return',
+  );
+  for (const schedule of ['desktop', 'mobile']) {
+    const start = STYLES.indexOf(`@keyframes ridge-pass-traverse-${schedule}`);
+    const next = STYLES.indexOf(schedule === 'desktop'
+      ? '@keyframes ridge-pass-traverse-mobile'
+      : '@keyframes cypress-run-traverse-desktop');
+    const traverse = STYLES.slice(start, next);
+    for (const point of ['0%', '24.7%', '49.4%', '74.1%', '98.8%', '99.2%', '99.6%', '100%']) {
+      assert.ok(traverse.includes(`${point} {`), `${schedule} missing ${point}`);
+    }
+    assert.ok((traverse.match(/\d+(?:\.\d+)?%\s*\{/g) ?? []).length >= 68);
+    for (const [progress, left, top] of [
+      ['0%', 8.2, 9.4737],
+      ['24.7%', schedule === 'desktop' ? 23.0712 : 21.2887, schedule === 'desktop' ? 31.089 : 33.017],
+      ['49.4%', schedule === 'desktop' ? 68.1559 : 69.7558, schedule === 'desktop' ? 63.7113 : 62.1251],
+      ['74.1%', schedule === 'desktop' ? 33.219 : 27.8917, schedule === 'desktop' ? 94.4652 : 92.6477],
+      ['98.8%', 91.2, 95.7895],
+    ]) {
+      assert.match(
+        traverse,
+        new RegExp(`${progress.replace('.', '\\.')}\\s*\\{[^}]*left:\\s*${left}%;[^}]*top:\\s*${top}%`, 's'),
+      );
+    }
+  }
   assert.match(RENDERER, /const ROUTE_LAP_SECONDS = 64/);
   assert.match(RENDERER, /const ROUTE_PHASE_SECONDS = ROUTE_LAP_SECONDS \/ 16/);
   assert.match(RENDERER, /--route-phase', `\$\{-placement\.slotIndex \* ROUTE_PHASE_SECONDS\}s`/);
@@ -506,12 +627,16 @@ test('route cars share deterministic touge traversal phases and inspection pause
   const mobile = STYLES.slice(STYLES.indexOf('@media (max-width: 759px)'));
   assert.match(
     mobile,
+    /data-track-id="ridge-pass"[\s\S]*?animation-name:\s*ridge-pass-traverse-mobile/si,
+  );
+  assert.match(
+    mobile,
     /\.vehicle-anchor,\s*\.vehicle-anchor \.session-car\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px/si,
   );
   for (const parked of ['waiting-for-permission', 'idle', 'error', 'complete', 'unknown']) {
     assert.doesNotMatch(
       STYLES,
-      new RegExp(`\\.vehicle-anchor\\.state-${parked}[^}]*touge-traverse`, 'si'),
+      new RegExp(`\\.vehicle-anchor\\.state-${parked}[^}]*touge-traverse-(?:desktop|mobile)`, 'si'),
       `${parked} must not traverse`,
     );
   }
@@ -560,6 +685,15 @@ test('CSS and document preserve 44px targets and map-first responsive behavior',
   assert.match(mobile, /\.dashboard-layout\s*\{[^}]*flex-direction:\s*column/si);
   assert.match(mobile, /\.map-stage\s*\{[^}]*height:\s*580px/si);
   assert.match(mobile, /\.pit-stack\s*\{[^}]*display:\s*grid/si);
+  assert.match(
+    mobile,
+    /\.vehicle-anchor \.session-car\s*\{[^}]*border-radius:\s*50%;[^}]*clip-path:\s*circle\(22px at 50% 50%\);[^}]*pointer-events:\s*auto/si,
+  );
+  assert.match(
+    mobile,
+    /\.vehicle-anchor:has\(\.session-car:focus-visible\)::after\s*\{[^}]*border:\s*3px solid var\(--color-focus\);[^}]*pointer-events:\s*none/si,
+  );
+  assert.match(mobile, /\.vehicle-anchor \.car-body\s*\{[^}]*width:\s*24px;[^}]*height:\s*36px/si);
   assert.ok(INDEX.indexOf('class="map-panel"') < INDEX.indexOf('class="pit-stack"'));
   assert.match(STYLES, /overflow-x:\s*hidden/);
   assert.match(STYLES, /\.pit-mount\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*52px\)/si);

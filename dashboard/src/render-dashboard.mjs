@@ -1,5 +1,6 @@
 import { STATE_PRESENTATION, buildAccessibleText } from './session-contract.mjs';
 import { allocateSessions } from './track-layout.mjs';
+import { getTrack } from './track-catalog.mjs';
 
 const NEUTRAL_READOUT = 'Focus or hover a car for exact activity time. Enter or Space pins; Escape clears.';
 const ROUTE_LAP_SECONDS = 64;
@@ -92,6 +93,17 @@ function makeTooltip(documentRef, session, presentation, text, tooltipId) {
   if (session.errorSummary) details.append(`. Error: ${session.errorSummary}`);
   tooltip.append(details);
   return tooltip;
+}
+
+function replaceTooltip(documentRef, tooltip, session, text) {
+  const replacement = makeTooltip(
+    documentRef,
+    session,
+    STATE_PRESENTATION[session.status],
+    text,
+    tooltip.id,
+  );
+  tooltip.replaceChildren(...replacement.childNodes);
 }
 
 function makeCar(documentRef, session, placement, text, target) {
@@ -187,7 +199,7 @@ function overflowSummary(session, text) {
   return `${session.mapCode} ${session.displayName}: ${text.location}. ${text.details}`;
 }
 
-export function renderDashboard(snapshot, root = document) {
+export function renderDashboard(snapshot, root = document, initialTrack = getTrack('ridge-pass')) {
   const renderController = new AbortController();
   const { signal } = renderController;
   const documentRef = root.ownerDocument ?? root;
@@ -198,6 +210,7 @@ export function renderDashboard(snapshot, root = document) {
   const readout = requiredMount(root, '#session-readout');
   const onTrackSummary = requiredMount(root, '#on-track-summary');
   const mapStage = requiredMount(root, '#map-stage');
+  const mapHeading = requiredMount(root, '#map-heading');
   const unknownHold = requiredMount(root, '#unknown-hold');
   const pitMounts = new Map(Object.entries(PIT_SELECTORS)
     .map(([pool, selector]) => [pool, requiredMount(root, selector)]));
@@ -226,12 +239,16 @@ export function renderDashboard(snapshot, root = document) {
   renderOnTrackSummary(documentRef, onTrackSummary, snapshot.sessions);
   unknownHold.hidden = !snapshot.sessions.some((session) => session.status === 'unknown');
 
-  const placements = allocateSessions(snapshot.sessions);
+  let track = getTrack(initialTrack.id);
+  root.dataset.trackId = track.id;
+  mapHeading.textContent = track.title;
+  let placements = allocateSessions(snapshot.sessions, track);
   const placementsById = new Map(placements.map((placement) => [placement.id, placement]));
   const sessionsById = new Map(snapshot.sessions.map((session) => [session.id, session]));
   const textById = new Map();
   const carsById = new Map();
   const buttonsById = new Map();
+  const tooltipsById = new Map();
   const overflows = new Map();
 
   for (const session of snapshot.sessions) {
@@ -249,6 +266,7 @@ export function renderDashboard(snapshot, root = document) {
     else pitMounts.get(target).append(car.wrapper);
     carsById.set(session.id, car.wrapper);
     buttonsById.set(session.id, car.button);
+    tooltipsById.set(session.id, car.wrapper.querySelector('.session-tooltip'));
   }
 
   summary.textContent = summaryText(snapshot);
@@ -262,6 +280,7 @@ export function renderDashboard(snapshot, root = document) {
   }
 
   let pinnedId = null;
+  let viewedId = null;
 
   function show(id) {
     renderReadout(documentRef, readout, sessionsById.get(id), textById.get(id));
@@ -269,6 +288,7 @@ export function renderDashboard(snapshot, root = document) {
 
   function restore() {
     if (pinnedId) show(pinnedId);
+    else if (viewedId) show(viewedId);
     else renderReadout(documentRef, readout);
   }
 
@@ -286,10 +306,22 @@ export function renderDashboard(snapshot, root = document) {
 
   for (const [id, button] of buttonsById) {
     const car = carsById.get(id);
-    car.addEventListener('pointerenter', () => show(id), { signal });
-    car.addEventListener('pointerleave', restore, { signal });
-    button.addEventListener('focus', () => show(id), { signal });
-    button.addEventListener('blur', restore, { signal });
+    car.addEventListener('pointerenter', () => {
+      viewedId = id;
+      show(id);
+    }, { signal });
+    car.addEventListener('pointerleave', () => {
+      if (viewedId === id) viewedId = null;
+      restore();
+    }, { signal });
+    button.addEventListener('focus', () => {
+      viewedId = id;
+      show(id);
+    }, { signal });
+    button.addEventListener('blur', () => {
+      if (viewedId === id) viewedId = null;
+      restore();
+    }, { signal });
     button.addEventListener('click', (event) => {
       if (event.detail !== 0) setPinned(pinnedId === id ? null : id);
     }, { signal });
@@ -307,10 +339,59 @@ export function renderDashboard(snapshot, root = document) {
   }, { signal });
 
   return Object.freeze({
-    placements,
+    get placements() { return placements; },
     overflowCount: [...overflows.values()].flat().length,
+    setTrack(nextTrack) {
+      const candidate = getTrack(nextTrack?.id);
+      if (candidate.id === track.id) return;
+      const nextPlacements = allocateSessions(snapshot.sessions, candidate);
+      const nextById = new Map(nextPlacements.map((placement) => [placement.id, placement]));
+      const prepared = [];
+      for (const session of snapshot.sessions) {
+        const placement = nextById.get(session.id);
+        if (!placement || placement.overflow !== placementsById.get(session.id)?.overflow
+          || placement.pool !== placementsById.get(session.id)?.pool) {
+          throw new Error('Track placement invariant failed');
+        }
+        if (placement.pool !== 'route' || placement.overflow) continue;
+        const text = buildAccessibleText(session, placement, snapshot.generatedAt);
+        const wrapper = carsById.get(session.id);
+        const button = buttonsById.get(session.id);
+        const tooltip = tooltipsById.get(session.id);
+        if (!wrapper || !button || !tooltip) throw new Error('Route car is missing');
+        prepared.push({
+          session, placement, text, wrapper, button, tooltip,
+          x: `${placement.x / 10}%`,
+          y: `${placement.y / 7.6}%`,
+          phase: `${-placement.slotIndex * ROUTE_PHASE_SECONDS}s`,
+          tooltipUp: placement.y >= 560,
+          edgeLeft: placement.x <= 210,
+          edgeRight: placement.x >= 790,
+        });
+      }
+      // Commit begins only after the complete replacement view has been derived.
+      root.dataset.trackId = candidate.id;
+      mapHeading.textContent = candidate.title;
+      for (const item of prepared) {
+        item.wrapper.style.setProperty('--vehicle-x', item.x);
+        item.wrapper.style.setProperty('--vehicle-y', item.y);
+        item.wrapper.style.setProperty('--route-phase', item.phase);
+        item.wrapper.dataset.routeSlot = String(item.placement.slotIndex);
+        item.wrapper.classList.toggle('tooltip-up', item.tooltipUp);
+        item.wrapper.classList.toggle('edge-left', item.edgeLeft);
+        item.wrapper.classList.toggle('edge-right', item.edgeRight);
+        item.button.setAttribute('aria-label', item.text.label);
+        replaceTooltip(documentRef, item.tooltip, item.session, item.text);
+        textById.set(item.session.id, item.text);
+        placementsById.set(item.session.id, item.placement);
+      }
+      placements = nextPlacements;
+      track = candidate;
+      restore();
+    },
     clearInteraction: () => {
       setPinned(null);
+      viewedId = null;
       const active = documentRef.activeElement;
       if (active && root.contains?.(active) && typeof active.blur === 'function') active.blur();
     },
@@ -334,4 +415,23 @@ export function renderDashboardError(error, root = document) {
   for (const message of messages) issues.append(element(documentRef, 'li', '', String(message)));
   alert.append(title, explanation, issues);
   dashboardRoot.replaceChildren(alert);
+}
+
+export function renderApplicationError(error, documentRef = document, dashboardRoot) {
+  const alert = element(documentRef, 'section', 'invalid-snapshot application-failure');
+  alert.setAttribute('role', 'alert');
+  alert.setAttribute('aria-labelledby', 'application-failure-title');
+  const title = element(documentRef, 'h1', '', 'Dashboard could not be displayed');
+  title.id = 'application-failure-title';
+  const explanation = element(
+    documentRef,
+    'p',
+    '',
+    'The dashboard encountered an application failure. No partial or potentially misleading state is shown.',
+  );
+  const issues = element(documentRef, 'ul', 'invalid-snapshot-issues');
+  issues.append(element(documentRef, 'li', '', String(error?.message ?? 'Unknown application error')));
+  alert.append(title, explanation, issues);
+  if (dashboardRoot) dashboardRoot.replaceChildren(alert);
+  else documentRef.body.replaceChildren(alert);
 }

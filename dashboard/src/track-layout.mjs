@@ -1,8 +1,8 @@
 import { STATE_PRESENTATION } from './session-contract.mjs';
+import { getTrack } from './track-catalog.mjs';
 
-export const SEGMENTS = Object.freeze([
-  'Lower Hairpins', 'Cedar Bend', 'Ridge Run', 'Summit Approach',
-]);
+const RIDGE_PASS = getTrack('ridge-pass');
+export const SEGMENTS = RIDGE_PASS.segments;
 export const ZONES = Object.freeze({
   permission: 'Permission Checkpoint',
   error: 'Service Bay',
@@ -11,16 +11,7 @@ export const ZONES = Object.freeze({
 });
 
 const a = (id, poolLabel, x, y, angle = 0) => Object.freeze({ id, poolLabel, x, y, angle });
-export const ROUTE_ANCHORS = Object.freeze([
-  a('R01', SEGMENTS[0], 150, 690, -10), a('R02', SEGMENTS[0], 380, 650, -6),
-  a('R03', SEGMENTS[0], 620, 685, 8), a('R04', SEGMENTS[0], 850, 625, -12),
-  a('R05', SEGMENTS[1], 850, 530, -168), a('R06', SEGMENTS[1], 620, 500, 174),
-  a('R07', SEGMENTS[1], 380, 540, 164), a('R08', SEGMENTS[1], 150, 500, -174),
-  a('R09', SEGMENTS[2], 150, 405, -8), a('R10', SEGMENTS[2], 380, 370, 4),
-  a('R11', SEGMENTS[2], 620, 405, -5), a('R12', SEGMENTS[2], 850, 350, 8),
-  a('R13', SEGMENTS[3], 850, 255, -170), a('R14', SEGMENTS[3], 620, 225, 174),
-  a('R15', SEGMENTS[3], 380, 270, 166), a('R16', SEGMENTS[3], 150, 210, -174),
-]);
+export const ROUTE_ANCHORS = RIDGE_PASS.routeAnchors;
 
 const bays = (prefix, poolLabel, left, right, rows) => Object.freeze(rows.flatMap((y, row) => [
   a(`${prefix}${row * 2 + 1}`, poolLabel, left, y),
@@ -52,8 +43,8 @@ export function preferredRouteIndex(session) {
 }
 
 const poolOf = (session) => STATE_PRESENTATION[session.status].pool;
-const anchorsOf = (pool) => {
-  if (pool === 'route') return ROUTE_ANCHORS;
+const anchorsOf = (pool, track) => {
+  if (pool === 'route') return track.routeAnchors;
   if (pool === 'unknown') return UNKNOWN_HOLD_ANCHORS;
   return PARKED_ANCHORS[pool];
 };
@@ -75,7 +66,7 @@ const overflow = (session, pool) => Object.freeze({
   x: null, y: null, angle: null, slotIndex: null, overflow: true,
 });
 
-export function allocateSessions(sessions) {
+export function allocateSessions(sessions, track = RIDGE_PASS) {
   const pools = new Map();
   for (const session of sessions) {
     const pool = poolOf(session);
@@ -84,7 +75,7 @@ export function allocateSessions(sessions) {
   }
   const byId = new Map();
   for (const [pool, members] of pools) {
-    const anchors = anchorsOf(pool);
+    const anchors = anchorsOf(pool, track);
     const used = new Set();
     for (const session of [...members].sort((l, r) => l.id.localeCompare(r.id))) {
       if (used.size === anchors.length) {

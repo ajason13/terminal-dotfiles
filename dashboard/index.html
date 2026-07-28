@@ -12,7 +12,7 @@
   </head>
   <body>
     <a class="skip-link" href="#pit-stack">Skip to session pits</a>
-    <div id="dashboard-root" class="dashboard-root">
+    <div id="dashboard-root" class="dashboard-root" data-track-id="ridge-pass">
       <header class="dashboard-header">
         <div class="dashboard-title-group">
           <p id="source-label" class="eyebrow">Fixtures · Night sector</p>
@@ -42,7 +42,17 @@
           <div class="panel-heading">
             <div>
               <p class="panel-kicker">Touge operations view</p>
-              <h2 id="map-heading">Original mountain route</h2>
+              <h2 id="map-heading">Ridge Pass</h2>
+            </div>
+            <div class="track-controls">
+              <label for="track-select">Course</label>
+              <select id="track-select">
+                <option value="auto">Auto · workday schedule</option>
+                <option value="ridge-pass">Ridge Pass</option>
+                <option value="cypress-run">Cypress Run</option>
+              </select>
+              <span id="track-status" class="track-status">Active course: Ridge Pass</span>
+              <span id="track-live-region" class="visually-hidden" aria-live="polite"></span>
             </div>
             <div id="session-readout" class="session-readout">
               Focus or hover a car for exact activity time. Enter or Space pins; Escape clears.
@@ -67,32 +77,136 @@
 
               <rect class="map-night" width="1000" height="760" rx="28" />
               <rect class="contour-field" width="1000" height="760" rx="28" />
-              <path class="ridge-shadow" d="M0 314 Q150 224 286 300 T554 274 T790 318 T1000 220 V0 H0Z" />
-              <path class="valley-line" d="M12 465 Q160 390 294 444 T548 430 T748 476 T990 392" />
+              <g id="ridge-pass-art" class="course-art" data-track-art="ridge-pass">
+              <g transform="translate(1000 0) scale(-1 1)">
+              <path id="ridge-pass-centerline" fill="none"
+                d="M918 72 C878 80 832 98 786 126 C720 146 652 145 604 164 C538 190 548 220 616 224 C676 228 738 215 772 238 C817 269 797 300 732 306 C664 312 603 294 568 322 C540 360 500 380 460 400 C420 420 360 430 300 470 C350 515 410 510 456 532 C507 558 550 582 610 585 C714 590 792 630 760 674 C724 724 625 730 548 706 C465 680 403 639 337 646 C289 651 258 671 240 680 C196 699 139 716 88 728" />
+              <path class="ridge-shadow" d="M0 238 Q180 195 340 225 T650 168 T1000 84 V0 H0Z" />
+              <path class="valley-line" d="M10 610 Q164 565 315 607 T592 606 T985 522" />
+              <g class="terrain-contours">
+                <path d="M650 74 Q782 35 978 60" />
+                <path d="M626 102 Q790 58 986 91" />
+                <path d="M18 584 Q160 543 302 577 T585 574" />
+                <path d="M14 626 Q158 590 300 624 T570 621" />
+              </g>
+              <g class="cliff-boundary">
+                <path d="M820 340 Q715 368 637 343" />
+                <path d="M799 337l9 22m-43-15 8 25m-46-16 7 26m-47-21 5 27m-48-30 2 26" />
+              </g>
+              <g class="forest-boundary">
+                <path d="M310 414 Q431 376 538 416" />
+                <path d="M245 520 Q361 478 472 518" />
+                <path d="M18 672 Q153 630 275 672" />
+              </g>
               <g class="tree-line">
-                <path d="M270 100l18 38h-12l16 30h-44l16-30h-12z" />
-                <path d="M704 104l15 32h-10l14 27h-38l14-27h-10z" />
-                <path d="M272 596l18 38h-12l16 30h-44l16-30h-12z" />
-                <path d="M720 580l15 32h-10l14 27h-38l14-27h-10z" />
+                <path d="M322 374l14 30h-10l13 25h-40l13-25h-9z" />
+                <path d="M274 448l17 36h-11l15 28h-42l15-28h-11z" />
+                <path d="M196 523l15 32h-10l14 27h-38l14-27h-10z" />
+                <path d="M98 595l18 38h-12l16 30H76l16-30H80z" />
+                <path d="M823 518l15 32h-10l14 27h-38l14-27h-10z" />
+              </g>
+              <g class="retaining-wall">
+                <path d="M573 365 Q655 348 743 355" />
+                <path d="M590 359v18m31-23v18m31-22v18m31-17v18m31-12v18" />
+                <path d="M404 570 Q493 583 578 567" />
+                <path d="M423 568v18m34-14v18m35-16v18m35-19v18m34-23v18" />
               </g>
 
               <g class="route-bed" filter="url(#road-glow)">
-                <path d="M96 696 C278 612 716 730 904 626" />
-                <path d="M904 626 C950 522 760 454 620 506 S292 568 96 502" />
-                <path d="M96 502 C42 382 296 336 500 394 S798 418 904 348" />
-                <path d="M904 348 C958 230 750 178 612 240 S290 308 96 208" />
+                <use class="road-shoulder" href="#ridge-pass-centerline" />
+                <use class="road-surface" href="#ridge-pass-centerline" />
               </g>
               <g class="route-centerlines">
-                <path class="segment-lower" d="M96 696 C278 612 716 730 904 626" />
-                <path class="segment-cedar" d="M904 626 C950 522 760 454 620 506 S292 568 96 502" />
-                <path class="segment-ridge" d="M96 502 C42 382 296 336 500 394 S798 418 904 348" />
-                <path class="segment-summit" d="M904 348 C958 230 750 178 612 240 S290 308 96 208" />
+                <path class="segment-high-moor"
+                  d="M918 72 C878 80 832 98 786 126" />
+                <path class="segment-pass-ladder"
+                  d="M786 126 C720 146 652 145 604 164 C538 190 548 220 616 224 C676 228 738 215 772 238 C817 269 797 300 732 306 C664 312 603 294 568 322" />
+                <path class="segment-cedar-chain"
+                  d="M568 322 C540 360 500 380 460 400 C420 420 360 430 300 470" />
+                <path class="segment-cloud-ridge"
+                  d="M300 470 C350 515 410 510 456 532 C507 558 550 582 610 585" />
+                <path class="segment-long-arc"
+                  d="M610 585 C714 590 792 630 760 674 C724 724 625 730 548 706 C465 680 403 639 337 646 C289 651 258 671 240 680" />
+                <path class="segment-valley-gate"
+                  d="M240 680 C196 699 139 716 88 728" />
+              </g>
               </g>
               <g class="segment-labels">
-                <text x="500" y="724">LOWER HAIRPINS</text>
-                <text x="500" y="576">CEDAR BEND</text>
-                <text x="500" y="446">RIDGE RUN</text>
-                <text x="500" y="322">SUMMIT APPROACH</text>
+                <text class="label-high-moor" x="142" y="50">HIGH MOOR</text>
+                <text class="label-pass-ladder" x="116" y="246">PASS LADDER</text>
+                <text class="label-cedar-chain" x="626" y="358">CEDAR CHAIN</text>
+                <text class="label-cloud-ridge" x="568" y="558">CLOUD RIDGE</text>
+                <text class="label-long-arc" x="350" y="674">LONG ARC</text>
+                <text class="label-valley-gate" x="900" y="688">VALLEY GATE</text>
+              </g>
+              </g>
+
+              <g id="cypress-run-art" class="course-art cypress-run-art" data-track-art="cypress-run">
+                <rect class="drift-paved-apron" x="22" y="22" width="956" height="716" rx="42" />
+                <path class="drift-service-grid"
+                  d="M54 54H402 M602 54H946 M54 706H402 M602 706H946 M104 42V120 M144 42V120 M184 42V120 M824 626V716 M864 626V716 M904 626V716" />
+                <g class="drift-floodlight-pools">
+                  <ellipse cx="174" cy="132" rx="150" ry="104" />
+                  <ellipse cx="842" cy="330" rx="142" ry="132" />
+                  <ellipse cx="530" cy="510" rx="148" ry="150" />
+                  <ellipse cx="812" cy="660" rx="170" ry="94" />
+                  <ellipse cx="140" cy="552" rx="120" ry="154" />
+                </g>
+                <g class="drift-lane-islands drift-ninety-boxes">
+                  <path d="M118 148H486V222H418V190H118z" />
+                  <path d="M610 322H810L842 344L810 366H610z" />
+                  <path d="M520 478H760V570H700V518H520z" />
+                  <path d="M208 556H398V624H334V590H208z" />
+                </g>
+                <g class="drift-skid-arcs drift-apex-rings">
+                  <path d="M846 246 C928 242 966 292 958 354 C952 410 914 448 846 450" />
+                  <path d="M850 270 C916 268 940 304 936 350 C932 394 904 424 848 426" />
+                  <path d="M892 612 C966 630 978 692 928 734 C884 766 816 738 770 728" />
+                  <path d="M894 638 C942 650 950 692 914 714 C880 734 824 714 778 706" />
+                  <path d="M146 724 C74 716 42 676 48 618 C52 570 44 520 54 482" />
+                  <path d="M150 704 C98 696 74 664 76 620 C78 574 70 526 78 500" />
+                </g>
+                <g class="drift-tire-barriers">
+                  <path d="M566 116v82 M900 298v94 M486 492v94 M92 530v86" />
+                  <path d="M240 142h108 M664 292h106 M590 662h102 M220 682h106" />
+                </g>
+                <g class="drift-cones">
+                  <path d="M126 118l8-18 8 18z M166 120l8-18 8 18z M206 120l8-18 8 18z" />
+                  <path d="M516 148l8-18 8 18z M578 250l8-18 8 18z M900 382l8-18 8 18z M440 470l8-18 8 18z" />
+                  <path d="M496 616l8-18 8 18z M876 690l8-18 8 18z M92 604l8-18 8 18z M128 462l8-18 8 18z" />
+                </g>
+                <g class="drift-clip-markers">
+                  <path d="M516 102h30v16h-30z M548 246h30v16h-30z M904 332h30v16h-30z M824 414h30v16h-30z" />
+                  <path d="M442 462h30v16h-30z M472 612h30v16h-30z M884 696h30v16h-30z M64 588h30v16h-30z" />
+                </g>
+                <path id="cypress-run-centerline" fill="none"
+                  d="M90 90 C180 82 270 105 360 90 C440 78 500 80 520 105 C540 125 545 150 545 185 C545 230 560 270 605 270 C685 270 770 270 850 270 C905 270 932 300 930 350 C928 400 895 425 845 425 C780 425 710 425 650 425 C580 425 520 420 490 445 C468 463 465 495 465 525 C465 560 470 590 515 605 C565 610 620 605 670 605 C760 605 840 595 895 610 C940 625 944 695 910 715 C875 735 820 715 770 705 C690 690 610 690 540 705 C420 725 260 725 150 705 C95 695 70 665 72 620 C74 575 70 530 72 500 C74 465 92 445 125 445 C170 445 215 445 260 445" />
+                <g class="route-bed" filter="url(#road-glow)">
+                  <use class="road-shoulder" href="#cypress-run-centerline" />
+                  <use class="road-surface" href="#cypress-run-centerline" />
+                </g>
+                <g class="route-centerlines drift-route-centerlines">
+                  <path class="segment-launch-line"
+                    d="M90 90 C180 82 270 105 360 90" />
+                  <path class="segment-north-nineties"
+                    d="M360 90 C440 78 500 80 520 105 C540 125 545 150 545 185 C545 230 560 270 605 270 C685 270 770 270 850 270" />
+                  <path class="segment-east-hairpin"
+                    d="M850 270 C905 270 932 300 930 350 C928 400 895 425 845 425 C780 425 710 425 650 425" />
+                  <path class="segment-drop-chute"
+                    d="M650 425 C580 425 520 420 490 445 C468 463 465 495 465 525 C465 560 470 590 515 605 C565 610 620 605 670 605" />
+                  <path class="segment-south-hairpin"
+                    d="M670 605 C760 605 840 595 895 610 C940 625 944 695 910 715 C875 735 820 715 770 705 C690 690 610 690 540 705" />
+                  <path class="segment-west-switchback"
+                    d="M540 705 C420 725 260 725 150 705 C95 695 70 665 72 620 C74 575 70 530 72 500 C74 465 92 445 125 445 C170 445 215 445 260 445" />
+                </g>
+                <g class="segment-labels">
+                  <text class="label-launch-line" x="210" y="66">LAUNCH LINE</text>
+                  <text class="label-north-nineties" x="696" y="246">NORTH NINETIES</text>
+                  <text class="label-east-hairpin" x="842" y="394">EAST HAIRPIN</text>
+                  <text class="label-drop-chute" x="510" y="552">DROP CHUTE</text>
+                  <text class="label-south-hairpin" x="714" y="680">SOUTH HAIRPIN</text>
+                  <text class="label-west-switchback" x="146" y="480">WEST SWITCHBACK</text>
+                </g>
               </g>
             </svg>
 

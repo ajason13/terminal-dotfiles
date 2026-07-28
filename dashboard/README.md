@@ -53,8 +53,15 @@ file is rejected as a whole and fresh fixtures are rendered with a rejection
 notice. **Reset to fixtures** explicitly returns to fixture mode.
 
 The browser never discovers or executes tmux, rereads an imported file, or
-refreshes session data. Its sole interval updates only the displayed age label.
-Stop the preview with `Ctrl-C`.
+refreshes session data. The successful-live-source interval updates only the
+displayed age label. The dashboard is intended for daily use from 08:30 through
+16:30 browser-local time, but it does not close or disable itself outside those
+hours. In course **Auto** mode, one independent one-shot timeout switches the
+visual course at 08:30 and 12:30. Before opening and after closing, the current
+deterministic course remains selected and the timeout targets the next 08:30
+opening; there is no overnight churn. Manual course mode has no boundary
+timeout. Course choice is tab-only and is never stored. Stop the preview with
+`Ctrl-C`.
 
 ## Verify
 
@@ -67,7 +74,7 @@ find dashboard -name '*.mjs' -type f -exec node --check {} \;
 Run all dependency-free tests:
 
 ```sh
-node --test dashboard/tests/dashboard.test.mjs dashboard/tests/live-adapter.test.mjs
+node --test dashboard/tests/*.test.mjs
 ```
 
 Build, lint, and type-check commands are **N/A**. This browser-native project
@@ -117,13 +124,43 @@ validation, source lifecycle, allocation, and rendering are separate modules.
 Tests inject filesystem, process, file-reader, timer, and renderer behavior; the
 test suite never contacts the user's real/default tmux server.
 
-Active/thinking sessions continuously drive the original route from Summit
-Approach through Ridge Run and Cedar Bend to the Lower Hairpins. Their
-deterministic 16-slot allocation supplies evenly separated phase offsets on one
-shared 64-second CSS traversal; there is no animation loop or data timer.
+The browser-local catalog contains exactly two original continuous courses:
+**Ridge Pass**, from upper-left High Moor through Pass Ladder, Cedar Chain,
+Cloud Ridge, and Long Arc to lower-right Valley Gate; and **Cypress Run**, from
+Launch Line through North Nineties, East Hairpin, Drop Chute, South Hairpin,
+and West Switchback. Each course uses 2/3/3/3/3/2 route slots in traversal order
+and has independent static SVG art plus responsive motion schedules. Ridge Pass
+retains its mountain terrain language. Cypress Run is a purpose-built paved
+night mixed technical drift course that fills all four quadrants with
+substantial north/south chutes, six squared 90-degree transitions, two
+signature 180-degree hairpins, compact linked corners, angular lane islands,
+marked clipping points, skid rings, tire barriers, cones, a painted grid, and
+floodlight pools. All geometry and decoration is original local work; no real
+map, coordinate set, route asset, branded facility, or landmark is used.
+
+The native Course selector starts in `Auto · workday schedule`. Automatic
+choice uses two local-calendar slots per day, 08:30–12:30 and 12:30–16:30, in
+stable catalog order. It recomputes only at startup, its one boundary timeout,
+visible `visibilitychange`, `pageshow`, or window focus. At exactly 08:30 the
+first slot begins; at exactly 12:30 the second begins; at exactly 16:30 the
+dashboard is after-hours and the next automatic change is the following local
+day at 08:30. Manual Ridge Pass or Cypress Run selection immediately clears the
+timeout. Course switching never rereads or mutates fixture/live session data,
+and preserves session button identity, focus, and pin state.
+
+The deterministic 16-slot allocation supplies exact four-second phase offsets
+on one shared 64-second CSS traversal. Desktop and mobile waypoint schedules
+are distance-calibrated for their target screen proportions from the same
+canonical centerline. Both use `linear` timing to keep the visible lap at one
+practical constant speed; there is no acceleration, braking, corner easing,
+JavaScript animation loop, or data timer.
 Hover, keyboard focus, or pinning pauses a route car for inspection. Reduced
 motion disables traversal and nested car motion, returning each route car to
-its deterministic static anchor without changing accessible location text.
+its deterministic static anchor without changing accessible location text. At
+the mobile breakpoint, route buttons use a true 44px-diameter circular hit
+region; the original car silhouette is contained inside it while the focus ring
+and tooltip remain unclipped. Tangent-based car orientation and drifting remain
+deferred.
 
 Service Bay, Permission Checkpoint, and the shared idle/complete Pit Stop each
 use six stationary anchors. Unknown observations remain stationary in a

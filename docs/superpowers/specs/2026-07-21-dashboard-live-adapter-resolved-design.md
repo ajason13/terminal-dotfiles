@@ -387,15 +387,23 @@ Let `importNow=Date.now()` and `observed=Date.parse(observedAt)`:
 - reject when `importNow - observed > 900000`;
 - accept both exact boundaries;
 - accept future skew within two minutes and display age as zero until time
-  catches up.
+catches up.
 
 After successful import, exactly one display-only 60000 ms interval updates the
 age label. It never rereads files/tmux, revalidates, rejects, switches source,
 or changes placement. Age labels are fresh below five minutes, aging from five
 through fifteen minutes, and stale above fifteen minutes. An accepted snapshot
 may become stale and remains displayed until explicit import/reset. This timer
-is the only authorized timer and is not data polling; it is cleared on every
+is the only authorized interval and is not data polling; it is cleared on every
 source transition and page unload.
+
+The separately gated multi-track visual design may additionally own exactly one
+Auto-mode, one-shot boundary `setTimeout`, as specified in
+`2026-07-26-dashboard-multi-track-design.md`. That timeout changes only local
+track artwork/placement at a six-hour boundary; it performs no file, tmux,
+process, network, schema, source, or session-data polling. Manual track mode and
+fatal/destroyed application state own no boundary timeout. No other interval,
+timeout loop, or polling mechanism is authorized.
 
 ## Source-mode state machine
 
@@ -464,8 +472,10 @@ send-keys, kill/control commands, WezTerm CLI, arbitrary executable paths,
 shell interpolation, or imported `innerHTML`.
 
 There is no data-polling timer, watcher, loop, daemon, fetch endpoint, implicit
-file access, persistence, analytics, telemetry, or remote service. The sole
-timer exception is the display-only age-label interval specified above.
+file access, persistence, analytics, telemetry, or remote service. The only
+authorized timers are the display-only live age-label interval and the
+separately gated Auto-only visual-course boundary timeout specified above. No
+other interval, timeout loop, or polling mechanism is authorized.
 
 ## Required verification
 

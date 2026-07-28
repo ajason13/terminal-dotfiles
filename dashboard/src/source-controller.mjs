@@ -15,6 +15,8 @@ export function createSourceController({
   setIntervalFn = globalThis.setInterval,
   clearIntervalFn = globalThis.clearInterval,
   windowRef = globalThis.window,
+  initialTrack,
+  onFatal = () => {},
 }) {
   const owner = new AbortController();
   let mode = 'fixtures';
@@ -22,6 +24,7 @@ export function createSourceController({
   let ageTimer;
   let disposed = false;
   let generation = 0;
+  let track = initialTrack;
 
   const isCurrent = (candidate) => !disposed && generation === candidate;
 
@@ -38,7 +41,7 @@ export function createSourceController({
 
   function replaceView(snapshot) {
     currentRender?.destroy?.();
-    currentRender = render(snapshot);
+    currentRender = render(snapshot, track);
   }
 
   async function freshFixtures() {
@@ -77,9 +80,20 @@ export function createSourceController({
     importRegion.setAttribute('aria-busy', 'true');
     sourceNotice.textContent = '';
     sourceLabel.textContent = 'Validating live snapshot…';
+    let snapshot;
     try {
-      const snapshot = await readFile(file, { importNow: now() });
+      snapshot = await readFile(file, { importNow: now() });
+    } catch {
       if (!isCurrent(transition)) return false;
+      try {
+        await commitFixtures('rejected_fixtures', true, transition);
+      } catch (error) {
+        if (isCurrent(transition)) onFatal(error);
+      }
+      return false;
+    }
+    if (!isCurrent(transition)) return false;
+    try {
       replaceView(snapshot);
       mode = 'live';
       sourceLabel.textContent = 'Live · one-shot tmux observation';
@@ -91,9 +105,8 @@ export function createSourceController({
       );
       settleControls();
       return true;
-    } catch {
-      if (!isCurrent(transition)) return false;
-      await commitFixtures('rejected_fixtures', true, transition);
+    } catch (error) {
+      if (isCurrent(transition)) onFatal(error);
       return false;
     }
   }
@@ -102,19 +115,29 @@ export function createSourceController({
     if (disposed || mode === 'validating') return false;
     const transition = ++generation;
     beginTransition();
-    return commitFixtures('fixtures', false, transition);
+    try {
+      return await commitFixtures('fixtures', false, transition);
+    } catch (error) {
+      if (isCurrent(transition)) onFatal(error);
+      return false;
+    }
   }
 
   async function start() {
     if (disposed) return false;
     const transition = ++generation;
-    const snapshot = await freshFixtures();
-    if (!isCurrent(transition)) return false;
-    replaceView(snapshot);
-    sourceLabel.textContent = 'Fixtures · Night sector';
-    sourceAge.textContent = '';
-    sourceNotice.textContent = '';
-    return true;
+    try {
+      const snapshot = await freshFixtures();
+      if (!isCurrent(transition)) return false;
+      replaceView(snapshot);
+      sourceLabel.textContent = 'Fixtures · Night sector';
+      sourceAge.textContent = '';
+      sourceNotice.textContent = '';
+      return true;
+    } catch (error) {
+      if (isCurrent(transition)) onFatal(error);
+      return false;
+    }
   }
 
   fileInput.addEventListener('change', () => {
@@ -129,6 +152,15 @@ export function createSourceController({
     start,
     selectFile,
     reset,
+    setTrack(nextTrack) {
+      if (disposed) return;
+      track = nextTrack;
+      try {
+        currentRender?.setTrack?.(nextTrack);
+      } catch (error) {
+        onFatal(error);
+      }
+    },
     get mode() { return mode; },
     destroy() {
       if (disposed) return;
