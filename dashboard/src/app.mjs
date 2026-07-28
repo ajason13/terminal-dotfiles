@@ -6,6 +6,7 @@ import { createSourceController } from './source-controller.mjs';
 import { TRACK_CATALOG } from './track-catalog.mjs';
 import { createTrackSelectionController } from './track-selection.mjs';
 import { hydrateRouteGeometry } from './hydrate-route-geometry.mjs';
+import { initializeRouteAngleMotion } from './route-motion-capability.mjs';
 
 function exactlyOne(documentRef, selector) {
   const matches = documentRef.querySelectorAll(selector);
@@ -82,6 +83,7 @@ export async function startDashboard(documentRef = document, windowRef = window)
   try {
     hydrateRouteGeometry(documentRef);
     const mounts = preflightDocument(documentRef);
+    initializeRouteAngleMotion(mounts.root, windowRef.CSS);
     let activeTrack;
     trackController = createTrackSelectionController({
       selector: mounts.selector,

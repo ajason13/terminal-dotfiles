@@ -28,6 +28,89 @@ The current Auto label is `Auto · workday schedule`. Exact browser-local
 contracts covered by `multi-track.test.mjs`; this manual procedure does not
 claim wall-clock boundary evidence.
 
+## Tangent orientation and atmosphere evidence — 2026-07-28
+
+The generated schedules retain 527 visible Ridge frames and 533 visible
+Cypress frames per responsive profile. Route geometry, public anchors,
+keyframe percentages/positions, 64-second timing, four-second phases, and the
+hidden reset are unchanged. Generated headings at the start of each lap are
+`98.795deg`/`112.3083deg` for Ridge desktop/mobile and
+`86.0663deg`/`79.6654deg` for Cypress desktop/mobile.
+
+The fixture screenshots use a stable neutral state: every Web Animation is
+paused, traversal is set to `16000ms`, drift is set to 50% of its cycle, and
+smoke is set to its 40% peak. The first active/thinking computed route
+headings were:
+
+```text
+Ridge desktop:   239.812deg, 125.622deg
+Cypress desktop: 90deg, 270deg
+Ridge mobile:    199.379deg, 151.335deg
+Cypress mobile:  111.542deg, 270deg
+```
+
+Exactly six fixture-only references were refreshed:
+`desktop-ridge-pass.png`, `mobile-ridge-pass.png`,
+`desktop-cypress-run.png`, `mobile-cypress-run.png`, and the Ridge aliases
+`desktop.png`/`mobile.png`. They contain no focus, tooltip, pin, live import,
+or failure state.
+
+Normal-speed 64-second recordings were reviewed for both tracks at 1440×900
+and 390×844. Ridge boundary 8 was replayed three times at each viewport. The
+authored turn is abrupt but reads as the car following the visible V-shaped
+road join; it does not reverse, hide the upright state marking, obscure the
+lamps, clip the target, or produce a multi-turn spin. No smoothing was added.
+Active/thinking atmosphere remains faint and behind the car, and the mobile
+single-puff reduction does not obscure the glyph or map code.
+
+Pre-audit verification passed 122/122 dependency-free Node tests and 12/12
+fixture-only Playwright tests. That browser suite covered both viewports with
+clean consoles, responsive 64-second traversal, `<=1px` centerline alignment,
+`>=52px`/`>=44px` target separation, zero target clipping, zero horizontal
+overflow, wrapper/drift hover, focus, and pin pause/resume for the original
+active-route case, atmosphere sibling DOM order and pointer inertness, and
+reduced-motion route/drift disabling. It did not establish the complete
+both-track wrapper/drift/both-pseudo pause matrix or pseudo reduced-motion
+coverage now defined by the expanded suite.
+
+## Post-change QA remediation coverage — 2026-07-28
+
+After independent post-change QA returned FAIL on evidence completeness and
+contextual diagnostics, focused Node coverage was expanded to 127/127 passing
+tests. The named tests now pin:
+
+- outgoing start, every internal boundary, final endpoint, and map-space
+  static-slot derivatives, including nonfinal segment `at=1`;
+- raw `180±1e-9` ambiguity, post-serialization ties, inverse precision,
+  contextual route/profile/frame-or-slot failures, and the four committed
+  pre-heading schedule hashes;
+- exact reset headings and declaration order, unique ordered desktop/mobile
+  static selectors, selector specificity/source order, atmosphere gradients,
+  frame values, envelopes, stacking, mobile reductions, parked exclusion, and
+  cached-failure stale-attribute removal/no-throw behavior.
+
+The expanded Playwright file defines 22 project-expanded cases. The complete
+matrix passed 22/22 after the test-harness corrections and mobile atmosphere
+cascade fix. In addition to the earlier regression surface, named cases cover
+both tracks and both viewports for:
+
+- seven timeline samples plus every internal boundary, midpoint registered
+  angle interpolation, and `<=0.25deg` heading/forward-axis agreement;
+- `98.8/99.2/99.6/100` position, heading, opacity, visibility, and upright
+  glyph/code resets;
+- 25/50/75% drift yaw/inverse and glyph/code upright composition;
+- missing registration, failure positions 1–4, collision/partial
+  registration, and cached success/failure on a second stale root;
+- pseudo width, height, duration, delay, transform, opacity, envelope,
+  intersection, mobile visibility, visible-pixel hit testing, focus/bounds,
+  document overflow, and all-layer inspection pause/resume.
+
+The successful full-matrix command was:
+
+```sh
+npm --prefix dashboard run test:browser
+```
+
 ## Route compiler implementation evidence — 2026-07-28
 
 The fixture-only Playwright suite passed 12/12 tests across its two Chromium
@@ -214,7 +297,7 @@ Route wrappers must compute to the selected catalog course's committed
 760px, and sampled positions must advance over time. Every schedule retains
 the shared 64-second duration and `linear` timing. Hover, focus, and pinned states must compute
 `animation-play-state: paused` and preserve the same sampled position.
-Active nested motion may compute to `active-nudge`, while thinking retains
+Active nested motion computes to `active-drift`, while thinking retains
 `thinking-drift`. Parked and unknown cars must not move between samples.
 Reduced motion must set both route traversal and nested car motion to `none`,
 leaving route cars at their deterministic static anchors.

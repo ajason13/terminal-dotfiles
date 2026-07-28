@@ -129,6 +129,9 @@ function makeCar(documentRef, session, placement, text, target) {
     wrapper.style.gridRow = '1';
   }
 
+  const atmosphere = element(documentRef, 'span', 'car-atmosphere', '');
+  atmosphere.setAttribute('aria-hidden', 'true');
+
   const button = element(documentRef, 'button', 'session-car');
   button.type = 'button';
   button.dataset.sessionId = session.id;
@@ -138,9 +141,6 @@ function makeCar(documentRef, session, placement, text, target) {
   button.setAttribute('aria-describedby', tooltipId);
 
   const angle = element(documentRef, 'span', 'car-angle');
-  const vehicleAngle = target === 'route' ? placement.angle : 0;
-  angle.style.setProperty('--vehicle-angle', `${vehicleAngle}deg`);
-  angle.style.setProperty('--vehicle-upright-angle', `${-vehicleAngle}deg`);
   const motion = element(documentRef, 'span', 'car-motion');
   const body = element(documentRef, 'span', 'car-body');
   const glyph = element(documentRef, 'span', 'car-glyph', presentation.glyph);
@@ -151,7 +151,11 @@ function makeCar(documentRef, session, placement, text, target) {
   motion.append(body);
   angle.append(motion);
   button.append(angle);
-  wrapper.append(button, makeTooltip(documentRef, session, presentation, text, tooltipId));
+  wrapper.append(
+    atmosphere,
+    button,
+    makeTooltip(documentRef, session, presentation, text, tooltipId),
+  );
   return { wrapper, button };
 }
 

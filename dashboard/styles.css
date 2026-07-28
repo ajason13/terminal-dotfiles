@@ -510,6 +510,10 @@ textarea {
 .vehicle-anchor {
   --vehicle-x: 50%;
   --vehicle-y: 50%;
+  --route-heading: 0deg;
+  --route-upright-heading: 0deg;
+  --drift-yaw: 0deg;
+  --drift-upright-yaw: 0deg;
   position: absolute;
   z-index: 3;
   left: var(--vehicle-x);
@@ -521,6 +525,10 @@ textarea {
 }
 
 .pit-vehicle {
+  --route-heading: 0deg;
+  --route-upright-heading: 0deg;
+  --drift-yaw: 0deg;
+  --drift-upright-yaw: 0deg;
   position: relative;
   width: 52px;
   height: 52px;
@@ -529,6 +537,7 @@ textarea {
 
 .session-car {
   position: relative;
+  z-index: 1;
   display: grid;
   width: 52px;
   height: 52px;
@@ -554,8 +563,40 @@ textarea {
   place-items: center;
 }
 
-.car-angle { transform: rotate(var(--vehicle-angle, 0deg)); }
-.car-motion { animation: none; }
+.car-angle { transform: rotate(var(--route-heading, 0deg)); }
+.car-motion {
+  animation: none;
+  transform: translate(0, 0) rotate(var(--drift-yaw, 0deg));
+}
+
+.car-atmosphere {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  transform: rotate(var(--route-heading, 0deg));
+  transform-origin: 50% 50%;
+  pointer-events: none;
+}
+
+.car-atmosphere::before,
+.car-atmosphere::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 20px);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 50% 50%,
+    color-mix(in srgb, var(--state-ink) 32%, transparent) 0 18%,
+    color-mix(in srgb, var(--state-ink) 18%, transparent) 42%,
+    transparent 72%
+  );
+  opacity: 0;
+  pointer-events: none;
+}
 
 .car-body {
   position: relative;
@@ -629,7 +670,10 @@ textarea {
   font-weight: 950;
   line-height: 10px;
   text-shadow: 0 1px 2px var(--color-surface-night);
-  transform: rotate(var(--vehicle-upright-angle, 0deg));
+  transform: rotate(calc(
+    var(--route-upright-heading, 0deg)
+    + var(--drift-upright-yaw, 0deg)
+  ));
 }
 
 .car-code {
@@ -646,7 +690,10 @@ textarea {
   letter-spacing: -.01em;
   line-height: 8px;
   text-shadow: 0 1px 2px var(--color-surface-night);
-  transform: rotate(var(--vehicle-upright-angle, 0deg));
+  transform: rotate(calc(
+    var(--route-upright-heading, 0deg)
+    + var(--drift-upright-yaw, 0deg)
+  ));
 }
 
 .state-active { --state-bg: var(--color-active-bg); --state-ink: var(--color-active-ink); }
@@ -700,12 +747,42 @@ textarea {
   stroke-dasharray: 2 2;
 }
 
-.state-active .car-motion {
-  animation: active-nudge 2.8s ease-in-out infinite;
+.dashboard-root:where([data-route-angle-motion="enabled"])[data-track-id]
+  .vehicle-anchor.state-active .car-motion {
+  animation: active-drift 2.8s ease-in-out infinite;
 }
 
-.state-thinking .car-motion {
+.dashboard-root:where([data-route-angle-motion="enabled"])[data-track-id]
+  .vehicle-anchor.state-thinking .car-motion {
   animation: thinking-drift 3.6s ease-in-out infinite;
+}
+
+.dashboard-root:where([data-route-angle-motion="enabled"])[data-track-id]
+  .vehicle-anchor.state-active > .car-atmosphere::before {
+  width: 5px;
+  height: 5px;
+  animation: active-smoke-left 1.6s linear infinite;
+}
+
+.dashboard-root:where([data-route-angle-motion="enabled"])[data-track-id]
+  .vehicle-anchor.state-active > .car-atmosphere::after {
+  width: 4px;
+  height: 4px;
+  animation: active-smoke-right 1.6s linear -.8s infinite;
+}
+
+.dashboard-root:where([data-route-angle-motion="enabled"])[data-track-id]
+  .vehicle-anchor.state-thinking > .car-atmosphere::before {
+  width: 4px;
+  height: 4px;
+  animation: thinking-smoke-left 2.4s linear infinite;
+}
+
+.dashboard-root:where([data-route-angle-motion="enabled"])[data-track-id]
+  .vehicle-anchor.state-thinking > .car-atmosphere::after {
+  width: 4px;
+  height: 4px;
+  animation: thinking-smoke-right 2.4s linear -1.2s infinite;
 }
 
 .dashboard-root[data-track-id] .vehicle-anchor:hover,
@@ -717,6 +794,24 @@ textarea {
 .dashboard-root[data-track-id] .vehicle-anchor:hover .car-motion,
 .dashboard-root[data-track-id] .vehicle-anchor:focus-within .car-motion,
 .dashboard-root[data-track-id] .vehicle-anchor[data-pinned="true"] .car-motion {
+  animation-play-state: paused;
+}
+
+.dashboard-root[data-track-id]
+  .vehicle-anchor:hover > .car-atmosphere::before,
+.dashboard-root[data-track-id]
+  .vehicle-anchor:focus-within > .car-atmosphere::before,
+.dashboard-root[data-track-id]
+  .vehicle-anchor[data-pinned="true"] > .car-atmosphere::before {
+  animation-play-state: paused;
+}
+
+.dashboard-root[data-track-id]
+  .vehicle-anchor:hover > .car-atmosphere::after,
+.dashboard-root[data-track-id]
+  .vehicle-anchor:focus-within > .car-atmosphere::after,
+.dashboard-root[data-track-id]
+  .vehicle-anchor[data-pinned="true"] > .car-atmosphere::after {
   animation-play-state: paused;
 }
 
@@ -1018,14 +1113,105 @@ textarea {
   color: var(--color-text-muted);
 }
 
-@keyframes active-nudge {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-3px); }
+@keyframes active-drift {
+  0%, 100% {
+    --drift-yaw: -.75deg;
+    --drift-upright-yaw: .75deg;
+    transform: translate(-1px, 0) rotate(var(--drift-yaw));
+  }
+  50% {
+    --drift-yaw: .75deg;
+    --drift-upright-yaw: -.75deg;
+    transform: translate(1px, -2px) rotate(var(--drift-yaw));
+  }
 }
 
 @keyframes thinking-drift {
-  0%, 100% { transform: translateX(-2px) rotate(-1deg); }
-  50% { transform: translateX(2px) rotate(1deg); }
+  0%, 100% {
+    --drift-yaw: -1.5deg;
+    --drift-upright-yaw: 1.5deg;
+    transform: translate(-2px, 0) rotate(var(--drift-yaw));
+  }
+  50% {
+    --drift-yaw: 1.5deg;
+    --drift-upright-yaw: -1.5deg;
+    transform: translate(2px, 0) rotate(var(--drift-yaw));
+  }
+}
+
+@keyframes active-smoke-left {
+  0% {
+    opacity: 0;
+    transform: translate(calc(-50% + 0px), calc(-50% + 0px)) scale(.65);
+  }
+  40% {
+    opacity: .22;
+    transform: translate(calc(-50% + -1px), calc(-50% + 4px)) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + -2px), calc(-50% + 10px)) scale(1.35);
+  }
+}
+
+@keyframes active-smoke-right {
+  0% {
+    opacity: 0;
+    transform: translate(calc(-50% + 0px), calc(-50% + 0px)) scale(.65);
+  }
+  40% {
+    opacity: .22;
+    transform: translate(calc(-50% + 1px), calc(-50% + 4px)) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + 2px), calc(-50% + 10px)) scale(1.35);
+  }
+}
+
+@keyframes thinking-smoke-left {
+  0% {
+    opacity: 0;
+    transform: translate(calc(-50% + 0px), calc(-50% + 0px)) scale(.7);
+  }
+  40% {
+    opacity: .14;
+    transform: translate(calc(-50% + -.75px), calc(-50% + 3px)) scale(.9);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + -1.5px), calc(-50% + 7px)) scale(1.2);
+  }
+}
+
+@keyframes thinking-smoke-right {
+  0% {
+    opacity: 0;
+    transform: translate(calc(-50% + 0px), calc(-50% + 0px)) scale(.7);
+  }
+  40% {
+    opacity: .14;
+    transform: translate(calc(-50% + .75px), calc(-50% + 3px)) scale(.9);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + 1.5px), calc(-50% + 7px)) scale(1.2);
+  }
+}
+
+@keyframes mobile-thinking-smoke {
+  0% {
+    opacity: 0;
+    transform: translate(calc(-50% + 0px), calc(-50% + 0px)) scale(.75);
+  }
+  40% {
+    opacity: .08;
+    transform: translate(calc(-50% + -.5px), calc(-50% + 2px)) scale(.9);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + -1px), calc(-50% + 4px)) scale(1.05);
+  }
 }
 
 @media (max-width: 959px) {
@@ -1079,6 +1265,24 @@ textarea {
   .vehicle-anchor .session-car {
     width: 44px;
     height: 44px;
+  }
+  .vehicle-anchor .car-atmosphere::before,
+  .vehicle-anchor .car-atmosphere::after {
+    top: calc(50% + 16px);
+  }
+  .vehicle-anchor.state-active > .car-atmosphere {
+    display: none;
+  }
+  .dashboard-root:where([data-route-angle-motion="enabled"])[data-track-id]
+    .vehicle-anchor.state-thinking > .car-atmosphere::before {
+    width: 3px;
+    height: 3px;
+    animation-name: mobile-thinking-smoke;
+    animation-duration: 3.2s;
+    animation-delay: 0s;
+  }
+  .vehicle-anchor.state-thinking > .car-atmosphere::after {
+    display: none;
   }
   /*
    * The mobile route target is a true 44px-diameter hit region. Keeping the
@@ -1166,11 +1370,19 @@ textarea {
 
   .car-motion {
     animation: none !important;
+    --drift-yaw: 0deg;
+    --drift-upright-yaw: 0deg;
   }
 
   .vehicle-anchor {
     animation: none !important;
     opacity: 1 !important;
+  }
+
+  .car-atmosphere::before,
+  .car-atmosphere::after {
+    animation: none !important;
+    opacity: 0 !important;
   }
 
   .session-car,

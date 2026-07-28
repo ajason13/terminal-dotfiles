@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
@@ -29,9 +30,13 @@ import {
   auditAnchorTargets,
   compileRoutes,
   generateAnchors,
+  generateSchedule,
+  generateStaticHeadings,
+  headingForDerivative,
   mergeScheduleCandidates,
   serializeFour,
   speedGroupForChord,
+  unwrapHeadings,
   validateSources,
 } from '../scripts/lib/route-compiler.mjs';
 import { LEGACY_ROUTE_MIGRATION } from './fixtures/legacy-route-migration.mjs';
@@ -173,6 +178,170 @@ test('zero derivative anchors fail instead of inventing a normal', () => {
   assert.throws(() => generateAnchors(route, cubics, config), /zero derivative/);
 });
 
+test('responsive heading math aligns the negative-Y car axis and fails closed', () => {
+  const square = { width: 1000, height: 760 };
+  assert.equal(headingForDerivative({ x: 1, y: 0 }, square, config), 90);
+  assert.equal(headingForDerivative({ x: 0, y: 1 }, square, config), -180);
+  assert.equal(headingForDerivative({ x: -1, y: 0 }, square, config), -90);
+  assert.equal(headingForDerivative({ x: 1, y: 1 }, square, config), 135);
+  assert.notEqual(
+    headingForDerivative({ x: 1, y: 1 }, config.profiles[0], config),
+    headingForDerivative({ x: 1, y: 1 }, config.profiles[1], config),
+  );
+  assert.throws(
+    () => headingForDerivative({ x: 1e-12, y: 0 }, square, config),
+    /must exceed 1e-9/,
+  );
+  assert.throws(() => headingForDerivative({ x: NaN, y: 1 }, square, config), /finite/);
+});
+
+test('heading unwrapping chooses the nearest equivalent and rejects ambiguous reversals', () => {
+  assert.deepEqual(unwrapHeadings([179, -179, -178]), [179, 181, 182]);
+  assert.deepEqual(unwrapHeadings([-179, 179, 178]), [-179, -181, -182]);
+  assert.throws(() => unwrapHeadings([0, 180]), /ambiguous 180-degree/);
+  assert.throws(() => unwrapHeadings([0, 180 - 1e-9]), /ambiguous 180-degree/);
+  assert.throws(() => unwrapHeadings([0, 180 + 1e-9]), /ambiguous 180-degree/);
+  assert.throws(() => unwrapHeadings([0, 180 - 2e-9]), /serializes to a 180-degree/);
+  assert.throws(() => unwrapHeadings([0, 180 + 2e-9]), /serializes to a 180-degree/);
+  assert.doesNotThrow(() => unwrapHeadings([0, 180 - 0.00006]));
+  assert.doesNotThrow(() => unwrapHeadings([0, 180 + 0.00006]));
+  assert.throws(() => unwrapHeadings([0, 179.99996]), /serializes to a 180-degree/);
+  assert.equal(serializeFour(-0), '0');
+  assert.equal(serializeFour(-12.34567), '-12.3457');
+});
+
+test('static headings come from responsive source locators in exact slot order', () => {
+  for (const route of [ridge, cypress]) {
+    const cubics = parseCubicPath(route.path, config.viewBox);
+    const desktop = generateStaticHeadings(route, cubics, config.profiles[0], config);
+    const mobile = generateStaticHeadings(route, cubics, config.profiles[1], config);
+    assert.equal(desktop.length, 16);
+    assert.equal(mobile.length, 16);
+    assert.equal(desktop.some((heading, index) => heading.heading !== mobile[index].heading), true);
+    for (const headings of [desktop, mobile]) {
+      headings.forEach(({ heading, uprightHeading }) => {
+        assert.equal(Number(heading) + Number(uprightHeading), 0);
+      });
+    }
+  }
+});
+
+test('frame and slot derivatives use outgoing start/boundary/final and map-space locators', () => {
+  const output = compile();
+  for (const [routeIndex, route] of [ridge, cypress].entries()) {
+    const cubics = parseCubicPath(route.path, config.viewBox);
+    for (const [profileName, profile] of [
+      ['desktop', config.profiles[0]], ['mobile', config.profiles[1]],
+    ]) {
+      const frames = output.schedules[routeIndex][profileName].frames;
+      assert.deepEqual(frames[0].derivative, cubicDerivative(cubics[0], 0));
+      assert.deepEqual(frames.at(-1).derivative, cubicDerivative(cubics.at(-1), 1));
+      for (let boundary = 1; boundary < cubics.length; boundary += 1) {
+        const frame = frames.find(({ kind, index }) => kind === 'boundary' && index === boundary);
+        assert.deepEqual(frame.derivative, cubicDerivative(cubics[boundary], 0));
+      }
+
+      const expected = [];
+      let curveOffset = 0;
+      for (const segment of route.segments) {
+        const segmentCubics = cubics.slice(curveOffset, curveOffset + segment.curveCount);
+        const metrics = pathMetrics(segmentCubics);
+        for (const locator of segment.anchors) {
+          const derivative = locator.at === 1
+            && curveOffset + segment.curveCount < cubics.length
+            ? cubicDerivative(cubics[curveOffset + segment.curveCount], 0)
+            : pointAtDistance(segmentCubics, metrics, metrics.total * locator.at).derivative;
+          expected.push(serializeFour(headingForDerivative(derivative, profile, config)));
+        }
+        curveOffset += segment.curveCount;
+      }
+      assert.deepEqual(
+        output.schedules[routeIndex][`${profileName}StaticHeadings`]
+          .map(({ heading }) => heading),
+        expected,
+      );
+
+      const changedOffsets = clone(route);
+      changedOffsets.segments.forEach((segment) => segment.anchors.forEach((anchor) => {
+        anchor.lateralOffset = anchor.lateralOffset === 27 ? -27 : 27;
+      }));
+      assert.deepEqual(
+        generateStaticHeadings(changedOffsets, cubics, profile, config),
+        output.schedules[routeIndex][`${profileName}StaticHeadings`],
+      );
+      assert.equal(expected.some((heading, slot) => {
+        const anchor = output.trackInput[routeIndex].routeAnchors[slot];
+        const nearest = frames.reduce((best, frame) => (
+          Math.hypot(Number(frame.left) * 10 - anchor.x, Number(frame.top) * 7.6 - anchor.y)
+            < Math.hypot(Number(best.left) * 10 - anchor.x, Number(best.top) * 7.6 - anchor.y)
+            ? frame : best
+        ));
+        return heading !== nearest.heading;
+      }), true, `${route.id}/${profileName} static headings must not come from nearest frames`);
+    }
+  }
+});
+
+test('heading failures include bounded route/profile/frame or slot context', () => {
+  const profile = config.profiles[0];
+  const zeroStart = [{
+    p0: { x: 100, y: 100 }, p1: { x: 100, y: 100 },
+    p2: { x: 300, y: 100 }, p3: { x: 500, y: 100 },
+  }];
+  assert.throws(
+    () => generateSchedule({ id: 'synthetic' }, zeroStart, profile, config),
+    /synthetic\/desktop heading frame 0 scaled derivative magnitude/,
+  );
+
+  const reversal = [
+    {
+      p0: { x: 100, y: 100 }, p1: { x: 200, y: 100 },
+      p2: { x: 400, y: 100 }, p3: { x: 500, y: 100 },
+    },
+    {
+      p0: { x: 500, y: 100 }, p1: { x: 400, y: 100 },
+      p2: { x: 300, y: 100 }, p3: { x: 200, y: 100 },
+    },
+  ];
+  assert.throws(
+    () => generateSchedule({ id: 'synthetic' }, reversal, profile, config),
+    /synthetic\/desktop heading \d+ has an ambiguous 180-degree reversal/,
+  );
+
+  const locators = Array.from({ length: 16 }, (_, index) => ({
+    at: index / 15, lateralOffset: 0,
+  }));
+  assert.throws(() => generateStaticHeadings({
+    id: 'synthetic',
+    segments: [{ curveCount: 1, anchors: locators }],
+  }, zeroStart, profile, config), /synthetic\/desktop slot 0 scaled derivative magnitude/);
+  assert.throws(
+    () => headingForDerivative({ x: Infinity, y: 0 }, profile, config, 'ridge-pass/mobile frame 7'),
+    /ridge-pass\/mobile frame 7 derivative x must be finite/,
+  );
+});
+
+test('all pre-heading schedule percentages, positions, and visible opacity are pinned', () => {
+  const expected = new Map([
+    ['ridge-pass/desktop', '998956742b19fdfe29773145cb7e72aeb79d040c06dc800837dc652abb987bb9'],
+    ['ridge-pass/mobile', '4a52fd7029bf9719db251c8d74217afbef532a4c7e7861d572d49e155a29787f'],
+    ['cypress-run/desktop', '6b9cd28c7def47fdf88ed2a232fb02650f4de75941d061e685719f75c876f2e3'],
+    ['cypress-run/mobile', '9accf028b75799d3b85214236fcd6bfc68844ed9ac4bfc8d95fcf905c486e1e9'],
+  ]);
+  for (const item of compile().schedules) {
+    for (const profileName of ['desktop', 'mobile']) {
+      const frames = item[profileName].frames.map((frame, index, all) => [
+        frame.percent,
+        frame.left,
+        frame.top,
+        index === 0 || index === all.length - 1 ? 1 : null,
+      ]);
+      const digest = createHash('sha256').update(JSON.stringify(frames)).digest('hex');
+      assert.equal(digest, expected.get(`${item.route.id}/${profileName}`));
+    }
+  }
+});
+
 test('generated anchors preserve IDs, capacities, labels, angle and migration tolerance', () => {
   const output = compile();
   output.trackInput.forEach((track, trackIndex) => {
@@ -224,6 +393,42 @@ test('base-plus-boundary schedules have exact current counts and pinned audits',
     kind === 'boundary' && index === 8
   ));
   assert.equal(formerFailure.percent, serializeFour(98.8 * 251.3936 / 512));
+});
+
+test('Ridge boundary 8 preserves authored and preceding-frame profile turns', () => {
+  const output = compile();
+  const cubics = parseCubicPath(ridge.path, config.viewBox);
+  const shortestTurn = (first, second) => Math.abs(
+    ((second - first + 180) % 360 + 360) % 360 - 180,
+  );
+  for (const [profileName, profile, expected] of [
+    ['desktop', config.profiles[0], {
+      percent: '48.5111', previousPercent: '48.4352',
+      authored: 117.871578, preceding: 118.186960,
+    }],
+    ['mobile', config.profiles[1], {
+      percent: '49.2289', previousPercent: '49.207',
+      authored: 64.613624, preceding: 64.701536,
+    }],
+  ]) {
+    const frames = output.schedules[0][profileName].frames;
+    const boundaryIndex = frames.findIndex((frame) => (
+      frame.kind === 'boundary' && frame.index === 8
+    ));
+    const boundary = frames[boundaryIndex];
+    const previous = frames[boundaryIndex - 1];
+    assert.equal(boundary.percent, expected.percent);
+    assert.equal(previous.percent, expected.previousPercent);
+    const incoming = headingForDerivative(cubicDerivative(cubics[7], 1), profile, config);
+    const outgoing = headingForDerivative(cubicDerivative(cubics[8], 0), profile, config);
+    assert.ok(Math.abs(shortestTurn(incoming, outgoing) - expected.authored) <= 0.0001);
+    assert.ok(Math.abs(
+      shortestTurn(
+        headingForDerivative(previous.derivative, profile, config),
+        outgoing,
+      ) - expected.preceding,
+    ) <= 0.0001);
+  }
 });
 
 test('Ridge desktop base-only interval 251 reproduces the audited blocker', () => {
@@ -343,7 +548,74 @@ test('generated serialization is deterministic, owned, precise and reset-stable'
   assert.equal((first.css.match(/99\.2% \{/g) ?? []).length, 4);
   assert.equal((first.css.match(/99\.6% \{/g) ?? []).length, 4);
   assert.equal((first.css.match(/100% \{/g) ?? []).length, 4);
+  assert.equal((first.css.match(/vehicle-anchor\[data-route-slot="\d+"\]/g) ?? []).length, 64);
+  assert.equal((first.css.match(/--route-heading:/g) ?? []).length,
+    2 * (527 + 533 + 3 + 3) + 64);
+  assert.doesNotMatch(first.css, /@property\s+--/);
+  for (const item of first.schedules) {
+    for (const profileName of ['desktop', 'mobile']) {
+      const frames = item[profileName].frames;
+      frames.forEach((frame) => {
+        assert.equal(Number(frame.heading) + Number(frame.uprightHeading), 0);
+      });
+    }
+  }
   assert.equal(serializeFour(-0), '0');
+});
+
+test('generated slot selectors and every frame declaration have exact order and reset headings', () => {
+  const output = compile();
+  const selectorPattern = /\.dashboard-root\[data-track-id="([^"]+)"\] \.vehicle-anchor\[data-route-slot="(\d+)"\]/g;
+  const selectors = [...output.css.matchAll(selectorPattern)].map((match) => ({
+    track: match[1], slot: Number(match[2]),
+  }));
+  assert.equal(selectors.length, 64);
+  for (const track of ['ridge-pass', 'cypress-run']) {
+    assert.deepEqual(
+      selectors.filter((item) => item.track === track).map(({ slot }) => slot),
+      [...Array.from({ length: 16 }, (_, index) => index),
+        ...Array.from({ length: 16 }, (_, index) => index)],
+    );
+  }
+
+  for (const item of output.schedules) {
+    for (const [profileName, animationName] of [
+      ['desktop', item.route.desktopAnimationName],
+      ['mobile', item.route.mobileAnimationName],
+    ]) {
+      const start = output.css.indexOf(`@keyframes ${animationName} {`);
+      const end = output.css.indexOf('\n}\n', start);
+      const declarations = output.css.slice(start, end)
+        .split('\n')
+        .filter((line) => /^\s+\d/.test(line));
+      const frames = item[profileName].frames;
+      assert.equal(declarations.length, frames.length + 3);
+      declarations.forEach((line) => {
+        assert.equal((line.match(/left:/g) ?? []).length, 1);
+        assert.equal((line.match(/top:/g) ?? []).length, 1);
+        assert.equal((line.match(/--route-heading:/g) ?? []).length, 1);
+        assert.equal((line.match(/--route-upright-heading:/g) ?? []).length, 1);
+        assert.ok(line.indexOf('left:') < line.indexOf('top:'));
+        assert.ok(line.indexOf('top:') < line.indexOf('--route-heading:'));
+        assert.ok(line.indexOf('--route-heading:') < line.indexOf('--route-upright-heading:'));
+        if (line.includes('opacity:')) {
+          assert.ok(line.indexOf('--route-upright-heading:') < line.indexOf('opacity:'));
+        }
+      });
+      const first = frames[0];
+      const final = frames.at(-1);
+      for (const [percent, frame, opacity] of [
+        ['98.8', final, '1'], ['99.2', final, '0'],
+        ['99.6', first, '0'], ['100', first, '1'],
+      ]) {
+        const line = declarations.find((value) => value.trimStart().startsWith(`${percent}%`));
+        assert.match(line, new RegExp(
+          `--route-heading: ${frame.heading}deg; `
+            + `--route-upright-heading: ${frame.uprightHeading}deg; opacity: ${opacity};`,
+        ));
+      }
+    }
+  }
 });
 
 test('source digest is order, delimiter, line-ending, and byte sensitive', () => {

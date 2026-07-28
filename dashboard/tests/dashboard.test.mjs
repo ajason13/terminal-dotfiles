@@ -34,6 +34,9 @@ const BROWSER_VERIFICATION = readFileSync(
   new URL('./BROWSER_VERIFICATION.md', import.meta.url), 'utf8',
 );
 const RENDERER = readFileSync(new URL('../src/render-dashboard.mjs', import.meta.url), 'utf8');
+const ROUTE_CAPABILITY = readFileSync(
+  new URL('../src/route-motion-capability.mjs', import.meta.url), 'utf8',
+);
 
 function session(id, status = 'active', overrides = {}) {
   const value = {
@@ -519,9 +522,9 @@ test('focus and meaningful boundary tokens meet WCAG 3:1 non-text contrast', () 
   }
 });
 
-test('motion is assigned only to active and thinking nested car bodies', () => {
-  assert.match(STYLES, /\.state-active\s+\.car-motion\s*\{[^}]*animation:\s*active-nudge/si);
-  assert.match(STYLES, /\.state-thinking\s+\.car-motion\s*\{[^}]*animation:\s*thinking-drift/si);
+test('motion is capability-gated and assigned only to active and thinking route cars', () => {
+  assert.match(STYLES, /:where\(\[data-route-angle-motion="enabled"\]\)\[data-track-id\][\s\S]*?\.vehicle-anchor\.state-active \.car-motion\s*\{[^}]*animation:\s*active-drift/si);
+  assert.match(STYLES, /:where\(\[data-route-angle-motion="enabled"\]\)\[data-track-id\][\s\S]*?\.vehicle-anchor\.state-thinking \.car-motion\s*\{[^}]*animation:\s*thinking-drift/si);
   assert.match(STYLES, /\.car-motion\s*\{[^}]*animation:\s*none/si);
   for (const parked of ['waiting-for-permission', 'idle', 'error', 'complete']) {
     assert.doesNotMatch(
@@ -560,8 +563,8 @@ test('all seven vehicle states retain upright non-color roof markings and distin
   })) {
     assert.equal(STATE_PRESENTATION[status].glyph, glyph);
   }
-  assert.match(STYLES, /\.car-glyph\s*\{[^}]*position:\s*absolute;[^}]*transform:\s*rotate\(var\(--vehicle-upright-angle/si);
-  assert.match(STYLES, /\.car-code\s*\{[^}]*position:\s*absolute;[^}]*transform:\s*rotate\(var\(--vehicle-upright-angle/si);
+  assert.match(STYLES, /\.car-glyph\s*\{[^}]*position:\s*absolute;[^}]*transform:\s*rotate\(calc\([^}]*--route-upright-heading[^}]*--drift-upright-yaw/si);
+  assert.match(STYLES, /\.car-code\s*\{[^}]*position:\s*absolute;[^}]*transform:\s*rotate\(calc\([^}]*--route-upright-heading[^}]*--drift-upright-yaw/si);
   for (const status of [
     'active', 'thinking', 'waiting-for-permission', 'idle', 'error', 'complete', 'unknown',
   ]) {
@@ -580,7 +583,7 @@ test('route cars share deterministic touge traversal phases and inspection pause
   assert.match(STYLES, /animation-delay:\s*var\(--route-phase,\s*0s\)/);
   const ridgeAnimation = STYLES.indexOf('.dashboard-root[data-track-id="ridge-pass"]');
   const cypressAnimation = STYLES.indexOf('.dashboard-root[data-track-id="cypress-run"]');
-  const nestedMotion = STYLES.indexOf('.state-thinking .car-motion');
+  const nestedMotion = STYLES.indexOf('.vehicle-anchor.state-thinking .car-motion');
   const inspection = STYLES.indexOf(
     '.dashboard-root[data-track-id] .vehicle-anchor:hover,',
   );
@@ -652,6 +655,146 @@ test('route cars share deterministic touge traversal phases and inspection pause
   }
 });
 
+test('route, drift, and smoke assignment selectors retain exact pause specificity and order', () => {
+  const normalizedStyles = STYLES.replace(/\s+/g, ' ');
+  const normalize = (value) => value.replace(/\s+/g, ' ');
+  const specificity = (selector) => {
+    const withoutWhere = selector.replace(/:where\([^)]*\)/g, '');
+    const withoutPseudoElements = withoutWhere.replace(/::[\w-]+/g, '');
+    return [
+      (withoutWhere.match(/#[\w-]+/g) ?? []).length,
+      (withoutPseudoElements.match(/\.[\w-]+|\[[^\]]+\]|:[\w-]+/g) ?? []).length,
+      (withoutWhere.match(/::[\w-]+/g) ?? []).length,
+    ];
+  };
+  const selectors = {
+    traversal: '.dashboard-root:where([data-route-angle-motion="enabled"])[data-track-id="ridge-pass"] .vehicle-anchor.state-active',
+    wrapperPause: '.dashboard-root[data-track-id] .vehicle-anchor:hover',
+    drift: '.dashboard-root:where([data-route-angle-motion="enabled"])[data-track-id] .vehicle-anchor.state-active .car-motion',
+    driftPause: '.dashboard-root[data-track-id] .vehicle-anchor:hover .car-motion',
+    smoke: '.dashboard-root:where([data-route-angle-motion="enabled"])[data-track-id] .vehicle-anchor.state-active > .car-atmosphere::before',
+    smokePause: '.dashboard-root[data-track-id]\n  .vehicle-anchor:hover > .car-atmosphere::before',
+  };
+  assert.deepEqual(specificity(selectors.traversal), [0, 4, 0]);
+  assert.deepEqual(specificity(selectors.wrapperPause), [0, 4, 0]);
+  assert.deepEqual(specificity(selectors.drift), [0, 5, 0]);
+  assert.deepEqual(specificity(selectors.driftPause), [0, 5, 0]);
+  assert.deepEqual(specificity(selectors.smoke), [0, 5, 1]);
+  assert.deepEqual(specificity(selectors.smokePause), [0, 5, 1]);
+  for (const selector of Object.values(selectors)) {
+    assert.ok(normalizedStyles.includes(normalize(selector)), selector);
+  }
+  assert.ok(normalizedStyles.indexOf(normalize(selectors.wrapperPause))
+    > normalizedStyles.indexOf(normalize(selectors.traversal)));
+  assert.ok(normalizedStyles.indexOf(normalize(selectors.driftPause))
+    > normalizedStyles.indexOf(normalize(selectors.drift)));
+  assert.ok(normalizedStyles.indexOf(normalize(selectors.smokePause))
+    > normalizedStyles.indexOf(normalize(selectors.smoke)));
+  for (const track of ['ridge-pass', 'cypress-run']) {
+    for (const state of ['active', 'thinking']) {
+      assert.ok(normalizedStyles.includes(
+        `.dashboard-root:where([data-route-angle-motion="enabled"])[data-track-id="${track}"] `
+          + `.vehicle-anchor.state-${state}`,
+      ));
+      for (const suffix of [
+        ' .car-motion',
+        ' > .car-atmosphere::before',
+        ' > .car-atmosphere::after',
+      ]) {
+        if (suffix === ' .car-motion' || track === 'ridge-pass') {
+          assert.ok(normalizedStyles.includes(
+            `.dashboard-root:where([data-route-angle-motion="enabled"])[data-track-id] `
+              + `.vehicle-anchor.state-${state}${suffix}`,
+          ));
+        }
+      }
+    }
+  }
+  for (const state of [':hover', ':focus-within', '[data-pinned="true"]']) {
+    for (const suffix of ['', ' .car-motion', ' > .car-atmosphere::before',
+      ' > .car-atmosphere::after']) {
+      assert.ok(normalizedStyles.includes(
+        `.dashboard-root[data-track-id] .vehicle-anchor${state}${suffix}`,
+      ));
+    }
+  }
+});
+
+test('atmosphere CSS pins hierarchy, gradient, frames, stacking, and mobile reductions', () => {
+  const normalized = BASE_STYLES.replace(/\s+/g, ' ');
+  assert.match(normalized, /\.car-atmosphere \{[^}]*z-index: 0;[^}]*inset: 0;[^}]*width: 100%;[^}]*height: 100%;[^}]*overflow: visible;[^}]*rotate\(var\(--route-heading, 0deg\)\)[^}]*pointer-events: none;/);
+  assert.match(normalized, /\.session-car \{[^}]*z-index: 1;/);
+  assert.match(normalized, /\.session-tooltip \{[^}]*z-index: 20;/);
+  assert.match(normalized, /\.car-glyph \{[^}]*z-index: 2;/);
+  assert.match(normalized, /\.car-code \{[^}]*z-index: 2;/);
+  assert.ok(normalized.includes(
+    'radial-gradient( circle at 50% 50%, '
+      + 'color-mix(in srgb, var(--state-ink) 32%, transparent) 0 18%, '
+      + 'color-mix(in srgb, var(--state-ink) 18%, transparent) 42%, transparent 72% )',
+  ));
+  assert.doesNotMatch(
+    BASE_STYLES.match(/\.car-atmosphere::before,[\s\S]*?\n\}/)?.[0] ?? '',
+    /filter|blur|shadow|mix-blend/,
+  );
+  for (const expected of [
+    ['active-smoke-left', '5px', '1.6s', '0s'],
+    ['active-smoke-right', '4px', '1.6s', '-.8s'],
+    ['thinking-smoke-left', '4px', '2.4s', '0s'],
+    ['thinking-smoke-right', '4px', '2.4s', '-1.2s'],
+  ]) {
+    const [name, size, duration, delay] = expected;
+    assert.match(normalized, new RegExp(
+      `width: ${size}; height: ${size}; animation: ${name} ${duration} linear `
+        + `${delay === '0s' ? '' : `${delay} `}infinite;`,
+    ));
+  }
+  for (const frame of [
+    'translate(calc(-50% + -1px), calc(-50% + 4px)) scale(1)',
+    'translate(calc(-50% + 2px), calc(-50% + 10px)) scale(1.35)',
+    'translate(calc(-50% + -.75px), calc(-50% + 3px)) scale(.9)',
+    'translate(calc(-50% + 1.5px), calc(-50% + 7px)) scale(1.2)',
+    'translate(calc(-50% + -.5px), calc(-50% + 2px)) scale(.9)',
+    'translate(calc(-50% + -1px), calc(-50% + 4px)) scale(1.05)',
+  ]) assert.ok(normalized.includes(frame), frame);
+  const mobile = normalized.slice(normalized.indexOf('@media (max-width: 759px)'));
+  assert.match(mobile, /top: calc\(50% \+ 16px\)/);
+  assert.match(mobile, /\.vehicle-anchor\.state-active > \.car-atmosphere \{ display: none;/);
+  assert.match(mobile, /\.dashboard-root:where\(\[data-route-angle-motion="enabled"\]\)\[data-track-id\]\s+\.vehicle-anchor\.state-thinking > \.car-atmosphere::before \{[^}]*width: 3px;[^}]*height: 3px;[^}]*animation-name: mobile-thinking-smoke;[^}]*animation-duration: 3.2s;/);
+  assert.match(mobile, /\.vehicle-anchor\.state-thinking > \.car-atmosphere::after \{ display: none;/);
+  for (const parked of ['waiting-for-permission', 'idle', 'error', 'complete', 'unknown']) {
+    assert.doesNotMatch(BASE_STYLES, new RegExp(
+      `state-${parked}[^,{]*(?:active-drift|thinking-drift|smoke)`,
+    ));
+  }
+  const envelope = (size, frames) => {
+    const radius = size / 2;
+    return frames.reduce((bounds, [x, y, scale]) => ({
+      minX: Math.min(bounds.minX, x - radius * scale),
+      maxX: Math.max(bounds.maxX, x + radius * scale),
+      minY: Math.min(bounds.minY, y - radius * scale),
+      maxY: Math.max(bounds.maxY, y + radius * scale),
+    }), { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity });
+  };
+  const union = (...bounds) => ({
+    minX: Math.min(...bounds.map(({ minX }) => minX)),
+    maxX: Math.max(...bounds.map(({ maxX }) => maxX)),
+    minY: Math.min(...bounds.map(({ minY }) => minY)),
+    maxY: Math.max(...bounds.map(({ maxY }) => maxY)),
+  });
+  assert.deepEqual(union(
+    envelope(5, [[0, 0, 0.65], [-1, 4, 1], [-2, 10, 1.35]]),
+    envelope(4, [[0, 0, 0.65], [1, 4, 1], [2, 10, 1.35]]),
+  ), { minX: -5.375, maxX: 4.7, minY: -1.625, maxY: 13.375 });
+  assert.deepEqual(union(
+    envelope(4, [[0, 0, 0.7], [-0.75, 3, 0.9], [-1.5, 7, 1.2]]),
+    envelope(4, [[0, 0, 0.7], [0.75, 3, 0.9], [1.5, 7, 1.2]]),
+  ), { minX: -3.9, maxX: 3.9, minY: -1.4, maxY: 9.4 });
+  assert.deepEqual(
+    envelope(3, [[0, 0, 0.75], [-0.5, 2, 0.9], [-1, 4, 1.05]]),
+    { minX: -2.575, maxX: 1.125, minY: -1.125, maxY: 5.575 },
+  );
+});
+
 test('On Track summary uses accessible counts and distinct non-color state encoding', () => {
   assert.match(STYLES, /\.on-track-count\.state-active\s+\.on-track-glyph\s*\{[^}]*border-top-width:\s*4px/si);
   assert.match(STYLES, /\.on-track-count\.state-thinking\s*\{[^}]*repeating-linear-gradient/si);
@@ -659,10 +802,11 @@ test('On Track summary uses accessible counts and distinct non-color state encod
 });
 
 test('reverse-facing car labels counter-rotate upright and the document has a local favicon', () => {
-  assert.match(RENDERER, /const vehicleAngle = target === 'route' \? placement\.angle : 0/);
-  assert.match(RENDERER, /--vehicle-upright-angle', `\$\{-vehicleAngle\}deg`/);
-  assert.match(STYLES, /\.car-glyph\s*\{[^}]*transform:\s*rotate\(var\(--vehicle-upright-angle/si);
-  assert.match(STYLES, /\.car-code\s*\{[^}]*transform:\s*rotate\(var\(--vehicle-upright-angle/si);
+  assert.doesNotMatch(RENDERER, /--vehicle-(?:upright-)?angle/);
+  assert.match(RENDERER, /const atmosphere = element\(documentRef, 'span', 'car-atmosphere', ''\)/);
+  assert.match(RENDERER, /wrapper\.append\(\s*atmosphere,\s*button,/s);
+  assert.match(STYLES, /\.car-angle\s*\{\s*transform:\s*rotate\(var\(--route-heading,\s*0deg\)\)/si);
+  assert.match(STYLES, /--route-upright-heading[\s\S]*--drift-upright-yaw/si);
   assert.match(INDEX, /<link rel="icon" href="data:,">/);
 });
 
@@ -709,4 +853,68 @@ test('CSS and document preserve 44px targets and map-first responsive behavior',
   assert.match(STYLES, /\.pit-mount\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*52px\)/si);
   assert.match(STYLES, /\.session-readout\s*\{[^}]*overflow-wrap:\s*anywhere/si);
   assert.doesNotMatch(STYLES, /status-rail|session-list|rail-item/);
+});
+
+test('registered-angle capability attempts all four properties and caches fail-static results', async () => {
+  const names = [
+    '--route-heading',
+    '--route-upright-heading',
+    '--drift-yaw',
+    '--drift-upright-yaw',
+  ];
+  for (const failureIndex of [-1, 0, 1, 2, 3]) {
+    const { initializeRouteAngleMotion } = await import(
+      `../src/route-motion-capability.mjs?case=${failureIndex}`
+    );
+    const calls = [];
+    const attributes = new Map([['data-route-angle-motion', 'stale']]);
+    const root = {
+      setAttribute(name, value) { attributes.set(name, value); },
+      removeAttribute(name) { attributes.delete(name); },
+    };
+    const cssRef = {
+      registerProperty(descriptor) {
+        calls.push(descriptor);
+        if (calls.length - 1 === failureIndex) {
+          throw Object.assign(new Error('collision'), { name: 'InvalidModificationError' });
+        }
+      },
+    };
+    assert.equal(initializeRouteAngleMotion(root, cssRef), failureIndex === -1);
+    assert.deepEqual(calls.map(({ name }) => name), names);
+    calls.forEach((descriptor, index) => assert.deepEqual(descriptor, {
+      name: names[index],
+      syntax: '<angle>',
+      inherits: true,
+      initialValue: '0deg',
+    }));
+    assert.equal(attributes.get('data-route-angle-motion'),
+      failureIndex === -1 ? 'enabled' : undefined);
+    assert.equal(initializeRouteAngleMotion(root, {
+      registerProperty() { assert.fail('cached initialization must not register again'); },
+    }), failureIndex === -1);
+    const secondAttributes = new Map([['data-route-angle-motion', 'stale']]);
+    const secondRoot = {
+      setAttribute(name, value) { secondAttributes.set(name, value); },
+      removeAttribute(name) { secondAttributes.delete(name); },
+    };
+    assert.doesNotThrow(() => initializeRouteAngleMotion(secondRoot, cssRef));
+    assert.equal(secondAttributes.get('data-route-angle-motion'),
+      failureIndex === -1 ? 'enabled' : undefined);
+  }
+
+  const { initializeRouteAngleMotion } = await import(
+    '../src/route-motion-capability.mjs?case=missing'
+  );
+  const root = {
+    removed: false,
+    removeAttribute() { this.removed = true; },
+  };
+  assert.equal(initializeRouteAngleMotion(root, undefined), false);
+  assert.equal(root.removed, true);
+  assert.doesNotThrow(() => initializeRouteAngleMotion({
+    removeAttribute() { throw new Error('synthetic DOM mutation failure'); },
+  }, undefined));
+  assert.doesNotMatch(STYLES, /@property\s+--/);
+  assert.doesNotMatch(ROUTE_CAPABILITY, /console\.|setTimeout|setInterval|localStorage|sessionStorage/);
 });

@@ -1,5 +1,5 @@
 import {
-  parseCubicPath, pathMetrics, pointAtDistance, serializeCubicPath,
+  cubicDerivative, parseCubicPath, pathMetrics, pointAtDistance, serializeCubicPath,
 } from './svg-cubic-path.mjs';
 
 export const CAPACITIES = Object.freeze([2, 3, 3, 3, 3, 2]);
@@ -231,15 +231,71 @@ export function generateAnchors(route, cubics, config) {
   return anchors;
 }
 
-function candidate(kind, index, fraction, point, config) {
+function candidate(kind, index, fraction, located, config) {
   return {
     kind,
     index,
     fraction,
     percent: serializeFour(98.8 * fraction),
-    left: serializeFour(point.x / config.viewBox.width * 100),
-    top: serializeFour(point.y / config.viewBox.height * 100),
+    left: serializeFour(located.point.x / config.viewBox.width * 100),
+    top: serializeFour(located.point.y / config.viewBox.height * 100),
+    derivative: located.derivative,
   };
+}
+
+export function headingForDerivative(derivative, profile, config, context = 'tangent') {
+  requireFinite(derivative?.x, `${context} derivative x`);
+  requireFinite(derivative?.y, `${context} derivative y`);
+  const x = derivative.x * profile.width / config.viewBox.width;
+  const y = derivative.y * profile.height / config.viewBox.height;
+  requireFinite(x, `${context} scaled derivative x`);
+  requireFinite(y, `${context} scaled derivative y`);
+  if (!(Math.hypot(x, y) > 1e-9)) {
+    throw new RangeError(`${context} scaled derivative magnitude must exceed 1e-9`);
+  }
+  const raw = Math.atan2(y, x) * 180 / Math.PI + 90;
+  return ((raw + 180) % 360 + 360) % 360 - 180;
+}
+
+export function unwrapHeadings(rawHeadings, label = 'route heading') {
+  if (!Array.isArray(rawHeadings) || rawHeadings.length === 0) {
+    throw new TypeError(`${label} sequence must be nonempty`);
+  }
+  const unwrapped = [rawHeadings[0]];
+  for (let index = 1; index < rawHeadings.length; index += 1) {
+    const previous = unwrapped[index - 1];
+    const raw = rawHeadings[index];
+    requireFinite(raw, `${label} ${index}`);
+    const delta = ((raw - previous + 180) % 360 + 360) % 360 - 180;
+    if (Math.abs(Math.abs(delta) - 180) <= 1e-9) {
+      throw new RangeError(`${label} ${index} has an ambiguous 180-degree reversal`);
+    }
+    unwrapped.push(previous + delta);
+  }
+  const serialized = unwrapped.map(roundFour);
+  for (let index = 1; index < serialized.length; index += 1) {
+    if (!(Math.abs(serialized[index] - serialized[index - 1]) < 180)) {
+      throw new RangeError(`${label} ${index} serializes to a 180-degree reversal`);
+    }
+  }
+  return serialized;
+}
+
+function addFrameHeadings(frames, profile, config, label) {
+  const headings = unwrapHeadings(
+    frames.map(({ derivative }, index) => headingForDerivative(
+      derivative,
+      profile,
+      config,
+      `${label} frame ${index}`,
+    )),
+    label,
+  );
+  return frames.map((frame, index) => ({
+    ...frame,
+    heading: serializeFour(headings[index]),
+    uprightHeading: serializeFour(-headings[index]),
+  }));
 }
 
 export function mergeScheduleCandidates(candidates) {
@@ -293,16 +349,24 @@ export function generateSchedule(route, cubics, profile, config) {
       'base',
       index,
       fraction,
-      pointAtDistance(cubics, metrics, metrics.total * fraction).point,
+      pointAtDistance(cubics, metrics, metrics.total * fraction),
       config,
     ));
   }
   let cumulative = 0;
   for (let index = 1; index < cubics.length; index += 1) {
     cumulative += metrics.lengths[index - 1];
-    candidates.push(candidate('boundary', index, cumulative / metrics.total, cubics[index].p0, config));
+    candidates.push(candidate('boundary', index, cumulative / metrics.total, {
+      point: cubics[index].p0,
+      derivative: cubicDerivative(cubics[index], 0),
+    }, config));
   }
-  const frames = mergeScheduleCandidates(candidates);
+  const frames = addFrameHeadings(
+    mergeScheduleCandidates(candidates),
+    profile,
+    config,
+    `${route.id}/${profile.id} heading`,
+  );
   let maximumDeviation = 0;
   for (let index = 0; index < frames.length - 1; index += 1) {
     const first = frames[index];
@@ -436,12 +500,61 @@ function renderKeyframes(name, frames) {
   const last = frames.at(-1);
   const visible = frames.map((frame, index) => (
     `  ${frame.percent}% { left: ${frame.left}%; top: ${frame.top}%;`
+      + ` --route-heading: ${frame.heading}deg;`
+      + ` --route-upright-heading: ${frame.uprightHeading}deg;`
       + `${index === 0 || index === frames.length - 1 ? ' opacity: 1;' : ''} }`
   )).join('\n');
   return `@keyframes ${name} {\n${visible}\n`
-    + `  99.2% { left: ${last.left}%; top: ${last.top}%; opacity: 0; }\n`
-    + `  99.6% { left: ${first.left}%; top: ${first.top}%; opacity: 0; }\n`
-    + `  100% { left: ${first.left}%; top: ${first.top}%; opacity: 1; }\n}\n`;
+    + `  99.2% { left: ${last.left}%; top: ${last.top}%; --route-heading: ${last.heading}deg; --route-upright-heading: ${last.uprightHeading}deg; opacity: 0; }\n`
+    + `  99.6% { left: ${first.left}%; top: ${first.top}%; --route-heading: ${first.heading}deg; --route-upright-heading: ${first.uprightHeading}deg; opacity: 0; }\n`
+    + `  100% { left: ${first.left}%; top: ${first.top}%; --route-heading: ${first.heading}deg; --route-upright-heading: ${first.uprightHeading}deg; opacity: 1; }\n}\n`;
+}
+
+export function generateStaticHeadings(route, cubics, profile, config) {
+  const headings = [];
+  let curveOffset = 0;
+  for (const segment of route.segments) {
+    const segmentCubics = cubics.slice(curveOffset, curveOffset + segment.curveCount);
+    const metrics = pathMetrics(segmentCubics);
+    for (const locator of segment.anchors) {
+      let derivative;
+      if (locator.at === 1 && curveOffset + segment.curveCount < cubics.length) {
+        derivative = cubicDerivative(cubics[curveOffset + segment.curveCount], 0);
+      } else {
+        derivative = pointAtDistance(
+          segmentCubics,
+          metrics,
+          metrics.total * locator.at,
+        ).derivative;
+      }
+      const slot = headings.length;
+      const heading = roundFour(headingForDerivative(
+        derivative,
+        profile,
+        config,
+        `${route.id}/${profile.id} slot ${slot}`,
+      ));
+      headings.push({
+        heading: serializeFour(heading),
+        uprightHeading: serializeFour(-heading),
+      });
+    }
+    curveOffset += segment.curveCount;
+  }
+  if (headings.length !== 16) {
+    throw new RangeError(`${route.id}/${profile.id} must generate exactly 16 static headings`);
+  }
+  return headings;
+}
+
+function renderStaticHeadings(trackId, headings, indent = '') {
+  return headings.map((heading, slot) => (
+    `${indent}.dashboard-root[data-track-id="${trackId}"] `
+      + `.vehicle-anchor[data-route-slot="${slot}"] {\n`
+      + `${indent}  --route-heading: ${heading.heading}deg;\n`
+      + `${indent}  --route-upright-heading: ${heading.uprightHeading}deg;\n`
+      + `${indent}}\n`
+  )).join('\n');
 }
 
 export function compileRoutes(config, routeSources, digest) {
@@ -474,14 +587,17 @@ export function compileRoutes(config, routeSources, digest) {
       route,
       desktop: generateSchedule(route, cubics, config.profiles[0], config),
       mobile: generateSchedule(route, cubics, config.profiles[1], config),
+      desktopStaticHeadings: generateStaticHeadings(route, cubics, config.profiles[0], config),
+      mobileStaticHeadings: generateStaticHeadings(route, cubics, config.profiles[1], config),
     });
   }
   const header = `// @generated by dashboard/scripts/compile-routes.mjs; DO NOT EDIT.\n// sources-sha256: ${digest}\n// Run: npm --prefix dashboard run routes:write\n`;
   const mjs = `${header}\nconst deepFreeze = (value) => {\n  if (value && typeof value === 'object' && !Object.isFrozen(value)) {\n    Object.freeze(value);\n    for (const child of Object.values(value)) deepFreeze(child);\n  }\n  return value;\n};\n\nexport const GENERATED_TRACK_INPUT = deepFreeze(${JSON.stringify(trackInput, null, 2)});\n\nexport const GENERATED_ROUTE_GEOMETRY = deepFreeze(${JSON.stringify(geometry, null, 2)});\n`;
   let css = `/* @generated by dashboard/scripts/compile-routes.mjs; DO NOT EDIT.\n * sources-sha256: ${digest}\n * Run: npm --prefix dashboard run routes:write\n */\n\n`;
   for (const item of schedules) {
-    css += `.dashboard-root[data-track-id="${item.route.id}"] .vehicle-anchor.state-active,\n`
-      + `.dashboard-root[data-track-id="${item.route.id}"] .vehicle-anchor.state-thinking {\n`
+    css += `${renderStaticHeadings(item.route.id, item.desktopStaticHeadings)}\n`
+      + `.dashboard-root:where([data-route-angle-motion="enabled"])[data-track-id="${item.route.id}"] .vehicle-anchor.state-active,\n`
+      + `.dashboard-root:where([data-route-angle-motion="enabled"])[data-track-id="${item.route.id}"] .vehicle-anchor.state-thinking {\n`
       + `  animation: ${item.route.desktopAnimationName} var(--route-lap-duration) linear infinite;\n`
       + '  animation-delay: var(--route-phase, 0s);\n}\n\n'
       + `${renderKeyframes(item.route.desktopAnimationName, item.desktop.frames)}\n`
@@ -489,8 +605,9 @@ export function compileRoutes(config, routeSources, digest) {
   }
   css += '@media (max-width: 759px) {\n';
   for (const item of schedules) {
-    css += `  .dashboard-root[data-track-id="${item.route.id}"] .vehicle-anchor.state-active,\n`
-      + `  .dashboard-root[data-track-id="${item.route.id}"] .vehicle-anchor.state-thinking {\n`
+    css += `${renderStaticHeadings(item.route.id, item.mobileStaticHeadings, '  ')}\n`
+      + `  .dashboard-root:where([data-route-angle-motion="enabled"])[data-track-id="${item.route.id}"] .vehicle-anchor.state-active,\n`
+      + `  .dashboard-root:where([data-route-angle-motion="enabled"])[data-track-id="${item.route.id}"] .vehicle-anchor.state-thinking {\n`
       + `    animation-name: ${item.route.mobileAnimationName};\n  }\n`;
   }
   css += '}\n';

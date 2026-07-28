@@ -25,9 +25,21 @@ automatic terminal access, or app/runtime dependency is introduced.
    with no blockers; commit/push is authorized. Delivery evidence and sign-off
    are recorded in
    `docs/superpowers/specs/2026-07-28-dashboard-route-compiler-design.md`.
-3. **Tangent orientation and atmosphere — next.** Derive car orientation from the
-   route tangent and add only subtle drift/smoke effects. Every effect must be
-   safe under `prefers-reduced-motion` and must not obscure state or controls.
+3. **Tangent orientation and atmosphere — complete.** Focused independent
+   pre-implementation and final post-change reviews returned PASS with no
+   blockers. The compiler emits responsive tangent and static slot headings;
+   the runtime fails static unless all four registered-angle properties
+   succeed; and active/thinking cars use bounded deterministic drift and a
+   heading-following pointer-inert atmosphere sibling. Verification passed:
+   `routes:check`, 127/127 unit tests, 22/22 desktop/mobile Playwright cases,
+   browser syntax, and `git diff --check`; ports 43917/43918 were clear and
+   six screenshots were refreshed. The mobile thinking-puff selector cascade
+   is corrected to 3px/3.2s/0s. Remaining manual-only risk is nonblocking:
+   normal-speed reviews accepted the authored abrupt Ridge boundary 8, and
+   the capability browser matrix samples active smoke while mobile thinking
+   gating is static plus a supported-browser test. Delivery evidence and
+   handoff are in
+   `docs/superpowers/specs/2026-07-28-dashboard-tangent-atmosphere-design.md`.
 4. **Cypress mobile clearance.** Improve Cypress Run's full-target edge margin
    beyond the current approximately 3px minimum without changing course
    identity or weakening its route/clipping assertions.
