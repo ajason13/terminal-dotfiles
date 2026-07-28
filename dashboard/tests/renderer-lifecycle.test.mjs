@@ -227,6 +227,7 @@ test('startup SVG containment preflight rejects a visible canonical source fill'
     const centerline = new FakeElement('path', documentRef);
     centerline.id = track.centerlineId;
     centerline.setAttribute('fill', 'none');
+    centerline.setAttribute('d', 'M0 0 C1 1 2 2 3 3');
     art.append(centerline);
     svg.append(art);
   }

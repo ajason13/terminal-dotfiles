@@ -65,6 +65,19 @@ timeout. Course choice is tab-only and is never stored. Stop the preview with
 
 ## Verify
 
+Route geometry is authored only in `dashboard/routes/`. Regenerate the checked-in
+catalog/SVG artifact and responsive motion stylesheet after changing a route,
+then verify that committed outputs are current:
+
+```sh
+npm --prefix dashboard run routes:write
+npm --prefix dashboard run routes:check
+```
+
+`routes:check` performs a byte-for-byte in-memory comparison and never writes.
+The compiler is dependency-free; route generation does not use browser SVG
+APIs, network access, session data, or terminal processes.
+
 Run syntax checks for every JavaScript module:
 
 ```sh
@@ -168,10 +181,14 @@ and preserves session button identity, focus, and pin state.
 
 The deterministic 16-slot allocation supplies exact four-second phase offsets
 on one shared 64-second CSS traversal. Desktop and mobile waypoint schedules
-are distance-calibrated for their target screen proportions from the same
-canonical centerline. Both use `linear` timing to keep the visible lap at one
-practical constant speed; there is no acceleration, braking, corner easing,
-JavaScript animation loop, or data timer.
+are compiled independently for their target screen proportions from each
+course's one canonical displayed-coordinate cubic path. The checked-in
+compiler derives sixteen static anchors, full and six segment paths, a
+513-position equal-distance base grid, and every internal cubic-boundary
+keyframe. Startup synchronously validates and hydrates all route placeholders
+before rendering a snapshot. Both schedules use `linear` timing to keep the
+visible lap at one practical constant speed; there is no acceleration,
+braking, corner easing, JavaScript animation loop, or data timer.
 Hover, keyboard focus, or pinning pauses a route car for inspection. Reduced
 motion disables traversal and nested car motion, returning each route car to
 its deterministic static anchor without changing accessible location text. At

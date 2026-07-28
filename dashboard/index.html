@@ -8,6 +8,7 @@
     <link rel="icon" href="data:,">
     <title>Night Pass Session Map</title>
     <meta name="description" content="An opt-in local visual progress map for LLM sessions.">
+    <link rel="stylesheet" href="./generated/route-motion.css">
     <link rel="stylesheet" href="./styles.css">
   </head>
   <body>
@@ -79,8 +80,6 @@
               <rect class="contour-field" width="1000" height="760" rx="28" />
               <g id="ridge-pass-art" class="course-art" data-track-art="ridge-pass">
               <g transform="translate(1000 0) scale(-1 1)">
-              <path id="ridge-pass-centerline" fill="none"
-                d="M918 72 C878 80 832 98 786 126 C720 146 652 145 604 164 C538 190 548 220 616 224 C676 228 738 215 772 238 C817 269 797 300 732 306 C664 312 603 294 568 322 C540 360 500 380 460 400 C420 420 360 430 300 470 C350 515 410 510 456 532 C507 558 550 582 610 585 C714 590 792 630 760 674 C724 724 625 730 548 706 C465 680 403 639 337 646 C289 651 258 671 240 680 C196 699 139 716 88 728" />
               <path class="ridge-shadow" d="M0 238 Q180 195 340 225 T650 168 T1000 84 V0 H0Z" />
               <path class="valley-line" d="M10 610 Q164 565 315 607 T592 606 T985 522" />
               <g class="terrain-contours">
@@ -112,24 +111,19 @@
                 <path d="M423 568v18m34-14v18m35-16v18m35-19v18m34-23v18" />
               </g>
 
+              </g>
+              <path id="ridge-pass-centerline" fill="none" />
               <g class="route-bed" filter="url(#road-glow)">
                 <use class="road-shoulder" href="#ridge-pass-centerline" />
                 <use class="road-surface" href="#ridge-pass-centerline" />
               </g>
               <g class="route-centerlines">
-                <path class="segment-high-moor"
-                  d="M918 72 C878 80 832 98 786 126" />
-                <path class="segment-pass-ladder"
-                  d="M786 126 C720 146 652 145 604 164 C538 190 548 220 616 224 C676 228 738 215 772 238 C817 269 797 300 732 306 C664 312 603 294 568 322" />
-                <path class="segment-cedar-chain"
-                  d="M568 322 C540 360 500 380 460 400 C420 420 360 430 300 470" />
-                <path class="segment-cloud-ridge"
-                  d="M300 470 C350 515 410 510 456 532 C507 558 550 582 610 585" />
-                <path class="segment-long-arc"
-                  d="M610 585 C714 590 792 630 760 674 C724 724 625 730 548 706 C465 680 403 639 337 646 C289 651 258 671 240 680" />
-                <path class="segment-valley-gate"
-                  d="M240 680 C196 699 139 716 88 728" />
-              </g>
+                <path class="segment-high-moor" data-route-segment-index="0" />
+                <path class="segment-pass-ladder" data-route-segment-index="1" />
+                <path class="segment-cedar-chain" data-route-segment-index="2" />
+                <path class="segment-cloud-ridge" data-route-segment-index="3" />
+                <path class="segment-long-arc" data-route-segment-index="4" />
+                <path class="segment-valley-gate" data-route-segment-index="5" />
               </g>
               <g class="segment-labels">
                 <text class="label-high-moor" x="142" y="50">HIGH MOOR</text>
@@ -179,25 +173,18 @@
                   <path d="M516 102h30v16h-30z M548 246h30v16h-30z M904 332h30v16h-30z M824 414h30v16h-30z" />
                   <path d="M442 462h30v16h-30z M472 612h30v16h-30z M884 696h30v16h-30z M64 588h30v16h-30z" />
                 </g>
-                <path id="cypress-run-centerline" fill="none"
-                  d="M90 90 C180 82 270 105 360 90 C440 78 500 80 520 105 C540 125 545 150 545 185 C545 230 560 270 605 270 C685 270 770 270 850 270 C905 270 932 300 930 350 C928 400 895 425 845 425 C780 425 710 425 650 425 C580 425 520 420 490 445 C468 463 465 495 465 525 C465 560 470 590 515 605 C565 610 620 605 670 605 C760 605 840 595 895 610 C940 625 944 695 910 715 C875 735 820 715 770 705 C690 690 610 690 540 705 C420 725 260 725 150 705 C95 695 70 665 72 620 C74 575 70 530 72 500 C74 465 92 445 125 445 C170 445 215 445 260 445" />
+                <path id="cypress-run-centerline" fill="none" />
                 <g class="route-bed" filter="url(#road-glow)">
                   <use class="road-shoulder" href="#cypress-run-centerline" />
                   <use class="road-surface" href="#cypress-run-centerline" />
                 </g>
                 <g class="route-centerlines drift-route-centerlines">
-                  <path class="segment-launch-line"
-                    d="M90 90 C180 82 270 105 360 90" />
-                  <path class="segment-north-nineties"
-                    d="M360 90 C440 78 500 80 520 105 C540 125 545 150 545 185 C545 230 560 270 605 270 C685 270 770 270 850 270" />
-                  <path class="segment-east-hairpin"
-                    d="M850 270 C905 270 932 300 930 350 C928 400 895 425 845 425 C780 425 710 425 650 425" />
-                  <path class="segment-drop-chute"
-                    d="M650 425 C580 425 520 420 490 445 C468 463 465 495 465 525 C465 560 470 590 515 605 C565 610 620 605 670 605" />
-                  <path class="segment-south-hairpin"
-                    d="M670 605 C760 605 840 595 895 610 C940 625 944 695 910 715 C875 735 820 715 770 705 C690 690 610 690 540 705" />
-                  <path class="segment-west-switchback"
-                    d="M540 705 C420 725 260 725 150 705 C95 695 70 665 72 620 C74 575 70 530 72 500 C74 465 92 445 125 445 C170 445 215 445 260 445" />
+                  <path class="segment-launch-line" data-route-segment-index="0" />
+                  <path class="segment-north-nineties" data-route-segment-index="1" />
+                  <path class="segment-east-hairpin" data-route-segment-index="2" />
+                  <path class="segment-drop-chute" data-route-segment-index="3" />
+                  <path class="segment-south-hairpin" data-route-segment-index="4" />
+                  <path class="segment-west-switchback" data-route-segment-index="5" />
                 </g>
                 <g class="segment-labels">
                   <text class="label-launch-line" x="210" y="66">LAUNCH LINE</text>

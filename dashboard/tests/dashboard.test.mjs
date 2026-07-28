@@ -25,7 +25,9 @@ import {
 } from '../src/track-layout.mjs';
 
 const GENERATED_AT = '2026-07-19T20:30:00Z';
-const STYLES = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+const BASE_STYLES = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+const ROUTE_STYLES = readFileSync(new URL('../generated/route-motion.css', import.meta.url), 'utf8');
+const STYLES = `${ROUTE_STYLES}\n${BASE_STYLES}`;
 const INDEX = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const README = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
 const BROWSER_VERIFICATION = readFileSync(
@@ -295,9 +297,10 @@ test('the approved touge is horizontally mirrored while traversal order and heig
     [400, 520], [500, 560], [610, 585], [744, 612],
     [654, 723], [432, 662], [240, 680], [88, 728],
   ];
-  assert.deepEqual(ROUTE_ANCHORS.map(({ x, y }) => [x, y]), (
-    originalAnchors.map(([x, y]) => [1000 - x, y])
-  ));
+  ROUTE_ANCHORS.forEach((anchor, index) => {
+    const expected = [1000 - originalAnchors[index][0], originalAnchors[index][1]];
+    assert.ok(Math.hypot(anchor.x - expected[0], anchor.y - expected[1]) <= 0.5);
+  });
   assert.ok(ROUTE_ANCHORS[0].x < ROUTE_ANCHORS.at(-1).x);
   assert.equal(ROUTE_ANCHORS[0].poolLabel, 'High Moor');
   assert.equal(ROUTE_ANCHORS.at(-1).poolLabel, 'Valley Gate');
@@ -614,10 +617,17 @@ test('route cars share deterministic touge traversal phases and inspection pause
       ['74.1%', schedule === 'desktop' ? 33.219 : 27.8917, schedule === 'desktop' ? 94.4652 : 92.6477],
       ['98.8%', 91.2, 95.7895],
     ]) {
-      assert.match(
-        traverse,
-        new RegExp(`${progress.replace('.', '\\.')}\\s*\\{[^}]*left:\\s*${left}%;[^}]*top:\\s*${top}%`, 's'),
-      );
+      const match = traverse.match(new RegExp(
+        `${progress.replace('.', '\\.')}\\s*\\{[^}]*left:\\s*([\\d.]+)%;[^}]*top:\\s*([\\d.]+)%`,
+        's',
+      ));
+      assert.ok(match, `${schedule} missing migration waypoint ${progress}`);
+      const width = schedule === 'desktop' ? 1160 : 372;
+      const height = schedule === 'desktop' ? 682 : 580;
+      assert.ok(Math.hypot(
+        (Number(match[1]) - left) / 100 * width,
+        (Number(match[2]) - top) / 100 * height,
+      ) <= 0.75, `${schedule} ${progress} migration delta`);
     }
   }
   assert.match(RENDERER, /const ROUTE_LAP_SECONDS = 64/);

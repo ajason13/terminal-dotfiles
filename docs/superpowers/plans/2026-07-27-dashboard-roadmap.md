@@ -12,10 +12,20 @@ automatic terminal access, or app/runtime dependency is introduced.
    failure artifacts by default. Continue to keep the exhaustive geometry and
    live-import audits available as manual checks where automation would be
    brittle or cross the fixture-only boundary.
-2. **Route compiler.** Compile one canonical SVG path into route anchors and
-   distance-calibrated desktop/mobile keyframes. Preserve deterministic slot
-   order, the current allocation contract, and reduced-motion static anchors.
-3. **Tangent orientation and atmosphere.** Derive car orientation from the
+2. **Route compiler — complete.** Compile
+   one canonical SVG path into route anchors and distance-calibrated
+   desktop/mobile keyframes. Preserve deterministic slot order, the current
+   allocation contract, and reduced-motion static anchors. A Builder dry run
+   proved that Ridge desktop cannot meet the `0.5px` deviation limit with only
+   the former 513 uniform visible frames. The revised contract keeps the 513
+   equal-distance base grid and inserts exact internal cubic-boundary frames.
+   The focused independent re-review passed and the base-plus-boundary
+   compiler, checked-in artifacts, atomic startup hydration, and regression
+   coverage are implemented. Final independent post-change re-review passed
+   with no blockers; commit/push is authorized. Delivery evidence and sign-off
+   are recorded in
+   `docs/superpowers/specs/2026-07-28-dashboard-route-compiler-design.md`.
+3. **Tangent orientation and atmosphere — next.** Derive car orientation from the
    route tangent and add only subtle drift/smoke effects. Every effect must be
    safe under `prefers-reduced-motion` and must not obscure state or controls.
 4. **Cypress mobile clearance.** Improve Cypress Run's full-target edge margin

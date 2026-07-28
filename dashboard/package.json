@@ -3,6 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "routes:write": "node scripts/compile-routes.mjs --write",
+    "routes:check": "node scripts/compile-routes.mjs --check",
+    "test:unit": "node --test tests/*.test.mjs",
     "test:browser": "playwright test"
   },
   "devDependencies": {

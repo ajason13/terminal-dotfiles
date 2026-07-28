@@ -28,6 +28,59 @@ The current Auto label is `Auto · workday schedule`. Exact browser-local
 contracts covered by `multi-track.test.mjs`; this manual procedure does not
 claim wall-clock boundary evidence.
 
+## Route compiler implementation evidence — 2026-07-28
+
+The fixture-only Playwright suite passed 12/12 tests across its two Chromium
+projects (1440x900 and 390x844). It verified synchronous generated SVG
+hydration, six ordered segment placeholders per course, generated/base CSS
+cascade, responsive animation names, 64-second linear timing, four-second slot
+phases, pause/focus/pin/Escape behavior, reduced motion, 24 fixture sessions,
+full-target containment, and zero horizontal overflow with clean consoles.
+Its compiler-specific sweep fixes each route animation at `0`, `1234`,
+`7777`, `15999`, `31888`, `47999`, and `63000` milliseconds for both courses
+and projects. Every visible route center remained within `1px` of the hydrated
+SVG centerline, every pair retained at least the profile's `52px`/`44px`
+target diameter, and zero full targets clipped the map stage.
+The actual map-stage boxes were `1159.609375×681.625` desktop and
+`370.40625×580` mobile. No reference screenshot changed.
+
+Compiler output contains 527 visible Ridge frames for both profiles and 533
+visible Cypress frames for both profiles, followed by exactly three reset
+frames. Maximum audited serialized chord deviation was `0.4255416753px`
+Ridge desktop, `0.0361384028px` Ridge mobile, `0.1752953458px` Cypress
+desktop, and `0.0988015444px` Cypress mobile. The largest generated-to-legacy
+motion delta at every legacy visible keyframe was `0.0651467881px` Ridge
+desktop, `0.1364750696px` Ridge mobile, `0.0013456315px` Cypress desktop, and
+`0.0006890457px` Cypress mobile.
+
+Generated anchor changes from the legacy centers, in `R01..R16` order, are:
+
+```text
+Ridge Pass
+R01 +0.0000,+0.0000   R02 +0.0000,+0.0000
+R03 +0.0022,+0.0007   R04 +0.0016,-0.0001
+R05 +0.0000,+0.0000   R06 +0.0000,+0.0000
+R07 +0.0000,+0.0000   R08 -0.0034,-0.0017
+R09 +0.0003,-0.0001   R10 -0.0027,+0.0013
+R11 +0.0000,+0.0000   R12 -0.0026,+0.0016
+R13 +0.0015,+0.0001   R14 +0.0045,-0.0016
+R15 +0.0000,+0.0000   R16 +0.0000,+0.0000
+
+Cypress Run
+R01 +0.0000,+0.0000   R02 +0.0000,+0.0000
+R03 +0.0006,+0.0021   R04 -0.0012,-0.0013
+R05 +0.0000,+0.0000   R06 +0.0000,+0.0000
+R07 +0.0000,+0.0000   R08 +0.0000,+0.0000
+R09 +0.0000,-0.0001   R10 -0.0003,-0.0011
+R11 +0.0000,+0.0000   R12 +0.0000,+0.0000
+R13 +0.0000,+0.0000   R14 +0.0000,+0.0000
+R15 +0.0000,+0.0000   R16 +0.0000,+0.0000
+```
+
+The maximum anchor-center delta is `0.0048` view-box unit. Canonical displayed
+centerline and segment control points have zero geometric delta. Final
+independent post-change review remains required before roadmap completion.
+
 ## Prepare fresh synthetic inputs
 
 In the browser terminal, start one shell at the repository root and keep using

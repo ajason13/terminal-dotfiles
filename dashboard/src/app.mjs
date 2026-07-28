@@ -5,6 +5,7 @@ import { normalizeSnapshot } from './session-contract.mjs';
 import { createSourceController } from './source-controller.mjs';
 import { TRACK_CATALOG } from './track-catalog.mjs';
 import { createTrackSelectionController } from './track-selection.mjs';
+import { hydrateRouteGeometry } from './hydrate-route-geometry.mjs';
 
 function exactlyOne(documentRef, selector) {
   const matches = documentRef.querySelectorAll(selector);
@@ -29,7 +30,8 @@ export function preflightDocument(documentRef) {
     const centerlines = documentRef.querySelectorAll(`#${track.centerlineId}`);
     if (centerlines.length !== 1 || centerlines[0].tagName.toLowerCase() !== 'path'
       || !art.contains(centerlines[0])
-      || centerlines[0].getAttribute('fill') !== 'none') {
+      || centerlines[0].getAttribute('fill') !== 'none'
+      || !centerlines[0].getAttribute('d')) {
       throw new Error(`Track centerline does not match catalog: ${track.id}`);
     }
     if (art.parentElement?.closest?.('[data-track-art]')) {
@@ -78,6 +80,7 @@ export async function startDashboard(documentRef = document, windowRef = window)
   const onFatal = (error) => fatalHandler.handle(error);
 
   try {
+    hydrateRouteGeometry(documentRef);
     const mounts = preflightDocument(documentRef);
     let activeTrack;
     trackController = createTrackSelectionController({

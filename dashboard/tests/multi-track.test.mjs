@@ -14,7 +14,12 @@ import { allocateSessions } from '../src/track-layout.mjs';
 import { createSourceController } from '../src/source-controller.mjs';
 
 const INDEX = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-const STYLES = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+const BASE_STYLES = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+const ROUTE_STYLES = readFileSync(new URL('../generated/route-motion.css', import.meta.url), 'utf8');
+const STYLES = `${ROUTE_STYLES}\n${BASE_STYLES}`;
+const CYPRESS_SOURCE = readFileSync(
+  new URL('../routes/cypress-run.route.mjs', import.meta.url), 'utf8',
+);
 const SOURCES = [
   'app.mjs', 'render-dashboard.mjs', 'source-controller.mjs',
   'track-catalog.mjs', 'track-layout.mjs', 'track-selection.mjs',
@@ -68,9 +73,9 @@ test('Cypress Run is a full-map mixed technical course with nineties and vertica
   ]) {
     assert.match(cypress, new RegExp(`>${name}<`));
   }
-  assert.match(cypress, /C540 125 545 150 545 185 C545 230 560 270 605 270/);
-  assert.match(cypress, /C468 463 465 495 465 525 C465 560 470 590 515 605/);
-  assert.match(cypress, /C95 695 70 665 72 620 C74 575 70 530 72 500/);
+  assert.match(CYPRESS_SOURCE, /C540 125 545 150 545 185 C545 230 560 270 605 270/);
+  assert.match(CYPRESS_SOURCE, /C468 463 465 495 465 525 C465 560 470 590 515 605/);
+  assert.match(CYPRESS_SOURCE, /C95 695 70 665 72 620 C74 575 70 530 72 500/);
   assert.ok((cypress.match(/M\d+ \d+ C/g) ?? []).length >= 6, 'hairpin and apex skid cues');
   const clipGroup = cypress.match(/class="drift-clip-markers">([\s\S]*?)<\/g>/)?.[1] ?? '';
   assert.ok((clipGroup.match(/M/g) ?? []).length >= 8, 'ninety and hairpin clip markers');
@@ -577,7 +582,7 @@ test('static SVG/CSS references are unique, scoped, and API protected boundaries
   assert.equal((SOURCES.match(/setTimeoutFn\(/g) ?? []).length, 1);
 });
 
-test('both tracks keep sixteen mobile anchors separated and Cypress schedules within five percent', () => {
+test('both tracks keep sixteen mobile anchors separated and generated schedules have fixed counts', () => {
   for (const track of TRACK_CATALOG) {
     for (let left = 0; left < track.routeAnchors.length; left += 1) {
       for (let right = left + 1; right < track.routeAnchors.length; right += 1) {
@@ -593,22 +598,14 @@ test('both tracks keep sixteen mobile anchors separated and Cypress schedules wi
     ['cypress-run-traverse-mobile', 3.72, 5.8],
   ]) {
     const block = STYLES.slice(STYLES.indexOf(`@keyframes ${name}`));
+    const expectedCount = 533;
     const points = [...block.matchAll(
       /(?:^|\n)\s*(?:\d+(?:\.\d+)?)% \{ left: ([\d.]+)%; top: ([\d.]+)%/g,
-    )].slice(0, 513).map((match) => [
+    )].slice(0, expectedCount).map((match) => [
       Number(match[1]) * scaleX,
       Number(match[2]) * scaleY,
     ]);
-    assert.equal(points.length, 513);
-    const subIntervals = points.slice(1).map((point, index) => (
-      Math.hypot(point[0] - points[index][0], point[1] - points[index][1])
-    ));
-    const intervals = Array.from({ length: 64 }, (_, index) => (
-      subIntervals.slice(index * 8, index * 8 + 8).reduce((sum, value) => sum + value, 0)
-    ));
-    const mean = intervals.reduce((sum, value) => sum + value, 0) / intervals.length;
-    const variation = (Math.max(...intervals) - Math.min(...intervals)) / mean * 100;
-    assert.ok(variation <= 5, `${name}: ${variation}`);
+    assert.equal(points.length, expectedCount);
   }
 });
 

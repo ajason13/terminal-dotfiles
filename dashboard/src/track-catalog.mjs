@@ -1,3 +1,5 @@
+import { GENERATED_TRACK_INPUT } from './generated/route-geometry.mjs';
+
 const TRACK_KEYS = Object.freeze([
   'id', 'title', 'artId', 'centerlineId', 'desktopAnimationName',
   'mobileAnimationName', 'segments', 'routeAnchors',
@@ -6,62 +8,6 @@ const ANCHOR_KEYS = Object.freeze(['id', 'poolLabel', 'x', 'y', 'angle']);
 const CAPACITIES = Object.freeze([2, 3, 3, 3, 3, 2]);
 const ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const REFERENCE_PATTERN = /^[a-z][a-z0-9-]*$/;
-
-const anchor = (id, poolLabel, x, y, angle = 0) => ({ id, poolLabel, x, y, angle });
-
-const INPUT = [
-  {
-    id: 'ridge-pass',
-    title: 'Ridge Pass',
-    artId: 'ridge-pass-art',
-    centerlineId: 'ridge-pass-centerline',
-    desktopAnimationName: 'ridge-pass-traverse-desktop',
-    mobileAnimationName: 'ridge-pass-traverse-mobile',
-    segments: [
-      'High Moor', 'Pass Ladder', 'Cedar Chain',
-      'Cloud Ridge', 'Long Arc', 'Valley Gate',
-    ],
-    routeAnchors: [
-      anchor('R01', 'High Moor', 82, 72), anchor('R02', 'High Moor', 214, 126),
-      anchor('R03', 'Pass Ladder', 382, 160), anchor('R04', 'Pass Ladder', 276, 220),
-      anchor('R05', 'Pass Ladder', 268, 306),
-      anchor('R06', 'Cedar Chain', 432, 322), anchor('R07', 'Cedar Chain', 540, 400),
-      anchor('R08', 'Cedar Chain', 670, 450),
-      anchor('R09', 'Cloud Ridge', 600, 520), anchor('R10', 'Cloud Ridge', 500, 560),
-      anchor('R11', 'Cloud Ridge', 390, 585),
-      anchor('R12', 'Long Arc', 256, 612), anchor('R13', 'Long Arc', 346, 723),
-      anchor('R14', 'Long Arc', 568, 662),
-      anchor('R15', 'Valley Gate', 760, 680), anchor('R16', 'Valley Gate', 912, 728),
-    ],
-  },
-  {
-    id: 'cypress-run',
-    title: 'Cypress Run',
-    artId: 'cypress-run-art',
-    centerlineId: 'cypress-run-centerline',
-    desktopAnimationName: 'cypress-run-traverse-desktop',
-    mobileAnimationName: 'cypress-run-traverse-mobile',
-    segments: [
-      'Launch Line', 'North Nineties', 'East Hairpin',
-      'Drop Chute', 'South Hairpin', 'West Switchback',
-    ],
-    routeAnchors: [
-      anchor('R01', 'Launch Line', 90, 90), anchor('R02', 'Launch Line', 360, 90),
-      anchor('R03', 'North Nineties', 545, 140),
-      anchor('R04', 'North Nineties', 545, 270),
-      anchor('R05', 'North Nineties', 850, 270),
-      anchor('R06', 'East Hairpin', 930, 350),
-      anchor('R07', 'East Hairpin', 845, 425),
-      anchor('R08', 'East Hairpin', 650, 425),
-      anchor('R09', 'Drop Chute', 465, 480), anchor('R10', 'Drop Chute', 465, 560),
-      anchor('R11', 'Drop Chute', 670, 605),
-      anchor('R12', 'South Hairpin', 895, 610), anchor('R13', 'South Hairpin', 910, 715),
-      anchor('R14', 'South Hairpin', 540, 705),
-      anchor('R15', 'West Switchback', 72, 620),
-      anchor('R16', 'West Switchback', 260, 445),
-    ],
-  },
-];
 
 function exactKeys(value, expected, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -148,7 +94,7 @@ export function validateTrackCatalog(input) {
   return Object.freeze(tracks);
 }
 
-export const TRACK_CATALOG = validateTrackCatalog(INPUT);
+export const TRACK_CATALOG = validateTrackCatalog(GENERATED_TRACK_INPUT);
 export const DEFAULT_TRACK_ID = 'ridge-pass';
 
 export function getTrack(trackId) {
