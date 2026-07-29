@@ -55,15 +55,28 @@ automatic terminal access, or app/runtime dependency is introduced.
    QA both passed; there was no model exception and runtime observability
    remains unchanged (none added). Delivery evidence is in
    `docs/superpowers/specs/2026-07-28-dashboard-corner-aware-drift-design.md`.
-4. **Cypress mobile clearance.** Improve Cypress Run's full-target edge margin
-   beyond the current approximately 3px minimum without changing course
-   identity or weakening its route/clipping assertions.
-5. **Opt-in live workflow.** Add a one-command, one-shot snapshot export and
+4. **Cypress mobile clearance — complete.** The approved Cypress-mobile-only
+   `0.94` centered presentation scale and exact `1.0638297872340425` wrapper
+   counter-scale raise the full-target minimum from approximately `3.0px` to
+   `12.612213px` (focus `9.612213px`; phased separation `63.296069px`).
+   Reduced-motion and failed-capability static audits measured `13.493469px`
+   target / `10.493469px` focus clearance and `57.384033px` separation.
+   Both independent QA gates passed; verification passed: `routes:check`,
+   141/141 Node, 32/32 browser, syntax/diff/generated/ports/protected-boundary
+   audits, four normal-speed 64s reviews, and only the mobile Cypress
+   screenshot changed. Inherited tooltip clipping was confirmed no worse and
+   remains a protected non-regression decision. The external predecessor is
+   `bee9df6`; `anime.lua` is clean. No model exception, observability change,
+   or Notion synchronization occurred. Commit and push are authorized; release
+   status is established by Git history. Final evidence is in
+   `docs/superpowers/specs/2026-07-28-dashboard-cypress-mobile-clearance-design.md`.
+5. **Opt-in live workflow — next recommended; not implemented.** Add a one-command, one-shot snapshot export and
    clearer explicit-refresh guidance. Retain no polling, daemon, automatic
    terminal access, browser file reread, or implicit collection.
-6. **Third course.** After the route compiler lands, add one original
+6. **Third course — deferred after item 5; not implemented.** After the route compiler lands, add one original
    medium-speed technical course through that compiler rather than hand-writing
    another responsive motion schedule.
 
-Item 4, Cypress mobile clearance, remains the next task. Items 4–6 are ordered
-future work and are not part of item 3a.
+Item 4 is complete. Item 5 is the next recommended task; item 6 remains
+deferred after it. Neither is part of item 4 or authorized by this roadmap
+status update.

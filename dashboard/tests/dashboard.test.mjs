@@ -846,6 +846,51 @@ test('CSS and document preserve 44px targets and map-first responsive behavior',
   assert.doesNotMatch(STYLES, /status-rail|session-list|rail-item/);
 });
 
+test('Cypress mobile uses the approved centered course scale and exact target counterscale', () => {
+  const mobileStart = BASE_STYLES.indexOf('@media (max-width: 759px)');
+  const mobileEnd = BASE_STYLES.indexOf('@media (max-width: 420px)', mobileStart);
+  const beforeMobile = BASE_STYLES.slice(0, mobileStart);
+  const mobile = BASE_STYLES.slice(mobileStart, mobileEnd);
+  const cypressArt = mobile.match(
+    /\.dashboard-root\[data-track-id="cypress-run"\] #cypress-run-art\s*\{([^}]*)\}/s,
+  )?.[1] ?? '';
+  const vehicleLayer = mobile.match(
+    /\.dashboard-root\[data-track-id="cypress-run"\] #vehicle-layer\s*\{([^}]*)\}/s,
+  )?.[1] ?? '';
+  const wrapper = mobile.match(
+    /\.dashboard-root\[data-track-id="cypress-run"\] \.vehicle-anchor\s*\{([^}]*)\}/s,
+  )?.[1] ?? '';
+
+  assert.match(cypressArt, /transform-box:\s*view-box/);
+  assert.match(cypressArt, /transform-origin:\s*500px 380px/);
+  assert.match(cypressArt, /transform:\s*scale\(\.94\)/);
+  assert.match(vehicleLayer, /transform-origin:\s*50% 50%/);
+  assert.match(vehicleLayer, /transform:\s*scale\(\.94\)/);
+  assert.match(
+    wrapper,
+    /transform:\s*translate\(-50%,\s*-50%\) scale\(1\.0638297872340425\)/,
+  );
+  assert.equal((mobile.match(/transform:\s*scale\(\.94\)/g) ?? []).length, 2);
+  assert.equal((mobile.match(/scale\(1\.0638297872340425\)/g) ?? []).length, 1);
+  assert.doesNotMatch(beforeMobile, /scale\(\.94\)|scale\(1\.0638297872340425\)/);
+  assert.doesNotMatch(
+    mobile,
+    /data-track-id="ridge-pass"[^}]*scale\(\.94\)|#ridge-pass-art[^}]*scale\(\.94\)/s,
+  );
+  assert.match(
+    mobile,
+    /\.vehicle-anchor,\s*\.vehicle-anchor \.session-car\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px/s,
+  );
+  assert.match(
+    mobile,
+    /\.vehicle-anchor \.session-car\s*\{[^}]*clip-path:\s*circle\(22px at 50% 50%\)/s,
+  );
+  assert.match(
+    mobile,
+    /\.vehicle-anchor:has\(\.session-car:focus-visible\)::after\s*\{[^}]*inset:\s*-3px;[^}]*border:\s*3px solid/s,
+  );
+});
+
 test('registered-angle capability attempts all four properties and caches fail-static results', async () => {
   const names = [
     '--route-heading',

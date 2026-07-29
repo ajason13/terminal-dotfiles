@@ -28,6 +28,104 @@ The current Auto label is `Auto · workday schedule`. Exact browser-local
 contracts covered by `multi-track.test.mjs`; this manual procedure does not
 claim wall-clock boundary evidence.
 
+## Cypress mobile clearance implementation evidence — 2026-07-28
+
+Roadmap item 4 applies a Cypress-mobile-only centered `0.94` presentation
+scale to the route SVG and vehicle layer, with the exact
+`1.0638297872340425` inverse wrapper scale. Canonical route sources, generated
+geometry and motion, timing, phases, responsive headings, drift frames,
+anchors, target/body sizes, and fixture/live behavior remain unchanged.
+
+Pinned Chromium at `390x844` produced these exhaustive moving results across
+all 533 retained Cypress mobile frame times and every visible phased route
+car:
+
+```text
+minimum Route Slot 1 target clearance  12.6122131348px, right edge
+limiting emitted frame / percentage    333 / 61.75%
+minimum focus-ring exterior clearance   9.6122131348px
+minimum phased center separation        63.2960687468px
+maximum scheduled CTM error              0.0204623008px
+maximum nearest transformed-path error   0.0968262887px
+target/body clipping and overlaps        0
+horizontal overflow                      0
+```
+
+The scheduled oracle uses only serialized `left/top` interpolation transformed
+through the centerline's `getScreenCTM()`. The independent nearest-path oracle
+precomputes `2049` CTM-transformed samples across the complete canonical SVG
+path, globally searches every coarse candidate for every target, and refines
+only the globally winning neighborhood. It does not use schedule-correlated
+canonical distance. The test audits all visible phased targets at every
+retained frame and all visible phased cars at every named corner entry, apex,
+and exit.
+
+CDP `DOM.getContentQuads` comparisons against the same frozen DOM with the
+three presentation transforms disabled retained the body, glyph, code,
+tooltip, and `44x44px` wrapper/button within `0.1px`. The wrapper quad is
+explicitly asserted axis-aligned in CDP TL/TR/BR/BL order. Its focus exterior
+vertices are reconstructed from all four computed `-3px` insets and `3px`
+borders, normalized for translation, compared vertex-by-vertex and
+edge-by-edge with the transform-disabled exterior within `0.1px`, and asserted
+to be `50x50px`. The mobile-thinking puff remains independently reconstructed
+through ancestor and pseudo matrices.
+
+The test-only sixteen-route-session fixture produced identical reduced-motion
+and failed-capability results:
+
+```text
+minimum target clearance        13.4934692383px at R06
+minimum focus-ring clearance    10.4934692383px at R06
+minimum static separation       57.3840332031px
+anchor CTM error                <=0.1px
+target/body overlaps, motion,
+drift, and smoke                0
+target/body stage clipping       0
+```
+
+Verification passed `141/141` Node tests and `32/32` Playwright profile tests
+with zero failures, skips, console warnings, console errors, or page errors.
+The Playwright matrix covers both courses at `1440x900` and `390x844`,
+computed-transform course isolation, stacking, CDP content quads, focus and
+hit behavior, hover/pin/Escape, track switching while focused and pinned,
+reduced motion, capability fallback, reset, smoke, and parked states.
+
+Only `mobile-cypress-run.png` changed. Its SHA-256 changed from
+`7bb28e69eb1f6b5281537c777e842b61417b377f7d8c88acaff0d06ada9e3079`
+to
+`827c8429e08534d8cd7d891f61e05be2a540e936ab14ad5a9201f915d5cc08f2`.
+All eight other tracked dashboard screenshots retained their pre-change
+SHA-256 bytes. The refreshed reference uses the documented `16000ms`
+traversal and 40% smoke sample with no focus, tooltip, pin, import, or failure
+state.
+
+Nine normal-speed samples spanning a complete 64-second observation window
+were reviewed for Ridge and Cypress at both required viewports. Across all
+four profiles, course identity, all corners, route/body alignment, target/body
+containment, separation, upright glyphs/codes, smoke policy, focus rings,
+hover, pin, Escape, reduced motion, reset, and parked states showed no Item 4
+regression. Cypress mobile remained recognizable after the uniform scale.
+
+One inherited visual issue remains outside Item 4's approved CSS scope:
+mobile tooltips can be clipped by the map stage when a moving route car is
+focused near a stage edge. On the same frozen Cypress DOM at exactly
+`32000ms`, the enabled Item 4 composition rendered the unrotated tooltip at
+`255.99998x109.07813px`, with `53.39404px` right and `10.97229px` bottom
+overflow. Test-only disabling all three Item 4 transforms on that same DOM
+rendered it at `256x109.07813px`, with `53.6875px` right and `21.31085px`
+bottom overflow. Item 4 therefore preserves tooltip dimensions and angle,
+slightly improves right intersection, and improves bottom intersection by
+about `10.34px`; it does not introduce the clipping.
+
+The same exact-time Ridge sample, which no Item 4 selector matches, rendered
+the same `256x109.07813px` unrotated tooltip with `118.46875px` right
+overflow. Target/focus-ring clearance remained `107.03967px`/`104.03967px`
+for enabled Cypress, `96.76563px`/`93.76563px` for transform-disabled
+Cypress, and `93.53125px`/`90.53125px` for Ridge. The automated tooltip-size
+and interaction contracts pass. The inherited clipping is recorded for
+architecture disposition; Item 4 does not broaden scope to change route-aware
+tooltip placement.
+
 ## Corner-aware drift evidence — 2026-07-28
 
 Item `3a — Corner-aware drifting` replaced the independent active/thinking

@@ -1189,6 +1189,21 @@ textarea {
 }
 
 @media (max-width: 759px) {
+  .dashboard-root[data-track-id="cypress-run"] #cypress-run-art {
+    transform-box: view-box;
+    transform-origin: 500px 380px;
+    transform: scale(.94);
+  }
+
+  .dashboard-root[data-track-id="cypress-run"] #vehicle-layer {
+    transform-origin: 50% 50%;
+    transform: scale(.94);
+  }
+
+  .dashboard-root[data-track-id="cypress-run"] .vehicle-anchor {
+    transform: translate(-50%, -50%) scale(1.0638297872340425);
+  }
+
   .dashboard-root {
     display: block;
   }
