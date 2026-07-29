@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+# Per-session "what is this pane doing" line, shared by Claude Code and Codex.
+# Both send the same UserPromptSubmit fields (session_id, prompt), so one capture
+# path serves both; only the rendering differs per agent.
+#
+#   capture           <- UserPromptSubmit hook JSON on stdin
+#   reset             <- SessionStart hook JSON on stdin
+#   read <session_id> -> the objective, truncated
+#   pane <pane_id>    -> the objective for a tmux pane
+#   window <target>   -> the objective for a tmux window (active pane wins)
+#   doctor            -> store state, for diagnosing a silent hook
+#
+# Deliberately no `set -e`: this runs as a hook on every prompt, and aborting
+# mid-way would be worse than doing nothing.
+set -uo pipefail
+
+STORE="${SESSION_OBJECTIVE_HOME:-$HOME/.local/state/session-objectives}"
+MAX_LEN="${SESSION_OBJECTIVE_MAX_LEN:-48}"
+MIN_SEED_LEN=12
+
+mkdir -p "$STORE/by-pane" 2>/dev/null || true
+
+# Collapse to one line and trim; every consumer is a single-line status bar.
+clean() { tr '\n\r\t' '   ' | sed -e 's/  */ /g' -e 's/^ *//' -e 's/ *$//'; }
+
+truncate_objective() {
+  local text="$1"
+  if [[ ${#text} -gt $MAX_LEN ]]; then
+    printf '%s...' "${text:0:$MAX_LEN}"
+  else
+    printf '%s' "$text"
+  fi
+}
+
+# tmux pane ids are "%182"; the % is awkward in paths, so key on the digits.
+pane_key() { printf '%s' "${1#\%}"; }
+
+emit_objective() {
+  local file="$1" text
+  [[ -s "$file" ]] || return 0
+  text="$(clean <"$file")"
+  [[ -n "$text" ]] || return 0
+  truncate_objective "$text"
+}
+
+case "${1:-}" in
+  capture)
+    payload="$(cat)"
+    sid="$(printf '%s' "$payload" | jq -r '.session_id // empty' 2>/dev/null)"
+    [[ -n "$sid" ]] || exit 0
+
+    prompt="$(printf '%s' "$payload" |
+      jq -r '.prompt // .user_prompt // .message // .content // empty' 2>/dev/null | clean)"
+    # A hook that quietly does nothing is the worst outcome, so leave the payload
+    # behind when no known prompt field matched.
+    if [[ -z "$prompt" ]]; then
+      printf '%s' "$payload" >"$STORE/.unparsed-payload.json" 2>/dev/null || true
+      exit 0
+    fi
+    rm -f "$STORE/.unparsed-payload.json" 2>/dev/null || true
+
+    file="$STORE/$sid.txt"
+    pin="$STORE/$sid.pin"
+
+    # Repoint the pane link on every prompt: a pane outlives the agent in it, so
+    # a recycled pane must follow the newest session rather than the dead one.
+    if [[ -n "${TMUX_PANE:-}" ]]; then
+      ln -sfn "$file" "$STORE/by-pane/$(pane_key "$TMUX_PANE")" 2>/dev/null || true
+    fi
+
+    # Explicit override wins and pins. Handled here rather than in the agent's
+    # slash-command body so it never depends on the model choosing to act.
+    if printf '%s' "$prompt" | grep -qiE '^(objective:|/objective\b)'; then
+      # '#' delimiter: the pattern needs both '|' for alternation and '/' for the
+      # slash-command form, so neither can be the delimiter.
+      rest="$(printf '%s' "$prompt" |
+        sed -E 's#^([Oo][Bb][Jj][Ee][Cc][Tt][Ii][Vv][Ee]:|/[Oo][Bb][Jj][Ee][Cc][Tt][Ii][Vv][Ee]) *##' | clean)"
+      # Bare `/objective` is a read, not a write - don't blank a good objective.
+      if [[ -n "$rest" ]]; then
+        printf '%s' "$rest" >"$file"
+        : >"$pin"
+      fi
+      exit 0
+    fi
+
+    [[ -f "$pin" ]] && exit 0
+    # Seed once from the first substantive prompt; "yes" and "run it" are not
+    # objectives, and without stickiness they would overwrite a good one.
+    if [[ ! -s "$file" ]] && [[ ${#prompt} -ge $MIN_SEED_LEN ]]; then
+      printf '%s' "$prompt" >"$file"
+    fi
+    exit 0
+    ;;
+
+  reset)
+    payload="$(cat)"
+    sid="$(printf '%s' "$payload" | jq -r '.session_id // empty' 2>/dev/null)"
+    src="$(printf '%s' "$payload" | jq -r '.source // empty' 2>/dev/null)"
+    # A cleared session reuses its id for unrelated work, so the objective is dead.
+    if [[ -n "$sid" && "$src" == "clear" ]]; then
+      rm -f "$STORE/$sid.txt" "$STORE/$sid.pin"
+    fi
+    find "$STORE" -maxdepth 1 -type f -mtime +30 -delete 2>/dev/null || true
+    # Prune links whose target session file is gone. -e follows the link, so a
+    # dangling one fails it; the -L guard also absorbs a non-matching glob.
+    for link in "$STORE"/by-pane/*; do
+      [[ -L "$link" ]] || continue
+      [[ -e "$link" ]] || rm -f "$link"
+    done
+    exit 0
+    ;;
+
+  read)
+    emit_objective "$STORE/${2:-}.txt"
+    ;;
+
+  pane)
+    [[ -n "${2:-}" ]] || exit 0
+    emit_objective "$STORE/by-pane/$(pane_key "$2")"
+    ;;
+
+  window)
+    target="${2:-}"
+    [[ -n "$target" ]] || exit 0
+    command -v tmux >/dev/null 2>&1 || exit 0
+    # The active pane's objective is what you asked for; fall back to any pane in
+    # the window so an agent stays visible while you sit in a neighbouring shell.
+    fallback=""
+    while read -r pane_id active; do
+      [[ -n "$pane_id" ]] || continue
+      found="$(emit_objective "$STORE/by-pane/$(pane_key "$pane_id")")"
+      [[ -n "$found" ]] || continue
+      if [[ "$active" == "1" ]]; then
+        printf '%s' "$found"
+        exit 0
+      fi
+      [[ -n "$fallback" ]] || fallback="$found"
+    done < <(tmux list-panes -t "$target" -F '#{pane_id} #{?pane_active,1,0}' 2>/dev/null || true)
+    printf '%s' "$fallback"
+    ;;
+
+  doctor)
+    printf 'store:            %s\n' "$STORE"
+    printf 'max length:       %s\n' "$MAX_LEN"
+    printf 'objectives:       %s\n' "$(find "$STORE" -maxdepth 1 -name '*.txt' 2>/dev/null | wc -l | tr -d ' ')"
+    printf 'pane links:       %s\n' "$(find "$STORE/by-pane" -maxdepth 1 -type l 2>/dev/null | wc -l | tr -d ' ')"
+    printf 'TMUX_PANE (here): %s\n' "${TMUX_PANE:-<unset>}"
+    if [[ -f "$STORE/.unparsed-payload.json" ]]; then
+      printf 'WARNING:          a hook payload had no known prompt field.\n'
+      printf '                  inspect %s/.unparsed-payload.json\n' "$STORE"
+    fi
+    ;;
+
+  *)
+    printf 'Usage: %s capture | reset | read <session_id> | pane <pane_id> | window <target> | doctor\n' \
+      "${0##*/}" >&2
+    exit 2
+    ;;
+esac
