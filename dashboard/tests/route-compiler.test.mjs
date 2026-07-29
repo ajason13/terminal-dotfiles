@@ -239,8 +239,8 @@ test('corner policy pins the canonical detector, thresholds, envelope, and yaw c
     broadLobeTotalTurn: 30,
     prominenceValleyRatio: 0.5,
     discontinuousJoinThreshold: 45,
-    minimumDriftYaw: 3,
-    maximumDriftYaw: 12,
+    minimumDriftYaw: 6,
+    maximumDriftYaw: 18,
   });
 });
 
@@ -431,11 +431,11 @@ test('prominence equality, plateau, earlier ties, and exact join promotion selec
 });
 
 test('drift magnitude floor, linear scaling, cap, smoothstep, and finite boundary are exact', () => {
-  assert.equal(driftMagnitudeForStrength(0), 3);
-  assert.equal(driftMagnitudeForStrength(15), 3);
-  assert.equal(driftMagnitudeForStrength(52.5), 7.5);
-  assert.equal(driftMagnitudeForStrength(90), 12);
-  assert.equal(driftMagnitudeForStrength(900), 12);
+  assert.equal(driftMagnitudeForStrength(0), 6);
+  assert.equal(driftMagnitudeForStrength(15), 6);
+  assert.equal(driftMagnitudeForStrength(52.5), 12);
+  assert.equal(driftMagnitudeForStrength(90), 18);
+  assert.equal(driftMagnitudeForStrength(900), 18);
   assert.throws(() => driftMagnitudeForStrength(NaN), /finite/);
   assert.equal(smoothstep(0), 0);
   assert.equal(smoothstep(0.5), 0.5);
@@ -527,7 +527,7 @@ test('compiled canonical detector reproduces exact generic Ridge and Cypress top
   }
 });
 
-test('responsive projection reproduces exact landmark tables and bounded signed yaw', () => {
+test('responsive projection preserves route-turn sign and emits bounded visual yaw', () => {
   const expected = new Map([
     ['ridge-pass/desktop', [
       '5.5961/6.7539/6.9469', '12.9289/15.6305/18.332',
@@ -569,8 +569,9 @@ test('responsive projection reproduces exact landmark tables and bounded signed 
         assert.equal(entry.driftYaw, '0');
         assert.equal(exit.driftYaw, '0');
         assert.equal(Math.sign(Number(apex.driftYaw)), corner.sign);
-        assert.ok(Math.abs(Number(apex.driftYaw)) >= 3);
-        assert.ok(Math.abs(Number(apex.driftYaw)) <= 12);
+        assert.equal(Math.sign(corner.peakYaw), corner.sign);
+        assert.ok(Math.abs(Number(apex.driftYaw)) >= 6);
+        assert.ok(Math.abs(Number(apex.driftYaw)) <= 18);
       }
       schedule.frames.forEach((frame) => {
         assert.equal(Number(frame.driftYaw) + Number(frame.driftUprightYaw), 0);

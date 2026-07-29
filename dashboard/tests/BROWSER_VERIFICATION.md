@@ -38,28 +38,31 @@ responsive schedules reproduced the approved entry/apex/exit tables, retained
 traversal, four-second phases, positions, percentages, headings, and reset
 milestones.
 
-Peak yaw in corner order is:
+Visual chassis peak yaw in corner order is:
 
 ```text
-Ridge desktop:  -3.2311, 12, -12, 6.4614, -3.246, 12, -12, 3.0185
-Ridge mobile:   -4.8726, 12, -9.5162, 8.9375, -3, 10.8814, -7.1948, 5.8634
-Cypress desktop: 8.6544, -9.8469, 9.3341, -8.9385, -9.9473, 11.6918, 9.1187, 10.9466
-Cypress mobile:  7.6827, -10.7487, 8.3317, -7.892, -10.2205, 9.6989, 6.2878, 11.6001
+Ridge desktop:  -6.3082, 18, -18, 10.6152, -6.3279, 18, -18, 6.0247
+Ridge mobile:   -8.4968, 18, -14.6883, 13.9167, -6, 16.5085, -11.5931, 9.8179
+Cypress desktop: 13.5392, -15.1292, 14.4455, -13.918, -15.263, 17.5891, 14.1582, 16.5954
+Cypress mobile:  12.2436, -16.3316, 13.1089, -12.5227, -15.6274, 14.9319, 10.3837, 17.4668
 ```
 
-Positive values are clockwise/right turns and negative values are
-counterclockwise/left turns. The generic magnitude policy is a `3deg` floor,
+The compiler's `corner.sign` remains positive for clockwise/right route turns
+and negative for counterclockwise/left route turns. Serialized chassis yaw
+uses that same sign so the nose points into the turn and the rear reads
+outward. The generic magnitude policy is a `6deg` floor,
 linear scaling from a `15deg` to `90deg` responsive tangent window, and a
-`12deg` cap. Entry/exit are exact zero, apex is the exact signed peak, and
-both halves use canonical-distance smoothstep interpolation. Every serialized
-inverse is the negation of the once-rounded yaw.
+`18deg` cap. Entry/exit are exact zero, apex is the exact visual peak,
+and both halves use canonical-distance smoothstep interpolation. Every
+serialized inverse is the negation of the once-rounded yaw.
 
-The dependency-free suite passed 136/136 with zero failures or skips. The
+The dependency-free suite passed 140/140 with zero failures or skips. The
 Playwright matrix passed 22/22 at 1440x900 and 390x844 with zero failures,
 skips, console warnings, console errors, or page errors. It sampled
 entry/apex/exit for every corner on both courses and both profiles, and
-verified yaw sign/bounds/inverse, `<=0.25deg` glyph/code upright error, zero
-straight yaw, stronger tight-corner yaw, `<=1px` centerline alignment,
+verified route-turn and visual yaw sign, bounds/inverse,
+`<=0.25deg` glyph/code upright error, zero straight yaw, stronger tight-corner
+yaw, `<=1px` centerline alignment,
 `>=52px`/`>=44px` target separation, containment, zero horizontal overflow,
 one 64-second linear wrapper animation, and no `.car-motion` animation.
 Hover, focus, pin, Escape, both smoke pseudos, reduced motion, capability
@@ -75,10 +78,15 @@ and `mobile.png`. Desktop captures are 1440x900; mobile full-page captures are
 captured with no nested drift animation to seek. No focus, tooltip, pin, live
 import, or failure state is present.
 
-Normal-speed recordings were run concurrently at both required viewports.
+Normal-speed recordings were run serially at both required viewports after
+fresh cache-disabled hard loads.
 One complete 64-second Ridge lap and one complete 64-second Cypress lap were
 reviewed per viewport. Ridge boundary 8 received three additional true-speed
-passes per viewport and was inspected at 0.5-second frame spacing. Direction,
+passes per viewport and was inspected at 0.5-second frame spacing. The
+same-sign chassis yaw was visibly distinguishable at normal dashboard scale
+after the hard reload: the nose pointed into each turn and the rear read
+outward. Rendered `.car-body` bounds stayed contained and nonoverlapping at
+every apex, including Cypress mobile and Ridge boundary 8. Direction,
 entry/apex/exit legibility, straights, upright glyphs/codes, subtle smoke,
 route-center stability, containment, and session clearance remained sound.
 There was no reverse spin, unintended long arc, sign flicker, left/right
@@ -96,9 +104,10 @@ hidden reset are unchanged. Generated headings at the start of each lap are
 `86.0663deg`/`79.6654deg` for Cypress desktop/mobile.
 
 The fixture screenshots use a stable neutral state: every Web Animation is
-paused, traversal is set to `16000ms`, drift is set to 50% of its cycle, and
-smoke is set to its 40% peak. The first active/thinking computed route
-headings were:
+paused, traversal is set to `16000ms`, smoke is set to its 40% sample, and
+other animations are set to zero. Corner yaw is sampled from the traversal
+keyframe itself; there is no independent drift cycle. The first
+active/thinking computed route headings were:
 
 ```text
 Ridge desktop:   239.812deg, 125.622deg

@@ -359,21 +359,23 @@ For each canonical corner and responsive profile:
 3. Assert its sign matches the canonical corner. Let `strength` be the
    absolute responsive window turn. For a mandatory discontinuous join, use
    the greater of window strength and responsive authored join magnitude.
-4. Compute peak yaw:
+4. Compute visual chassis peak yaw. `cornerSign` is the actual route-turn
+   direction and the chassis yaw uses that same sign so the nose points into
+   the turn while the rear reads outward:
 
    ```text
    normalized = clamp((strength - 15) / (90 - 15), 0, 1)
-   peakMagnitude = 3deg + 9deg * normalized
-   signedPeak = cornerSign * peakMagnitude
+   peakMagnitude = 6deg + 12deg * normalized
+   visualPeak = cornerSign * peakMagnitude
    ```
 
-   Thus detected broad bends receive at least `3°`; tight corners increase
-   linearly and clamp at `12°`. Four-decimal rounding happens only after the
+   Thus detected broad bends receive at least `6°`; tight corners increase
+   linearly and clamp at `18°`. Four-decimal rounding happens only after the
    complete calculation.
 5. Let `dE`, `dA`, and `dX` be the unrounded canonical distances of the
    projected retained entry, apex, and exit frames—not the original canonical
    landmark distances. Entry and exit yaw are exactly `0deg`; apex yaw is
-   exactly `signedPeak`. For every retained profile frame with canonical
+   exactly `visualPeak`. For every retained profile frame with canonical
    distance `d`, interpolate entry-to-apex and apex-to-exit independently with:
 
    ```text
@@ -473,7 +475,7 @@ Add direct tests for:
 - deterministic entry/apex/exit selection and earlier-candidate tie rules;
 - outer entry/exit selection from strictly outside base candidates when an
   inserted non-apex boundary lies between the threshold edge and next base;
-- responsive sign preservation, magnitude scaling, `3°` floor, `12°` cap,
+- responsive sign preservation, magnitude scaling, `6°` floor, `18°` cap,
   smoothstep interpolation, shared zero valley, four-decimal inverse
   serialization, and negative-zero normalization;
 - responsive distributed-turn-above-180 sign preservation and responsive
@@ -495,7 +497,7 @@ Add direct tests for:
 At both `1440×900` and `390×844`, for both tracks:
 
 - sample entry, apex, and exit of all eight corners;
-- assert entry/exit yaw `0±0.01°`, apex sign, magnitude `3..12°`, inverse yaw,
+- assert entry/exit yaw `0±0.01°`, apex sign, magnitude `6..18°`, inverse yaw,
   tangent-relative car composition, and glyph/code net upright error
   `<=0.25°`;
 - assert tight-corner peak is greater than broad-corner peak and all straight
@@ -575,12 +577,13 @@ and the roadmap records item 4 as the next task.
 
 ## Delivery evidence — 2026-07-28
 
-Final independent post-change QA returned PASS with no blockers. The approved
-scope is complete; commit and push are authorized.
+Final independent post-change QA returned PASS and authorized commit and push.
+The resulting changes remain uncommitted and unpushed.
 
-- Generic compiler output identifies eight meaningful signed corners for Ridge
-  Pass and eight for Cypress Run in each profile. Existing route keyframes
-  carry `3..12deg` signed smoothstep yaw and its inverse, while positions,
+- Generic compiler output identifies eight meaningful signed route corners for
+  Ridge Pass and eight for Cypress Run in each profile. Existing route
+  keyframes carry `6..18deg` same-sign visual yaw and its inverse,
+  while positions,
   percentages, frame counts, anchors, geometry, contracts, phases, reset
   milestones, and the `64s linear` traversal remain unchanged.
 - Two focused architecture corrections were implemented within the approved
@@ -590,8 +593,13 @@ scope is complete; commit and push are authorized.
   nearest strict retained base candidates while boundaries remain valid
   signals, apexes, and valleys, restoring generic table determinism.
   Post-QA remediation also clamps responsive apex windows and adds contextual
-  probe lookup with exact-boundary tests, without changing current generated
-  CSS or screenshots.
+  probe lookup with exact-boundary tests. A subsequent independently approved
+  revised visual-sign remediation preserves the actual route-turn
+  `corner.sign` and responsive sign validation, serializes chassis yaw as
+  `peakYaw = corner.sign * peakMagnitude`, and raises the generic visibility
+  policy to a `6deg` floor and `18deg` cap; its inverse remains the exact
+  negation of the once-rounded yaw. Generated CSS and the six deterministic
+  fixture screenshots were refreshed for that correction.
 - Verification PASS: `npm --prefix dashboard run routes:check`; 140/140 unit
   tests; 22/22 browser tests; all required browser-spec syntax checks;
   `git diff --check`; current generated artifacts; cleared test-server ports;
@@ -601,7 +609,11 @@ scope is complete; commit and push are authorized.
 - The six approved deterministic desktop/mobile screenshots were refreshed and
   reviewed. Normal-speed laps of Ridge and Cypress were reviewed at both
   viewports, with Ridge boundary 8 repeated at least three times per viewport;
-  the visual gate passed.
+  the visual gate passed. Fresh cache-disabled hard loads confirmed the nose
+  points into each turn and the rear reads outward at normal dashboard scale.
+  Rendered `.car-body` bounds remained contained and nonoverlapping at every
+  apex on both tracks and viewports. Ridge boundary 8 measured `18deg`
+  desktop and `16.5085deg` mobile visual yaw.
 - No protected terminal, dashboard optionality, fixture/live-adapter, or
   Notion boundary changed. No Notion work was created or updated. Runtime
   observability remains unchanged: no runtime logs, metrics, events, traces,
@@ -642,7 +654,7 @@ Architecture to challenge:
   fallback, 0.50 same-sign prominence split, and 45-degree discontinuous join
   promotion;
 - canonical topology with responsive projection and magnitude;
-- 3..12-degree capped linear strength policy and smoothstep entry/exit;
+- 6..18-degree capped linear strength policy and smoothstep entry/exit;
 - eight Ridge and eight Cypress corners with the exact tables;
 - generated yaw/inverse declarations in the existing route animation;
 - deletion of independent drift timing/translation;

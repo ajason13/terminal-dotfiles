@@ -474,7 +474,7 @@ test('route reset milestones preserve position, heading, opacity, and upright ma
   }
 });
 
-test('every compiled corner has signed zero-peak-zero yaw and upright markings', async ({ page }) => {
+test('every compiled corner has signed zero-peak-zero yaw, clear body bounds, and upright markings', async ({ page }) => {
   const profileName = page.viewportSize().width <= 759 ? 'mobile' : 'desktop';
   for (const trackId of ['ridge-pass', 'cypress-run']) {
     await page.locator('#track-select').selectOption(trackId);
@@ -518,6 +518,54 @@ test('every compiled corner has signed zero-peak-zero yaw and upright markings',
             };
           });
         }, samples);
+    const apexBodies = await page.evaluate(async (apexPercents) => {
+      const stageBox = document.querySelector('#map-stage').getBoundingClientRect();
+      const wrappers = [...document.querySelectorAll(
+        '.vehicle-anchor.state-active, .vehicle-anchor.state-thinking',
+      )];
+      const results = [];
+      for (const percent of apexPercents) {
+        for (const wrapper of wrappers) {
+          const route = wrapper.getAnimations().find((animation) => (
+            (animation.animationName ?? '').includes('traverse')
+          ));
+          route.pause();
+          route.currentTime = percent / 100 * 64000;
+        }
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const bodies = wrappers.map((wrapper) => {
+          const box = wrapper.querySelector('.car-body').getBoundingClientRect();
+          return {
+            left: box.left,
+            right: box.right,
+            top: box.top,
+            bottom: box.bottom,
+            opacity: Number(getComputedStyle(wrapper).opacity),
+          };
+        }).filter(({ opacity }) => opacity > 0);
+        let clipped = 0;
+        let overlaps = 0;
+        for (const body of bodies) {
+          if (body.left < stageBox.left - 0.01 || body.right > stageBox.right + 0.01
+            || body.top < stageBox.top - 0.01 || body.bottom > stageBox.bottom + 0.01) {
+            clipped += 1;
+          }
+        }
+        for (let first = 0; first < bodies.length; first += 1) {
+          for (let second = first + 1; second < bodies.length; second += 1) {
+            const horizontal = Math.min(bodies[first].right, bodies[second].right)
+              - Math.max(bodies[first].left, bodies[second].left);
+            const vertical = Math.min(bodies[first].bottom, bodies[second].bottom)
+              - Math.max(bodies[first].top, bodies[second].top);
+            if (horizontal > 0.01 && vertical > 0.01) overlaps += 1;
+          }
+        }
+        results.push({ clipped, overlaps });
+      }
+      return results;
+    }, schedule.corners.map((corner) => (
+      Number(schedule.frames[corner.apexFrameIndex].percent)
+    )));
     results.forEach((result) => {
         const corner = schedule.corners[result.cornerIndex];
         expect(Math.abs(result.yaw + result.inverse)).toBeLessThanOrEqual(0.01);
@@ -529,11 +577,17 @@ test('every compiled corner has signed zero-peak-zero yaw and upright markings',
         expect(result.motionAnimation).toBe('none');
         if (result.phase === 'apex') {
           expect(Math.sign(result.yaw)).toBe(corner.sign);
-          expect(Math.abs(result.yaw)).toBeGreaterThanOrEqual(3);
-          expect(Math.abs(result.yaw)).toBeLessThanOrEqual(12);
+          expect(Math.abs(result.yaw)).toBeGreaterThanOrEqual(6);
+          expect(Math.abs(result.yaw)).toBeLessThanOrEqual(18);
         } else {
           expect(Math.abs(result.yaw)).toBeLessThanOrEqual(0.01);
         }
+    });
+    apexBodies.forEach((result, cornerIndex) => {
+      expect(result.clipped,
+        `${trackId}/${profileName} corner ${cornerIndex + 1} body containment`).toBe(0);
+      expect(result.overlaps,
+        `${trackId}/${profileName} corner ${cornerIndex + 1} visual body overlap`).toBe(0);
     });
     const broad = schedule.corners.reduce((best, corner) => (
       Math.abs(corner.peakYaw) < Math.abs(best.peakYaw) ? corner : best
