@@ -1,8 +1,9 @@
 # Terminal Dotfiles
 
 Portable macOS configuration for a terminal-centric workflow - WezTerm, tmux,
-Neovim, Codex, and Claude Code - focused on LLM sessions, fast pane/window management, Quick
-Select file opening, local branch review, and rotating terminal backgrounds.
+Neovim, Codex, and Claude Code - focused on LLM sessions, fast pane/window
+management, Quick Select file opening, local branch review, and rotating
+terminal backgrounds.
 
 ## What This Includes
 
@@ -139,9 +140,14 @@ Copy mode installs files into:
 ~/.codex/agents
 ~/.codex/{deep-researcher,lead-architect,workflow-coordinator,builder}.config.toml
 ~/.local/bin/codex-role
+~/.local/bin/session-objective
+~/.claude/statusline.sh
+~/.claude/commands/objective.md
 ```
 
 Existing files are backed up before replacement when contents differ.
+`~/.claude/settings.json` is never written; see Session Objectives for the hook
+snippet to merge by hand.
 
 ## Local Editing Mode
 
@@ -164,6 +170,9 @@ This symlinks:
 ~/.codex/agents -> codex/agents
 ~/.codex/{deep-researcher,lead-architect,workflow-coordinator,builder}.config.toml -> codex/profiles/*
 ~/.local/bin/codex-role -> codex/bin/codex-role
+~/.local/bin/session-objective -> bin/session-objective
+~/.claude/statusline.sh -> claude/statusline.sh
+~/.claude/commands/objective.md -> claude/commands/objective.md
 ```
 
 ## Codex Role Routing
