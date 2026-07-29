@@ -566,7 +566,7 @@ textarea {
 .car-angle { transform: rotate(var(--route-heading, 0deg)); }
 .car-motion {
   animation: none;
-  transform: translate(0, 0) rotate(var(--drift-yaw, 0deg));
+  transform: rotate(var(--drift-yaw, 0deg));
 }
 
 .car-atmosphere {
@@ -748,16 +748,6 @@ textarea {
 }
 
 .dashboard-root:where([data-route-angle-motion="enabled"])[data-track-id]
-  .vehicle-anchor.state-active .car-motion {
-  animation: active-drift 2.8s ease-in-out infinite;
-}
-
-.dashboard-root:where([data-route-angle-motion="enabled"])[data-track-id]
-  .vehicle-anchor.state-thinking .car-motion {
-  animation: thinking-drift 3.6s ease-in-out infinite;
-}
-
-.dashboard-root:where([data-route-angle-motion="enabled"])[data-track-id]
   .vehicle-anchor.state-active > .car-atmosphere::before {
   width: 5px;
   height: 5px;
@@ -788,12 +778,6 @@ textarea {
 .dashboard-root[data-track-id] .vehicle-anchor:hover,
 .dashboard-root[data-track-id] .vehicle-anchor:focus-within,
 .dashboard-root[data-track-id] .vehicle-anchor[data-pinned="true"] {
-  animation-play-state: paused;
-}
-
-.dashboard-root[data-track-id] .vehicle-anchor:hover .car-motion,
-.dashboard-root[data-track-id] .vehicle-anchor:focus-within .car-motion,
-.dashboard-root[data-track-id] .vehicle-anchor[data-pinned="true"] .car-motion {
   animation-play-state: paused;
 }
 
@@ -1111,32 +1095,6 @@ textarea {
   margin: auto;
   padding: 1rem;
   color: var(--color-text-muted);
-}
-
-@keyframes active-drift {
-  0%, 100% {
-    --drift-yaw: -.75deg;
-    --drift-upright-yaw: .75deg;
-    transform: translate(-1px, 0) rotate(var(--drift-yaw));
-  }
-  50% {
-    --drift-yaw: .75deg;
-    --drift-upright-yaw: -.75deg;
-    transform: translate(1px, -2px) rotate(var(--drift-yaw));
-  }
-}
-
-@keyframes thinking-drift {
-  0%, 100% {
-    --drift-yaw: -1.5deg;
-    --drift-upright-yaw: 1.5deg;
-    transform: translate(-2px, 0) rotate(var(--drift-yaw));
-  }
-  50% {
-    --drift-yaw: 1.5deg;
-    --drift-upright-yaw: -1.5deg;
-    transform: translate(2px, 0) rotate(var(--drift-yaw));
-  }
 }
 
 @keyframes active-smoke-left {

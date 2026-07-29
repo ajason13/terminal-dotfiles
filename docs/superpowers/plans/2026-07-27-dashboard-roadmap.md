@@ -40,6 +40,20 @@ automatic terminal access, or app/runtime dependency is introduced.
    gating is static plus a supported-browser test. Delivery evidence and
    handoff are in
    `docs/superpowers/specs/2026-07-28-dashboard-tangent-atmosphere-design.md`.
+3a. **Corner-aware drifting — complete.** The compiler now derives a generic,
+   deterministic signed corner envelope from canonical route geometry: eight
+   corners each for Ridge Pass and Cypress Run in every responsive profile.
+   Existing route keyframes serialize smoothstep yaw from `3..12deg` in the
+   actual turn direction. Route positions, frame counts, geometry, anchors,
+   phases, contracts, and the constant `64s linear` traversal are unchanged.
+   Verification passed: 140/140 unit tests, 22/22 browser tests,
+   `routes:check`, browser syntax checks, `git diff --check`, generated-artifact
+   validation, port cleanup, and protected-boundary audits. Six deterministic
+   screenshots, normal-speed laps of both courses, and three Ridge boundary-8
+   repeats per viewport passed visual review. Independent pre- and post-change
+   QA both passed; there was no model exception and runtime observability
+   remains unchanged (none added). Delivery evidence is in
+   `docs/superpowers/specs/2026-07-28-dashboard-corner-aware-drift-design.md`.
 4. **Cypress mobile clearance.** Improve Cypress Run's full-target edge margin
    beyond the current approximately 3px minimum without changing course
    identity or weakening its route/clipping assertions.
@@ -50,5 +64,5 @@ automatic terminal access, or app/runtime dependency is introduced.
    medium-speed technical course through that compiler rather than hand-writing
    another responsive motion schedule.
 
-Items 2–6 are ordered future work, not implementation scope for the browser
-harness milestone.
+Item 4, Cypress mobile clearance, remains the next task. Items 4–6 are ordered
+future work and are not part of item 3a.

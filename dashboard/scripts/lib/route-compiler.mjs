@@ -1,5 +1,6 @@
 import {
-  cubicDerivative, parseCubicPath, pathMetrics, pointAtDistance, serializeCubicPath,
+  cubicArcLength, cubicDerivative, parseCubicPath, pathMetrics, pointAtDistance,
+  serializeCubicPath,
 } from './svg-cubic-path.mjs';
 
 export const CAPACITIES = Object.freeze([2, 3, 3, 3, 3, 2]);
@@ -13,6 +14,20 @@ const SEGMENT_KEYS = ['label', 'cssClass', 'curveCount', 'anchors'];
 const ANCHOR_KEYS = ['at', 'lateralOffset'];
 const ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const REFERENCE_PATTERN = /^[a-z][a-z0-9-]*$/;
+
+export const CORNER_POLICY = Object.freeze({
+  baseIntervals: 512,
+  halfWindowIntervals: 6,
+  tangentProbesPerBaseInterval: 4,
+  maximumContinuousProbeTurn: 90,
+  windowTurnThreshold: 15,
+  stepTurnEpsilon: 0.05,
+  broadLobeTotalTurn: 30,
+  prominenceValleyRatio: 0.5,
+  discontinuousJoinThreshold: 45,
+  minimumDriftYaw: 3,
+  maximumDriftYaw: 12,
+});
 
 function requirePlainObject(value, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value)
@@ -240,6 +255,8 @@ function candidate(kind, index, fraction, located, config) {
     left: serializeFour(located.point.x / config.viewBox.width * 100),
     top: serializeFour(located.point.y / config.viewBox.height * 100),
     derivative: located.derivative,
+    cubicIndex: located.cubicIndex,
+    t: located.t,
   };
 }
 
@@ -336,37 +353,617 @@ export function mergeScheduleCandidates(candidates) {
   return retained;
 }
 
-export function generateSchedule(route, cubics, profile, config) {
+function canonicalDistanceForLocation(cubics, canonicalMetrics, located) {
+  let distance = 0;
+  for (let index = 0; index < located.cubicIndex; index += 1) {
+    distance += canonicalMetrics.lengths[index];
+  }
+  return distance + cubicArcLength(cubics[located.cubicIndex], located.t);
+}
+
+function shortestSignedTurn(first, second, context) {
+  const delta = ((second - first + 180) % 360 + 360) % 360 - 180;
+  if (Math.abs(Math.abs(delta) - 180) <= 1e-9) {
+    throw new RangeError(`${context} has an ambiguous 180-degree reversal`);
+  }
+  if (!(Math.abs(roundFour(delta)) < 180)) {
+    throw new RangeError(`${context} serializes to a 180-degree reversal`);
+  }
+  return delta;
+}
+
+function boundaryDistances(metrics) {
+  const result = [];
+  let cumulative = 0;
+  for (let index = 1; index < metrics.lengths.length; index += 1) {
+    cumulative += metrics.lengths[index - 1];
+    result.push({ index, distance: cumulative });
+  }
+  return result;
+}
+
+function buildTopologyCandidates(cubics, canonicalMetrics, config) {
+  const candidates = [];
+  for (let index = 0; index <= CORNER_POLICY.baseIntervals; index += 1) {
+    const fraction = index / CORNER_POLICY.baseIntervals;
+    const located = pointAtDistance(cubics, canonicalMetrics, canonicalMetrics.total * fraction);
+    candidates.push({
+      ...candidate('base', index, fraction, located, config),
+      canonicalDistance: canonicalMetrics.total * fraction,
+    });
+  }
+  for (const boundary of boundaryDistances(canonicalMetrics)) {
+    const located = {
+      point: cubics[boundary.index].p0,
+      derivative: cubicDerivative(cubics[boundary.index], 0),
+      cubicIndex: boundary.index,
+      t: 0,
+    };
+    candidates.push({
+      ...candidate(
+        'boundary',
+        boundary.index,
+        boundary.distance / canonicalMetrics.total,
+        located,
+        config,
+      ),
+      canonicalDistance: boundary.distance,
+    });
+  }
+  return mergeScheduleCandidates(candidates);
+}
+
+function rawHeadingAt(cubics, metrics, distance, profile, config, context, side = 'outgoing') {
+  const boundaries = boundaryDistances(metrics);
+  const boundary = boundaries.find((item) => item.distance === distance);
+  let derivative;
+  if (boundary && side === 'incoming') {
+    derivative = cubicDerivative(cubics[boundary.index - 1], 1);
+  } else if (boundary) {
+    derivative = cubicDerivative(cubics[boundary.index], 0);
+  } else {
+    derivative = pointAtDistance(cubics, metrics, distance).derivative;
+  }
+  return headingForDerivative(derivative, profile, config, context);
+}
+
+export function buildCornerProbeStream(
+  route,
+  cubics,
+  canonicalMetrics,
+  candidates,
+  profile,
+  config,
+) {
+  const windowDistance = canonicalMetrics.total
+    * CORNER_POLICY.halfWindowIntervals / CORNER_POLICY.baseIntervals;
+  const distances = new Set();
+  for (let index = 0;
+    index <= CORNER_POLICY.baseIntervals * CORNER_POLICY.tangentProbesPerBaseInterval;
+    index += 1) {
+    distances.add(canonicalMetrics.total * index
+      / (CORNER_POLICY.baseIntervals * CORNER_POLICY.tangentProbesPerBaseInterval));
+  }
+  for (const item of candidates) {
+    distances.add(item.canonicalDistance);
+    distances.add(Math.max(0, item.canonicalDistance - windowDistance));
+    distances.add(Math.min(canonicalMetrics.total, item.canonicalDistance + windowDistance));
+  }
+  for (const boundary of boundaryDistances(canonicalMetrics)) distances.add(boundary.distance);
+
+  const boundaryByDistance = new Map(
+    boundaryDistances(canonicalMetrics).map((item) => [item.distance, item]),
+  );
+  const probes = [];
+  for (const distance of distances) {
+    const boundary = boundaryByDistance.get(distance);
+    if (boundary) {
+      probes.push({ distance, boundaryIndex: boundary.index, side: 'incoming', order: 0 });
+      probes.push({ distance, boundaryIndex: boundary.index, side: 'outgoing', order: 1 });
+    } else {
+      probes.push({ distance, side: 'outgoing', order: 1 });
+    }
+  }
+  probes.sort((left, right) => left.distance - right.distance || left.order - right.order);
+
+  let previous;
+  for (let index = 0; index < probes.length; index += 1) {
+    const probe = probes[index];
+    const raw = rawHeadingAt(
+      cubics,
+      canonicalMetrics,
+      probe.distance,
+      profile,
+      config,
+      `${route.id}/${profile.id} corner probe ${index}`,
+      probe.side,
+    );
+    if (!previous) {
+      probe.heading = raw;
+    } else {
+      const delta = shortestSignedTurn(
+        ((previous.heading + 180) % 360 + 360) % 360 - 180,
+        raw,
+        `${route.id}/${profile.id} corner probe ${index}`,
+      );
+      const isBoundaryJump = previous.distance === probe.distance
+        && previous.side === 'incoming' && probe.side === 'outgoing';
+      if (!isBoundaryJump
+        && Math.abs(delta) >= CORNER_POLICY.maximumContinuousProbeTurn) {
+        throw new RangeError(
+          `${route.id}/${profile.id} corner probe ${index} under-samples a continuous turn`,
+        );
+      }
+      probe.heading = previous.heading + delta;
+    }
+    previous = probe;
+  }
+  const outgoingByDistance = new Map(
+    probes.filter(({ side }) => side === 'outgoing')
+      .map((probe) => [probe.distance, probe]),
+  );
+  return { probes, outgoingByDistance, windowDistance };
+}
+
+function signOf(value) {
+  return value > 0 ? 1 : value < 0 ? -1 : 0;
+}
+
+function thresholdRegions(candidates) {
+  const regions = [];
+  let start = 0;
+  while (start < candidates.length) {
+    const sign = signOf(candidates[start].windowTurn);
+    if (sign === 0
+      || Math.abs(candidates[start].windowTurn) < CORNER_POLICY.windowTurnThreshold) {
+      start += 1;
+      continue;
+    }
+    let end = start;
+    while (end + 1 < candidates.length
+      && signOf(candidates[end + 1].windowTurn) === sign
+      && Math.abs(candidates[end + 1].windowTurn) >= CORNER_POLICY.windowTurnThreshold) {
+      end += 1;
+    }
+    regions.push({ start, end, sign });
+    start = end + 1;
+  }
+  return regions;
+}
+
+function broadLobeRegions(candidates) {
+  const steps = candidates.slice(1).map((item, index) => ({
+    index: index + 1,
+    value: item.heading - candidates[index].heading,
+  }));
+  const effective = steps.map(({ value }) => (
+    Math.abs(value) < CORNER_POLICY.stepTurnEpsilon ? 0 : signOf(value)
+  ));
+  for (let index = 1; index < effective.length - 1; index += 1) {
+    if (effective[index] === 0 && effective[index - 1] !== 0
+      && effective[index - 1] === effective[index + 1]) {
+      effective[index] = effective[index - 1];
+    }
+  }
+  const regions = [];
+  let offset = 0;
+  while (offset < effective.length) {
+    if (effective[offset] === 0) {
+      offset += 1;
+      continue;
+    }
+    const sign = effective[offset];
+    let end = offset;
+    while (end + 1 < effective.length && effective[end + 1] === sign) end += 1;
+    const turn = steps.slice(offset, end + 1).reduce((sum, step) => sum + step.value, 0);
+    if (Math.abs(turn) >= CORNER_POLICY.broadLobeTotalTurn) {
+      regions.push({ start: offset, end: end + 1, sign });
+    }
+    offset = end + 1;
+  }
+  return regions;
+}
+
+function mergeRegions(regions) {
+  const result = [];
+  for (const region of [...regions].sort((left, right) => (
+    left.start - right.start || left.end - right.end || left.sign - right.sign
+  ))) {
+    const opposite = result.find((item) => item.sign !== region.sign
+      && item.start <= region.end && region.start <= item.end);
+    if (opposite) throw new RangeError(
+      `opposite-sign corner regions overlap ${JSON.stringify(opposite)} ${JSON.stringify(region)}`,
+    );
+    const prior = result.findLast((item) => item.sign === region.sign
+      && item.start <= region.end && region.start <= item.end);
+    if (prior) {
+      prior.start = Math.min(prior.start, region.start);
+      prior.end = Math.max(prior.end, region.end);
+    } else {
+      result.push({ ...region });
+    }
+  }
+  return result.sort((left, right) => left.start - right.start);
+}
+
+export function selectCornerRegions(candidates) {
+  const threshold = thresholdRegions(candidates);
+  const broad = broadLobeRegions(candidates).filter((region) => !threshold.some((item) => (
+    item.start <= region.end && region.start <= item.end
+  )));
+  return {
+    threshold,
+    broad,
+    regions: mergeRegions([...threshold, ...broad]),
+  };
+}
+
+function localPeaks(candidates, region) {
+  const peaks = [];
+  let index = region.start;
+  while (index <= region.end) {
+    const magnitude = Math.abs(candidates[index].windowTurn);
+    let plateauEnd = index;
+    while (plateauEnd + 1 <= region.end
+      && Math.abs(candidates[plateauEnd + 1].windowTurn) === magnitude) plateauEnd += 1;
+    const before = index > region.start ? Math.abs(candidates[index - 1].windowTurn) : -Infinity;
+    const after = plateauEnd < region.end
+      ? Math.abs(candidates[plateauEnd + 1].windowTurn) : -Infinity;
+    if (magnitude >= CORNER_POLICY.windowTurnThreshold
+      && magnitude > before && magnitude > after) peaks.push(index);
+    index = plateauEnd + 1;
+  }
+  if (peaks.length === 0) {
+    let best = region.start;
+    for (let item = region.start + 1; item <= region.end; item += 1) {
+      if (Math.abs(candidates[item].windowTurn) > Math.abs(candidates[best].windowTurn)) best = item;
+    }
+    peaks.push(best);
+  }
+  return peaks;
+}
+
+export function cornersForRegions(route, candidates, regions, joins, windowDistance) {
+  const corners = [];
+  for (const region of regions) {
+    let peaks = localPeaks(candidates, region).map((index) => ({ index, forced: false }));
+    const forced = [];
+    for (let index = region.start; index <= region.end; index += 1) {
+      const item = candidates[index];
+      const join = item.kind === 'boundary' ? joins.get(item.index) : undefined;
+      if (join !== undefined && signOf(join) === region.sign
+        && Math.abs(join) >= CORNER_POLICY.discontinuousJoinThreshold) {
+        forced.push({ index, forced: true, joinMagnitude: Math.abs(join) });
+      }
+    }
+    peaks = peaks.filter((peak) => !forced.some((item) => (
+      Math.abs(candidates[peak.index].canonicalDistance
+        - candidates[item.index].canonicalDistance) <= windowDistance
+    )));
+    peaks.push(...forced);
+    peaks.sort((left, right) => left.index - right.index);
+
+    const splitValleys = [];
+    for (let index = 0; index < peaks.length - 1; index += 1) {
+      let valley = peaks[index].index + 1;
+      for (let item = valley + 1; item < peaks[index + 1].index; item += 1) {
+        if (Math.abs(candidates[item].windowTurn)
+          < Math.abs(candidates[valley].windowTurn)) valley = item;
+      }
+      if (valley < peaks[index + 1].index
+        && Math.abs(candidates[valley].windowTurn)
+          <= CORNER_POLICY.prominenceValleyRatio * Math.min(
+            Math.abs(candidates[peaks[index].index].windowTurn),
+            Math.abs(candidates[peaks[index + 1].index].windowTurn),
+          )) splitValleys.push(valley);
+    }
+    const clusters = [];
+    let clusterStart = 0;
+    for (const valley of splitValleys) {
+      const splitAt = peaks.findIndex((peak) => peak.index > valley);
+      clusters.push({ peaks: peaks.slice(clusterStart, splitAt), valleyAfter: valley });
+      clusterStart = splitAt;
+    }
+    clusters.push({ peaks: peaks.slice(clusterStart), valleyAfter: null });
+    let outerEntryIndex = region.start - 1;
+    while (outerEntryIndex >= 0 && candidates[outerEntryIndex].kind !== 'base') {
+      outerEntryIndex -= 1;
+    }
+    let outerExitIndex = region.end + 1;
+    while (outerExitIndex < candidates.length && candidates[outerExitIndex].kind !== 'base') {
+      outerExitIndex += 1;
+    }
+    if (outerEntryIndex < 0 || outerExitIndex >= candidates.length) {
+      throw new RangeError(`${route.id} corner region is missing an outer guard candidate`);
+    }
+    let entryIndex = outerEntryIndex;
+    for (const cluster of clusters) {
+      const exitIndex = cluster.valleyAfter ?? outerExitIndex;
+      let apex = cluster.peaks[0];
+      for (const peak of cluster.peaks.slice(1)) {
+        const currentStrength = apex.forced
+          ? apex.joinMagnitude : Math.abs(candidates[apex.index].windowTurn);
+        const nextStrength = peak.forced
+          ? peak.joinMagnitude : Math.abs(candidates[peak.index].windowTurn);
+        if ((peak.forced && !apex.forced)
+          || (peak.forced === apex.forced && nextStrength > currentStrength)) apex = peak;
+      }
+      if (!(entryIndex < apex.index && apex.index < exitIndex)) {
+        throw new RangeError(`${route.id} corner landmarks are not strictly ordered`);
+      }
+      corners.push({
+        sign: region.sign,
+        entryIndex,
+        apexIndex: apex.index,
+        exitIndex,
+        entry: candidates[entryIndex],
+        apex: candidates[apex.index],
+        exit: candidates[exitIndex],
+        forcedBoundaryIndex: apex.forced ? candidates[apex.index].index : null,
+      });
+      entryIndex = exitIndex;
+    }
+  }
+  return corners;
+}
+
+export function detectCourseCorners(route, cubics, config) {
+  const canonicalMetrics = pathMetrics(cubics);
+  const candidates = buildTopologyCandidates(cubics, canonicalMetrics, config);
+  const canonicalProfile = { id: 'canonical', width: 1000, height: 760 };
+  const stream = buildCornerProbeStream(
+    route,
+    cubics,
+    canonicalMetrics,
+    candidates,
+    canonicalProfile,
+    config,
+  );
+  for (const item of candidates) {
+    const before = Math.max(0, item.canonicalDistance - stream.windowDistance);
+    const after = Math.min(canonicalMetrics.total, item.canonicalDistance + stream.windowDistance);
+    item.heading = stream.outgoingByDistance.get(item.canonicalDistance).heading;
+    item.windowTurn = item.canonicalDistance < stream.windowDistance
+      || item.canonicalDistance > canonicalMetrics.total - stream.windowDistance
+      ? 0
+      : stream.outgoingByDistance.get(after).heading
+        - stream.outgoingByDistance.get(before).heading;
+  }
+  const joins = new Map();
+  for (const boundary of boundaryDistances(canonicalMetrics)) {
+    const incoming = headingForDerivative(
+      cubicDerivative(cubics[boundary.index - 1], 1),
+      canonicalProfile,
+      config,
+      `${route.id} boundary ${boundary.index} incoming`,
+    );
+    const outgoing = headingForDerivative(
+      cubicDerivative(cubics[boundary.index], 0),
+      canonicalProfile,
+      config,
+      `${route.id} boundary ${boundary.index} outgoing`,
+    );
+    joins.set(boundary.index, shortestSignedTurn(
+      incoming,
+      outgoing,
+      `${route.id} boundary ${boundary.index}`,
+    ));
+  }
+
+  const { regions } = selectCornerRegions(candidates);
+  const corners = cornersForRegions(
+    route,
+    candidates,
+    regions,
+    joins,
+    stream.windowDistance,
+  );
+  return { corners, candidates, canonicalMetrics, joins, stream };
+}
+
+function nearestFrameIndex(frames, distance) {
+  let best = 0;
+  for (let index = 1; index < frames.length; index += 1) {
+    const delta = Math.abs(frames[index].canonicalDistance - distance);
+    const bestDelta = Math.abs(frames[best].canonicalDistance - distance);
+    if (delta < bestDelta) best = index;
+  }
+  return best;
+}
+
+function requiredProbeHeading(stream, distance, context) {
+  const probe = stream.outgoingByDistance.get(distance);
+  if (!probe || !Number.isFinite(probe.heading)) {
+    throw new RangeError(`${context} is missing a responsive tangent probe`);
+  }
+  return probe.heading;
+}
+
+export function smoothstep(value) {
+  return 3 * value ** 2 - 2 * value ** 3;
+}
+
+export function driftMagnitudeForStrength(strength) {
+  requireFinite(strength, 'corner strength');
+  const normalized = Math.max(0, Math.min(1, (strength - 15) / 75));
+  return roundFour(3 + 9 * normalized);
+}
+
+export function applyCornerDrift(
+  route,
+  cubics,
+  frames,
+  profile,
+  config,
+  analysis,
+) {
+  const responsive = buildCornerProbeStream(
+    route,
+    cubics,
+    analysis.canonicalMetrics,
+    analysis.candidates,
+    profile,
+    config,
+  );
+  const projected = analysis.corners.map((corner, cornerIndex) => {
+    const entryIndex = nearestFrameIndex(frames, corner.entry.canonicalDistance);
+    const apexIndex = nearestFrameIndex(frames, corner.apex.canonicalDistance);
+    const exitIndex = nearestFrameIndex(frames, corner.exit.canonicalDistance);
+    if (!(entryIndex < apexIndex && apexIndex < exitIndex)) {
+      throw new RangeError(`${route.id}/${profile.id} projected corner landmarks collapse`);
+    }
+    const before = Math.max(
+      0,
+      corner.apex.canonicalDistance - responsive.windowDistance,
+    );
+    const after = Math.min(
+      analysis.canonicalMetrics.total,
+      corner.apex.canonicalDistance + responsive.windowDistance,
+    );
+    const context = `${route.id}/${profile.id} corner ${cornerIndex + 1} window`;
+    const beforeHeading = requiredProbeHeading(responsive, before, `${context} start`);
+    const afterHeading = requiredProbeHeading(responsive, after, `${context} end`);
+    const responsiveTurn = afterHeading - beforeHeading;
+    let strength = Math.abs(responsiveTurn);
+    const responsiveSign = signOf(responsiveTurn);
+    if (responsiveSign !== corner.sign) {
+      throw new RangeError(`${route.id}/${profile.id} responsive corner sign changed`);
+    }
+    if (corner.forcedBoundaryIndex !== null) {
+      const incoming = headingForDerivative(
+        cubicDerivative(cubics[corner.forcedBoundaryIndex - 1], 1),
+        profile,
+        config,
+        `${route.id}/${profile.id} boundary incoming`,
+      );
+      const outgoing = headingForDerivative(
+        cubicDerivative(cubics[corner.forcedBoundaryIndex], 0),
+        profile,
+        config,
+        `${route.id}/${profile.id} boundary outgoing`,
+      );
+      strength = Math.max(strength, Math.abs(shortestSignedTurn(
+        incoming,
+        outgoing,
+        `${route.id}/${profile.id} boundary ${corner.forcedBoundaryIndex}`,
+      )));
+    }
+    const peakMagnitude = driftMagnitudeForStrength(strength);
+    return {
+      ...corner,
+      entryFrameIndex: entryIndex,
+      apexFrameIndex: apexIndex,
+      exitFrameIndex: exitIndex,
+      strength,
+      peakYaw: corner.sign * peakMagnitude,
+    };
+  });
+  for (let index = 1; index < projected.length; index += 1) {
+    if (projected[index - 1].exitFrameIndex > projected[index].entryFrameIndex
+      || (projected[index - 1].exitFrameIndex === projected[index].entryFrameIndex
+        && projected[index - 1].exitIndex !== projected[index].entryIndex)) {
+      throw new RangeError(`${route.id}/${profile.id} projected corner envelopes overlap`);
+    }
+  }
+  const driftFrames = frames.map((frame, frameIndex) => {
+    let rawYaw = 0;
+    const owners = projected.filter((corner) => (
+      frameIndex > corner.entryFrameIndex && frameIndex < corner.exitFrameIndex
+    ));
+    if (owners.length > 1) {
+      throw new RangeError(`${route.id}/${profile.id} frame belongs to multiple drift envelopes`);
+    }
+    const corner = owners[0];
+    if (corner) {
+      const entryDistance = frames[corner.entryFrameIndex].canonicalDistance;
+      const apexDistance = frames[corner.apexFrameIndex].canonicalDistance;
+      const exitDistance = frames[corner.exitFrameIndex].canonicalDistance;
+      if (frameIndex <= corner.apexFrameIndex) {
+        const t = Math.max(0, Math.min(
+          1,
+          (frame.canonicalDistance - entryDistance) / (apexDistance - entryDistance),
+        ));
+        rawYaw = corner.peakYaw * smoothstep(t);
+      } else {
+        const t = Math.max(0, Math.min(
+          1,
+          (exitDistance - frame.canonicalDistance) / (exitDistance - apexDistance),
+        ));
+        rawYaw = corner.peakYaw * smoothstep(t);
+      }
+    }
+    const yaw = roundFour(rawYaw);
+    return {
+      ...frame,
+      driftYaw: serializeFour(yaw),
+      driftUprightYaw: serializeFour(-yaw),
+    };
+  });
+  return { frames: driftFrames, corners: projected, responsiveStream: responsive };
+}
+
+export function generateSchedule(route, cubics, profile, config, cornerAnalysis) {
   const scale = {
     x: profile.width / config.viewBox.width,
     y: profile.height / config.viewBox.height,
   };
   const metrics = pathMetrics(cubics, scale);
   const candidates = [];
+  const canonicalMetrics = cornerAnalysis?.canonicalMetrics ?? pathMetrics(cubics);
   for (let index = 0; index <= 512; index += 1) {
     const fraction = index / 512;
-    candidates.push(candidate(
+    const located = pointAtDistance(cubics, metrics, metrics.total * fraction);
+    candidates.push({
+      ...candidate(
       'base',
       index,
       fraction,
-      pointAtDistance(cubics, metrics, metrics.total * fraction),
+      located,
       config,
-    ));
+      ),
+      canonicalDistance: canonicalDistanceForLocation(cubics, canonicalMetrics, located),
+    });
   }
   let cumulative = 0;
+  let canonicalCumulative = 0;
   for (let index = 1; index < cubics.length; index += 1) {
     cumulative += metrics.lengths[index - 1];
-    candidates.push(candidate('boundary', index, cumulative / metrics.total, {
-      point: cubics[index].p0,
-      derivative: cubicDerivative(cubics[index], 0),
-    }, config));
+    canonicalCumulative += canonicalMetrics.lengths[index - 1];
+    candidates.push({
+      ...candidate('boundary', index, cumulative / metrics.total, {
+        point: cubics[index].p0,
+        derivative: cubicDerivative(cubics[index], 0),
+        cubicIndex: index,
+        t: 0,
+      }, config),
+      canonicalDistance: canonicalCumulative,
+    });
   }
-  const frames = addFrameHeadings(
+  let frames = addFrameHeadings(
     mergeScheduleCandidates(candidates),
     profile,
     config,
     `${route.id}/${profile.id} heading`,
   );
+  let corners = [];
+  if (cornerAnalysis) {
+    const drift = applyCornerDrift(
+      route,
+      cubics,
+      frames,
+      profile,
+      config,
+      cornerAnalysis,
+    );
+    frames = drift.frames;
+    corners = drift.corners;
+  } else {
+    frames = frames.map((frame) => ({
+      ...frame,
+      driftYaw: '0',
+      driftUprightYaw: '0',
+    }));
+  }
   let maximumDeviation = 0;
   for (let index = 0; index < frames.length - 1; index += 1) {
     const first = frames[index];
@@ -414,7 +1011,7 @@ export function generateSchedule(route, cubics, profile, config) {
   const variation = (Math.max(...groupLengths) - Math.min(...groupLengths)) / mean * 100;
   if (variation > 5) throw new RangeError(`${route.id}/${profile.id} speed variation exceeds 5%`);
   auditPhasedSchedule(frames, profile, route.id);
-  return { frames, maximumDeviation, groupLengths, metrics };
+  return { frames, maximumDeviation, groupLengths, metrics, corners };
 }
 
 export function speedGroupForChord(startPercent, endPercent, milestones) {
@@ -502,12 +1099,14 @@ function renderKeyframes(name, frames) {
     `  ${frame.percent}% { left: ${frame.left}%; top: ${frame.top}%;`
       + ` --route-heading: ${frame.heading}deg;`
       + ` --route-upright-heading: ${frame.uprightHeading}deg;`
+      + ` --drift-yaw: ${frame.driftYaw}deg;`
+      + ` --drift-upright-yaw: ${frame.driftUprightYaw}deg;`
       + `${index === 0 || index === frames.length - 1 ? ' opacity: 1;' : ''} }`
   )).join('\n');
   return `@keyframes ${name} {\n${visible}\n`
-    + `  99.2% { left: ${last.left}%; top: ${last.top}%; --route-heading: ${last.heading}deg; --route-upright-heading: ${last.uprightHeading}deg; opacity: 0; }\n`
-    + `  99.6% { left: ${first.left}%; top: ${first.top}%; --route-heading: ${first.heading}deg; --route-upright-heading: ${first.uprightHeading}deg; opacity: 0; }\n`
-    + `  100% { left: ${first.left}%; top: ${first.top}%; --route-heading: ${first.heading}deg; --route-upright-heading: ${first.uprightHeading}deg; opacity: 1; }\n}\n`;
+    + `  99.2% { left: ${last.left}%; top: ${last.top}%; --route-heading: ${last.heading}deg; --route-upright-heading: ${last.uprightHeading}deg; --drift-yaw: ${last.driftYaw}deg; --drift-upright-yaw: ${last.driftUprightYaw}deg; opacity: 0; }\n`
+    + `  99.6% { left: ${first.left}%; top: ${first.top}%; --route-heading: ${first.heading}deg; --route-upright-heading: ${first.uprightHeading}deg; --drift-yaw: ${first.driftYaw}deg; --drift-upright-yaw: ${first.driftUprightYaw}deg; opacity: 0; }\n`
+    + `  100% { left: ${first.left}%; top: ${first.top}%; --route-heading: ${first.heading}deg; --route-upright-heading: ${first.uprightHeading}deg; --drift-yaw: ${first.driftYaw}deg; --drift-upright-yaw: ${first.driftUprightYaw}deg; opacity: 1; }\n}\n`;
 }
 
 export function generateStaticHeadings(route, cubics, profile, config) {
@@ -563,6 +1162,7 @@ export function compileRoutes(config, routeSources, digest) {
   const geometry = [];
   const schedules = [];
   for (const { route, cubics } of validated) {
+    const cornerAnalysis = detectCourseCorners(route, cubics, config);
     trackInput.push({
       id: route.id,
       title: route.title,
@@ -585,8 +1185,9 @@ export function compileRoutes(config, routeSources, digest) {
     });
     schedules.push({
       route,
-      desktop: generateSchedule(route, cubics, config.profiles[0], config),
-      mobile: generateSchedule(route, cubics, config.profiles[1], config),
+      cornerAnalysis,
+      desktop: generateSchedule(route, cubics, config.profiles[0], config, cornerAnalysis),
+      mobile: generateSchedule(route, cubics, config.profiles[1], config, cornerAnalysis),
       desktopStaticHeadings: generateStaticHeadings(route, cubics, config.profiles[0], config),
       mobileStaticHeadings: generateStaticHeadings(route, cubics, config.profiles[1], config),
     });

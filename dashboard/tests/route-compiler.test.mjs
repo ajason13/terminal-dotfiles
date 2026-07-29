@@ -28,13 +28,22 @@ import {
 } from '../scripts/lib/svg-cubic-path.mjs';
 import {
   auditAnchorTargets,
+  applyCornerDrift,
+  buildCornerProbeStream,
+  CORNER_POLICY,
   compileRoutes,
+  cornersForRegions,
+  detectCourseCorners,
+  driftMagnitudeForStrength,
   generateAnchors,
   generateSchedule,
   generateStaticHeadings,
   headingForDerivative,
   mergeScheduleCandidates,
+  roundFour,
+  selectCornerRegions,
   serializeFour,
+  smoothstep,
   speedGroupForChord,
   unwrapHeadings,
   validateSources,
@@ -46,6 +55,15 @@ let cachedCompilation;
 const compile = () => {
   cachedCompilation ??= compileRoutes(config, [ridge, cypress], '0'.repeat(64));
   return cachedCompilation;
+};
+const syntheticCircle = () => {
+  const k = 110.45695;
+  return [
+    { p0: { x: 500, y: 180 }, p1: { x: 500 + k, y: 180 }, p2: { x: 700, y: 380 - k }, p3: { x: 700, y: 380 } },
+    { p0: { x: 700, y: 380 }, p1: { x: 700, y: 380 + k }, p2: { x: 500 + k, y: 580 }, p3: { x: 500, y: 580 } },
+    { p0: { x: 500, y: 580 }, p1: { x: 500 - k, y: 580 }, p2: { x: 300, y: 380 + k }, p3: { x: 300, y: 380 } },
+    { p0: { x: 300, y: 380 }, p1: { x: 300, y: 380 - k }, p2: { x: 500 - k, y: 180 }, p3: { x: 500, y: 180 } },
+  ];
 };
 
 test('checked-in config and routes validate with fixed cubic and segment mappings', () => {
@@ -208,6 +226,418 @@ test('heading unwrapping chooses the nearest equivalent and rejects ambiguous re
   assert.throws(() => unwrapHeadings([0, 179.99996]), /serializes to a 180-degree/);
   assert.equal(serializeFour(-0), '0');
   assert.equal(serializeFour(-12.34567), '-12.3457');
+});
+
+test('corner policy pins the canonical detector, thresholds, envelope, and yaw cap', () => {
+  assert.deepEqual(CORNER_POLICY, {
+    baseIntervals: 512,
+    halfWindowIntervals: 6,
+    tangentProbesPerBaseInterval: 4,
+    maximumContinuousProbeTurn: 90,
+    windowTurnThreshold: 15,
+    stepTurnEpsilon: 0.05,
+    broadLobeTotalTurn: 30,
+    prominenceValleyRatio: 0.5,
+    discontinuousJoinThreshold: 45,
+    minimumDriftYaw: 3,
+    maximumDriftYaw: 12,
+  });
+});
+
+test('broad fallback admits disjoint lobes and rejects same-sign or opposite-sign endpoint contact', () => {
+  const make = (windowTurns) => [0, 10, 20, 30, 40].map((heading, index) => ({
+    heading,
+    windowTurn: windowTurns[index] ?? 0,
+  }));
+  assert.deepEqual(selectCornerRegions(make([])).broad, [{ start: 0, end: 4, sign: 1 }]);
+  for (const endpointTurn of [15, -15]) {
+    const selected = selectCornerRegions(make([0, 0, 0, 0, endpointTurn]));
+    assert.equal(selected.threshold.length, 1);
+    assert.deepEqual(selected.broad, []);
+  }
+  const adjacent = selectCornerRegions(make([0, 0, 0, 0, 15]));
+  assert.deepEqual(adjacent.broad, []);
+  const bPlusOne = selectCornerRegions([
+    { heading: 0, windowTurn: 0 },
+    { heading: 10, windowTurn: 0 },
+    { heading: 20, windowTurn: 0 },
+    { heading: 30, windowTurn: 0 },
+    { heading: 30, windowTurn: 15 },
+  ]);
+  assert.deepEqual(bPlusOne.broad, [{ start: 0, end: 3, sign: 1 }]);
+  assert.deepEqual(bPlusOne.threshold, [{ start: 4, end: 4, sign: 1 }]);
+});
+
+test('broad-only endpoint regions fail with deterministic route context instead of TypeError', () => {
+  const candidate = (heading, index) => ({
+    kind: 'base',
+    index,
+    canonicalDistance: index,
+    heading,
+    windowTurn: 0,
+  });
+  for (const [id, headings] of [
+    ['start-guard', [0, 10, 20, 30, 40, 40]],
+    ['end-guard', [0, 0, 10, 20, 30, 40]],
+  ]) {
+    const candidates = headings.map(candidate);
+    const selected = selectCornerRegions(candidates);
+    assert.equal(selected.threshold.length, 0);
+    assert.equal(selected.broad.length, 1);
+    assert.throws(
+      () => cornersForRegions({ id }, candidates, selected.regions, new Map(), 1),
+      (error) => error instanceof RangeError
+        && error.message === `${id} corner region is missing an outer guard candidate`,
+    );
+  }
+});
+
+test('synthetic straight, near-zero, broad, left, right, and sign-transition signals classify generically', () => {
+  const items = (headings, windows) => headings.map((heading, index) => ({
+    heading,
+    windowTurn: windows[index] ?? 0,
+  }));
+  assert.deepEqual(selectCornerRegions(items([0, 0, 0], [])).regions, []);
+  assert.deepEqual(selectCornerRegions(items([0, 0.049, 0.098], [])).regions, []);
+  assert.deepEqual(
+    selectCornerRegions(items([0, 10, 20, 30, 40], [])).regions,
+    [{ start: 0, end: 4, sign: 1 }],
+  );
+  assert.deepEqual(
+    selectCornerRegions(items([0, 0, 0, 0, 0], [0, 15, 16, 0, 0])).threshold,
+    [{ start: 1, end: 2, sign: 1 }],
+  );
+  assert.deepEqual(
+    selectCornerRegions(items([0, 0, 0, 0, 0], [0, -15, -16, 0, 0])).threshold,
+    [{ start: 1, end: 2, sign: -1 }],
+  );
+  assert.deepEqual(
+    selectCornerRegions(items([0, 0, 0, 0, 0], [0, 18, 0, -18, 0])).threshold,
+    [{ start: 1, end: 1, sign: 1 }, { start: 3, end: 3, sign: -1 }],
+  );
+});
+
+test('distributed turns above 180 unwrap with sign while concentrated turns fail closed', () => {
+  const circle = syntheticCircle();
+  const metrics = pathMetrics(circle);
+  const stream = buildCornerProbeStream(
+    { id: 'distributed' },
+    circle,
+    metrics,
+    [{ canonicalDistance: 0 }, { canonicalDistance: metrics.total }],
+    { id: 'canonical', width: 1000, height: 760 },
+    config,
+  );
+  const canonicalTurn = stream.probes.at(-1).heading - stream.probes[0].heading;
+  assert.ok(Math.abs(canonicalTurn) > 300);
+  const responsive = buildCornerProbeStream(
+    { id: 'distributed' },
+    circle,
+    metrics,
+    [{ canonicalDistance: 0 }, { canonicalDistance: metrics.total }],
+    config.profiles[1],
+    config,
+  );
+  const responsiveTurn = responsive.probes.at(-1).heading - responsive.probes[0].heading;
+  assert.ok(Math.abs(responsiveTurn) > 300);
+  assert.equal(Math.sign(responsiveTurn), Math.sign(canonicalTurn));
+
+  const concentrated = [{
+    p0: { x: 500, y: 185.2303448275862 },
+    p1: { x: 790.4092404481066, y: 224.7517533967522 },
+    p2: { x: 607.4797997751646, y: 189.98107221553056 },
+    p3: { x: 501.4848990605608, y: 212.8679361831803 },
+  }];
+  const concentratedMetrics = pathMetrics(concentrated);
+  assert.throws(() => buildCornerProbeStream(
+    { id: 'concentrated' },
+    concentrated,
+    concentratedMetrics,
+    [{ canonicalDistance: 0 }, { canonicalDistance: concentratedMetrics.total }],
+    { id: 'canonical', width: 1000, height: 760 },
+    config,
+  ), /under-samples a continuous turn/);
+  assert.throws(() => buildCornerProbeStream(
+    { id: 'concentrated' },
+    concentrated,
+    concentratedMetrics,
+    [{ canonicalDistance: 0 }, { canonicalDistance: concentratedMetrics.total }],
+    config.profiles[1],
+    config,
+  ), /concentrated\/mobile corner probe \d+ under-samples a continuous turn/);
+});
+
+test('neutral equality, one-neutral bridging, and exact broad activation boundaries are executable', () => {
+  const make = (headings) => headings.map((heading) => ({ heading, windowTurn: 0 }));
+  assert.deepEqual(
+    selectCornerRegions(make([0, 0.05, 10, 20, 30])).broad,
+    [{ start: 0, end: 4, sign: 1 }],
+  );
+  assert.deepEqual(
+    selectCornerRegions(make([0, 10, 10.049, 20.049, 30.049])).broad,
+    [{ start: 0, end: 4, sign: 1 }],
+  );
+  assert.deepEqual(
+    selectCornerRegions(make([0, 10, 20, 30])).broad,
+    [{ start: 0, end: 3, sign: 1 }],
+  );
+  assert.deepEqual(selectCornerRegions(make([0, 10, 20, 29.9999])).broad, []);
+});
+
+test('prominence equality, plateau, earlier ties, and exact join promotion select deterministic apexes', () => {
+  const candidates = (turns, boundaryAt = -1) => turns.map((windowTurn, index) => ({
+    kind: index === boundaryAt ? 'boundary' : 'base',
+    index: index === boundaryAt ? 7 : index,
+    canonicalDistance: index * 10,
+    windowTurn,
+  }));
+  const region = [{ start: 1, end: 5, sign: 1 }];
+  const exactValley = candidates([0, 15, 20, 10, 20, 15, 0]);
+  const split = cornersForRegions({ id: 'prominence' }, exactValley, region, new Map(), 6);
+  assert.deepEqual(split.map(({ entryIndex, apexIndex, exitIndex }) => (
+    [entryIndex, apexIndex, exitIndex]
+  )), [[0, 2, 3], [3, 4, 6]]);
+
+  const aboveValley = candidates([0, 15, 20, 10.0001, 20, 15, 0]);
+  const tied = cornersForRegions({ id: 'tie' }, aboveValley, region, new Map(), 6);
+  assert.equal(tied.length, 1);
+  assert.equal(tied[0].apexIndex, 2);
+
+  const plateau = candidates([0, 15, 20, 20, 15, 14, 0]);
+  assert.equal(
+    cornersForRegions({ id: 'plateau' }, plateau, region, new Map(), 6)[0].apexIndex,
+    2,
+  );
+
+  const joinCandidates = candidates([0, 15, 30, 20, 15, 14, 0], 3);
+  const promoted = cornersForRegions(
+    { id: 'join' },
+    joinCandidates,
+    region,
+    new Map([[7, 45]]),
+    15,
+  );
+  assert.equal(promoted[0].apexIndex, 3);
+  assert.equal(promoted[0].forcedBoundaryIndex, 7);
+  const below = cornersForRegions(
+    { id: 'join-below' },
+    joinCandidates,
+    region,
+    new Map([[7, 44.9999]]),
+    15,
+  );
+  assert.equal(below[0].apexIndex, 2);
+  assert.equal(below[0].forcedBoundaryIndex, null);
+});
+
+test('drift magnitude floor, linear scaling, cap, smoothstep, and finite boundary are exact', () => {
+  assert.equal(driftMagnitudeForStrength(0), 3);
+  assert.equal(driftMagnitudeForStrength(15), 3);
+  assert.equal(driftMagnitudeForStrength(52.5), 7.5);
+  assert.equal(driftMagnitudeForStrength(90), 12);
+  assert.equal(driftMagnitudeForStrength(900), 12);
+  assert.throws(() => driftMagnitudeForStrength(NaN), /finite/);
+  assert.equal(smoothstep(0), 0);
+  assert.equal(smoothstep(0.5), 0.5);
+  assert.equal(smoothstep(1), 1);
+});
+
+test('responsive start/end windows clamp to route endpoints and missing probes fail contextually', () => {
+  const cubics = syntheticCircle();
+  const canonicalMetrics = pathMetrics(cubics);
+  const unit = canonicalMetrics.total / 512;
+  const frame = (canonicalDistance) => ({
+    canonicalDistance,
+    percent: serializeFour(98.8 * canonicalDistance / canonicalMetrics.total),
+    driftYaw: '0',
+    driftUprightYaw: '0',
+  });
+  const apply = (id, distances, apexInCandidates = true) => {
+    const frames = distances.map(frame);
+    const [entry, apex, exit] = distances.map((canonicalDistance, index) => ({
+      kind: 'base',
+      index,
+      canonicalDistance,
+    }));
+    const candidates = apexInCandidates ? [entry, apex, exit] : [entry, exit];
+    return applyCornerDrift(
+      { id },
+      cubics,
+      frames,
+      config.profiles[0],
+      config,
+      {
+        canonicalMetrics,
+        candidates,
+        corners: [{
+          sign: 1,
+          entry,
+          apex,
+          exit,
+          entryIndex: 0,
+          apexIndex: 1,
+          exitIndex: 2,
+          forcedBoundaryIndex: null,
+        }],
+      },
+    );
+  };
+  for (const [id, distances] of [
+    ['start-window', [0, 2 * unit, 10 * unit]],
+    ['end-window', [canonicalMetrics.total - 10 * unit,
+      canonicalMetrics.total - 2 * unit, canonicalMetrics.total]],
+  ]) {
+    const result = apply(id, distances);
+    assert.equal(result.frames[0].driftYaw, '0');
+    assert.ok(Number(result.frames[1].driftYaw) > 0);
+    assert.equal(result.frames[2].driftYaw, '0');
+  }
+  assert.throws(
+    () => apply('missing-window', [0, 2.125 * unit, 10 * unit], false),
+    /missing-window\/desktop corner 1 window end is missing a responsive tangent probe/,
+  );
+});
+
+test('compiled canonical detector reproduces exact generic Ridge and Cypress topology', () => {
+  const expected = new Map([
+    ['ridge-pass', [
+      [-1, 29, 35, 36], [1, 66, 81, 95], [-1, 116, 137, 153],
+      [1, 175, 182, 191], [-1, 193, 194, 199], [1, 246, 'boundary-8', 265],
+      [-1, 341, 359, 385], [1, 446, 454, 467],
+    ]],
+    ['cypress-run', [
+      [1, 51, 66, 76], [-1, 79, 89, 99], [1, 130, 142, 172],
+      [-1, 212, 225, 235], [-1, 235, 247, 259], [1, 302, 325, 340],
+      [1, 440, 454, 463], [1, 475, 486, 496],
+    ]],
+  ]);
+  for (const route of [ridge, cypress]) {
+    const analysis = detectCourseCorners(
+      route,
+      parseCubicPath(route.path, config.viewBox),
+      config,
+    );
+    assert.equal(analysis.candidates.filter(({ kind }) => kind === 'base').length, 513);
+    assert.deepEqual(analysis.corners.map((corner) => [
+      corner.sign,
+      corner.entry.index,
+      corner.apex.kind === 'boundary' ? `boundary-${corner.apex.index}` : corner.apex.index,
+      corner.exit.index,
+    ]), expected.get(route.id));
+  }
+});
+
+test('responsive projection reproduces exact landmark tables and bounded signed yaw', () => {
+  const expected = new Map([
+    ['ridge-pass/desktop', [
+      '5.5961/6.7539/6.9469', '12.9289/15.6305/18.332',
+      '22.5773/26.4367/29.4286', '33.7695/35.3133/36.857',
+      '37.243/37.4359/38.4008', '47.2773/48.5111/50.9438',
+      '65.8023/69.0828/73.907', '85.8711/87.4148/90.1164',
+    ]],
+    ['ridge-pass/mobile', [
+      '5.5961/6.7539/6.9469', '11.9641/15.4375/18.1717',
+      '21.6125/26.2437/29.6368', '33.1906/34.3484/36.4711',
+      '36.857/37.243/38.4008', '47.8562/49.2289/52.1016',
+      '65.8023/70.0477/76.0297', '86.8359/88.1867/90.3094',
+    ]],
+    ['cypress-run/desktop', [
+      '10.4203/13.3148/14.8586', '15.4375/16.9812/19.1039',
+      '25.2789/27.7875/32.9977', '41.1023/43.8039/45.3477',
+      '45.3477/47.2773/49.593', '58.4695/62.5219/65.4164',
+      '85.6781/88.3797/89.9234', '91.8531/93.5898/95.5195',
+    ]],
+    ['cypress-run/mobile', [
+      '7.9117/10.6133/13.7008', '14.6656/17.5602/19.2969',
+      '24.1211/26.2437/33.7695', '39.9445/42.4531/45.3477',
+      '45.3477/49.0141/51.1367', '57.6977/63.4867/66.1883',
+      '81.8187/84.7133/87.4148', '91.2742/94.5547/96.2914',
+    ]],
+  ]);
+  for (const item of compile().schedules) {
+    for (const profileName of ['desktop', 'mobile']) {
+      const schedule = item[profileName];
+      assert.deepEqual(schedule.corners.map((corner) => [
+        schedule.frames[corner.entryFrameIndex].percent,
+        schedule.frames[corner.apexFrameIndex].percent,
+        schedule.frames[corner.exitFrameIndex].percent,
+      ].join('/')), expected.get(`${item.route.id}/${profileName}`));
+      for (const corner of schedule.corners) {
+        const entry = schedule.frames[corner.entryFrameIndex];
+        const apex = schedule.frames[corner.apexFrameIndex];
+        const exit = schedule.frames[corner.exitFrameIndex];
+        assert.equal(entry.driftYaw, '0');
+        assert.equal(exit.driftYaw, '0');
+        assert.equal(Math.sign(Number(apex.driftYaw)), corner.sign);
+        assert.ok(Math.abs(Number(apex.driftYaw)) >= 3);
+        assert.ok(Math.abs(Number(apex.driftYaw)) <= 12);
+      }
+      schedule.frames.forEach((frame) => {
+        assert.equal(Number(frame.driftYaw) + Number(frame.driftUprightYaw), 0);
+      });
+      schedule.frames.forEach((frame, frameIndex) => {
+        if (Number(frame.driftYaw) === 0) return;
+        const owners = schedule.corners.filter((corner) => (
+          frameIndex > corner.entryFrameIndex && frameIndex < corner.exitFrameIndex
+        ));
+        assert.equal(owners.length, 1);
+        assert.equal(Math.sign(Number(frame.driftYaw)), owners[0].sign);
+      });
+      const corner = schedule.corners.find((item) => (
+        item.apexFrameIndex - item.entryFrameIndex > 2
+      ));
+      const frameIndex = corner.entryFrameIndex + 1;
+      const frame = schedule.frames[frameIndex];
+      const entryDistance = schedule.frames[corner.entryFrameIndex].canonicalDistance;
+      const apexDistance = schedule.frames[corner.apexFrameIndex].canonicalDistance;
+      const t = (frame.canonicalDistance - entryDistance) / (apexDistance - entryDistance);
+      assert.equal(
+        Number(frame.driftYaw),
+        roundFour(corner.peakYaw * smoothstep(t)),
+      );
+    }
+  }
+});
+
+test('outer region landmarks skip inserted boundaries while forced apexes retain them', () => {
+  const analysis = compile().schedules[0].cornerAnalysis;
+  const passLadder = analysis.corners[1];
+  const boundaryThree = analysis.candidates.find(({ kind, index }) => (
+    kind === 'boundary' && index === 3
+  ));
+  assert.equal(passLadder.exit.kind, 'base');
+  assert.equal(passLadder.exit.index, 95);
+  assert.ok(boundaryThree.canonicalDistance < passLadder.exit.canonicalDistance);
+  assert.equal(analysis.corners[5].apex.kind, 'boundary');
+  assert.equal(analysis.corners[5].apex.index, 8);
+});
+
+test('responsive landmark projection rejects collapse and overlapping envelopes', () => {
+  const cubics = parseCubicPath(ridge.path, config.viewBox);
+  const item = compile().schedules[0];
+  assert.throws(() => applyCornerDrift(
+    ridge,
+    cubics,
+    [item.desktop.frames[0], item.desktop.frames.at(-1)],
+    config.profiles[0],
+    config,
+    item.cornerAnalysis,
+  ), /projected corner landmarks collapse/);
+
+  const overlapping = {
+    ...item.cornerAnalysis,
+    corners: item.cornerAnalysis.corners.slice(0, 2).map((corner) => ({ ...corner })),
+  };
+  overlapping.corners[0].exit = overlapping.corners[1].apex;
+  overlapping.corners[0].exitIndex = overlapping.corners[1].apexIndex;
+  assert.throws(() => applyCornerDrift(
+    ridge,
+    cubics,
+    item.desktop.frames,
+    config.profiles[0],
+    config,
+    overlapping,
+  ), /projected corner envelopes overlap/);
 });
 
 test('static headings come from responsive source locators in exact slot order', () => {
@@ -551,6 +981,8 @@ test('generated serialization is deterministic, owned, precise and reset-stable'
   assert.equal((first.css.match(/vehicle-anchor\[data-route-slot="\d+"\]/g) ?? []).length, 64);
   assert.equal((first.css.match(/--route-heading:/g) ?? []).length,
     2 * (527 + 533 + 3 + 3) + 64);
+  assert.equal((first.css.match(/--drift-yaw:/g) ?? []).length,
+    2 * (527 + 533 + 3 + 3));
   assert.doesNotMatch(first.css, /@property\s+--/);
   for (const item of first.schedules) {
     for (const profileName of ['desktop', 'mobile']) {
@@ -595,11 +1027,15 @@ test('generated slot selectors and every frame declaration have exact order and 
         assert.equal((line.match(/top:/g) ?? []).length, 1);
         assert.equal((line.match(/--route-heading:/g) ?? []).length, 1);
         assert.equal((line.match(/--route-upright-heading:/g) ?? []).length, 1);
+        assert.equal((line.match(/--drift-yaw:/g) ?? []).length, 1);
+        assert.equal((line.match(/--drift-upright-yaw:/g) ?? []).length, 1);
         assert.ok(line.indexOf('left:') < line.indexOf('top:'));
         assert.ok(line.indexOf('top:') < line.indexOf('--route-heading:'));
         assert.ok(line.indexOf('--route-heading:') < line.indexOf('--route-upright-heading:'));
+        assert.ok(line.indexOf('--route-upright-heading:') < line.indexOf('--drift-yaw:'));
+        assert.ok(line.indexOf('--drift-yaw:') < line.indexOf('--drift-upright-yaw:'));
         if (line.includes('opacity:')) {
-          assert.ok(line.indexOf('--route-upright-heading:') < line.indexOf('opacity:'));
+          assert.ok(line.indexOf('--drift-upright-yaw:') < line.indexOf('opacity:'));
         }
       });
       const first = frames[0];
@@ -611,7 +1047,9 @@ test('generated slot selectors and every frame declaration have exact order and 
         const line = declarations.find((value) => value.trimStart().startsWith(`${percent}%`));
         assert.match(line, new RegExp(
           `--route-heading: ${frame.heading}deg; `
-            + `--route-upright-heading: ${frame.uprightHeading}deg; opacity: ${opacity};`,
+            + `--route-upright-heading: ${frame.uprightHeading}deg; `
+            + `--drift-yaw: ${frame.driftYaw}deg; `
+            + `--drift-upright-yaw: ${frame.driftUprightYaw}deg; opacity: ${opacity};`,
         ));
       }
     }

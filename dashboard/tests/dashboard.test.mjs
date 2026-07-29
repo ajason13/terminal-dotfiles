@@ -522,10 +522,14 @@ test('focus and meaningful boundary tokens meet WCAG 3:1 non-text contrast', () 
   }
 });
 
-test('motion is capability-gated and assigned only to active and thinking route cars', () => {
-  assert.match(STYLES, /:where\(\[data-route-angle-motion="enabled"\]\)\[data-track-id\][\s\S]*?\.vehicle-anchor\.state-active \.car-motion\s*\{[^}]*animation:\s*active-drift/si);
-  assert.match(STYLES, /:where\(\[data-route-angle-motion="enabled"\]\)\[data-track-id\][\s\S]*?\.vehicle-anchor\.state-thinking \.car-motion\s*\{[^}]*animation:\s*thinking-drift/si);
-  assert.match(STYLES, /\.car-motion\s*\{[^}]*animation:\s*none/si);
+test('compiled drift uses the route clock and parked cars remain static', () => {
+  assert.match(STYLES, /\.car-motion\s*\{[^}]*animation:\s*none;[^}]*transform:\s*rotate\(var\(--drift-yaw,\s*0deg\)\)/si);
+  assert.doesNotMatch(STYLES, /@keyframes\s+(?:active-drift|thinking-drift)/);
+  assert.doesNotMatch(STYLES, /\.car-motion\s*\{[^}]*translate/si);
+  assert.doesNotMatch(
+    STYLES,
+    /:where\(\[data-route-angle-motion="enabled"\]\)\[data-track-id\][\s\S]*?\.vehicle-anchor\.state-(?:active|thinking) \.car-motion\s*\{[^}]*animation:/si,
+  );
   for (const parked of ['waiting-for-permission', 'idle', 'error', 'complete']) {
     assert.doesNotMatch(
       STYLES,
@@ -583,20 +587,18 @@ test('route cars share deterministic touge traversal phases and inspection pause
   assert.match(STYLES, /animation-delay:\s*var\(--route-phase,\s*0s\)/);
   const ridgeAnimation = STYLES.indexOf('.dashboard-root[data-track-id="ridge-pass"]');
   const cypressAnimation = STYLES.indexOf('.dashboard-root[data-track-id="cypress-run"]');
-  const nestedMotion = STYLES.indexOf('.vehicle-anchor.state-thinking .car-motion');
   const inspection = STYLES.indexOf(
     '.dashboard-root[data-track-id] .vehicle-anchor:hover,',
   );
   assert.ok(inspection > ridgeAnimation, 'inspection pause must follow Ridge animation shorthand');
   assert.ok(inspection > cypressAnimation, 'inspection pause must follow Cypress animation shorthand');
-  assert.ok(inspection > nestedMotion, 'inspection pause must follow nested motion shorthands');
   assert.match(
     STYLES.slice(inspection),
     /\.dashboard-root\[data-track-id\] \.vehicle-anchor:hover,\s*\.dashboard-root\[data-track-id\] \.vehicle-anchor:focus-within,\s*\.dashboard-root\[data-track-id\] \.vehicle-anchor\[data-pinned="true"\]\s*\{[^}]*animation-play-state:\s*paused/si,
   );
-  assert.match(
-    STYLES.slice(inspection),
-    /\.dashboard-root\[data-track-id\] \.vehicle-anchor:hover \.car-motion,\s*\.dashboard-root\[data-track-id\] \.vehicle-anchor:focus-within \.car-motion,\s*\.dashboard-root\[data-track-id\] \.vehicle-anchor\[data-pinned="true"\] \.car-motion\s*\{[^}]*animation-play-state:\s*paused/si,
+  assert.doesNotMatch(
+    STYLES,
+    /\.vehicle-anchor(?::hover|:focus-within|\[data-pinned="true"\]) \.car-motion[\s\S]*?animation-play-state:\s*paused/si,
   );
   assert.doesNotMatch(
     STYLES,
@@ -655,7 +657,7 @@ test('route cars share deterministic touge traversal phases and inspection pause
   }
 });
 
-test('route, drift, and smoke assignment selectors retain exact pause specificity and order', () => {
+test('route and smoke assignments retain exact pause specificity and order', () => {
   const normalizedStyles = STYLES.replace(/\s+/g, ' ');
   const normalize = (value) => value.replace(/\s+/g, ' ');
   const specificity = (selector) => {
@@ -670,15 +672,11 @@ test('route, drift, and smoke assignment selectors retain exact pause specificit
   const selectors = {
     traversal: '.dashboard-root:where([data-route-angle-motion="enabled"])[data-track-id="ridge-pass"] .vehicle-anchor.state-active',
     wrapperPause: '.dashboard-root[data-track-id] .vehicle-anchor:hover',
-    drift: '.dashboard-root:where([data-route-angle-motion="enabled"])[data-track-id] .vehicle-anchor.state-active .car-motion',
-    driftPause: '.dashboard-root[data-track-id] .vehicle-anchor:hover .car-motion',
     smoke: '.dashboard-root:where([data-route-angle-motion="enabled"])[data-track-id] .vehicle-anchor.state-active > .car-atmosphere::before',
     smokePause: '.dashboard-root[data-track-id]\n  .vehicle-anchor:hover > .car-atmosphere::before',
   };
   assert.deepEqual(specificity(selectors.traversal), [0, 4, 0]);
   assert.deepEqual(specificity(selectors.wrapperPause), [0, 4, 0]);
-  assert.deepEqual(specificity(selectors.drift), [0, 5, 0]);
-  assert.deepEqual(specificity(selectors.driftPause), [0, 5, 0]);
   assert.deepEqual(specificity(selectors.smoke), [0, 5, 1]);
   assert.deepEqual(specificity(selectors.smokePause), [0, 5, 1]);
   for (const selector of Object.values(selectors)) {
@@ -686,8 +684,6 @@ test('route, drift, and smoke assignment selectors retain exact pause specificit
   }
   assert.ok(normalizedStyles.indexOf(normalize(selectors.wrapperPause))
     > normalizedStyles.indexOf(normalize(selectors.traversal)));
-  assert.ok(normalizedStyles.indexOf(normalize(selectors.driftPause))
-    > normalizedStyles.indexOf(normalize(selectors.drift)));
   assert.ok(normalizedStyles.indexOf(normalize(selectors.smokePause))
     > normalizedStyles.indexOf(normalize(selectors.smoke)));
   for (const track of ['ridge-pass', 'cypress-run']) {
@@ -696,12 +692,8 @@ test('route, drift, and smoke assignment selectors retain exact pause specificit
         `.dashboard-root:where([data-route-angle-motion="enabled"])[data-track-id="${track}"] `
           + `.vehicle-anchor.state-${state}`,
       ));
-      for (const suffix of [
-        ' .car-motion',
-        ' > .car-atmosphere::before',
-        ' > .car-atmosphere::after',
-      ]) {
-        if (suffix === ' .car-motion' || track === 'ridge-pass') {
+      for (const suffix of [' > .car-atmosphere::before', ' > .car-atmosphere::after']) {
+        if (track === 'ridge-pass') {
           assert.ok(normalizedStyles.includes(
             `.dashboard-root:where([data-route-angle-motion="enabled"])[data-track-id] `
               + `.vehicle-anchor.state-${state}${suffix}`,
@@ -711,8 +703,7 @@ test('route, drift, and smoke assignment selectors retain exact pause specificit
     }
   }
   for (const state of [':hover', ':focus-within', '[data-pinned="true"]']) {
-    for (const suffix of ['', ' .car-motion', ' > .car-atmosphere::before',
-      ' > .car-atmosphere::after']) {
+    for (const suffix of ['', ' > .car-atmosphere::before', ' > .car-atmosphere::after']) {
       assert.ok(normalizedStyles.includes(
         `.dashboard-root[data-track-id] .vehicle-anchor${state}${suffix}`,
       ));

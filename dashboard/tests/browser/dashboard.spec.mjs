@@ -266,7 +266,7 @@ test('active route motion pauses and resumes for hover, focus, and pin', async (
   const assertLayers = async (wrapper, expected) => {
     const states = await wrapper.evaluate((element) => ({
       wrapper: getComputedStyle(element).animationPlayState,
-      drift: getComputedStyle(element.querySelector('.car-motion')).animationPlayState,
+      driftName: getComputedStyle(element.querySelector('.car-motion')).animationName,
       before: getComputedStyle(
         element.querySelector('.car-atmosphere'), '::before',
       ).animationPlayState,
@@ -275,7 +275,7 @@ test('active route motion pauses and resumes for hover, focus, and pin', async (
       ).animationPlayState,
     }));
     expect(states).toEqual({
-      wrapper: expected, drift: expected, before: expected, after: expected,
+      wrapper: expected, driftName: 'none', before: expected, after: expected,
     });
   };
   for (const trackId of ['ridge-pass', 'cypress-run']) {
@@ -330,7 +330,7 @@ test('active route motion pauses and resumes for hover, focus, and pin', async (
   }
 });
 
-test('prefers-reduced-motion disables route and nested car animation', async ({ page }) => {
+test('prefers-reduced-motion disables traversal, compiled drift, and smoke', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.reload();
   await expect(page.locator('#snapshot-summary')).toContainText('24 sessions');
@@ -386,10 +386,7 @@ test('registered headings match every retained boundary, seven samples, and midp
       const route = wrapper.getAnimations().find((animation) => (
         (animation.animationName ?? '').includes('traverse')
       ));
-      const drift = wrapper.querySelector('.car-motion').getAnimations()[0];
       route.pause();
-      drift?.pause();
-      if (drift) drift.currentTime = 0;
       return samples.map(({ percent }) => {
         route.currentTime = percent / 100 * 64000;
         const angle = wrapper.querySelector('.car-angle');
@@ -477,33 +474,39 @@ test('route reset milestones preserve position, heading, opacity, and upright ma
   }
 });
 
-test('drift yaw inverses keep glyph and code upright at quarter-cycle samples', async ({ page }) => {
+test('every compiled corner has signed zero-peak-zero yaw and upright markings', async ({ page }) => {
+  const profileName = page.viewportSize().width <= 759 ? 'mobile' : 'desktop';
   for (const trackId of ['ridge-pass', 'cypress-run']) {
     await page.locator('#track-select').selectOption(trackId);
-    for (const state of ['active', 'thinking']) {
-      const results = await page.locator(`.vehicle-anchor.state-${state}`).first()
-        .evaluate((wrapper, fractions) => {
+    const schedule = TRACK_SCHEDULES.get(trackId)[profileName];
+    const samples = schedule.corners.flatMap((corner, cornerIndex) => [
+      { cornerIndex, phase: 'entry', percent: Number(schedule.frames[corner.entryFrameIndex].percent) },
+      { cornerIndex, phase: 'apex', percent: Number(schedule.frames[corner.apexFrameIndex].percent) },
+      { cornerIndex, phase: 'exit', percent: Number(schedule.frames[corner.exitFrameIndex].percent) },
+    ]);
+    const results = await page.locator(
+      '.vehicle-anchor[data-route-slot="0"].state-active, '
+        + '.vehicle-anchor[data-route-slot="0"].state-thinking',
+    ).first().evaluate((wrapper, inputs) => {
           const route = wrapper.getAnimations().find((animation) => (
             (animation.animationName ?? '').includes('traverse')
           ));
           const motion = wrapper.querySelector('.car-motion');
-          const drift = motion.getAnimations()[0];
           route.pause();
-          route.currentTime = 16000;
-          drift.pause();
           const angleOf = (element) => {
             const matrix = new DOMMatrixReadOnly(getComputedStyle(element).transform);
             return Math.atan2(matrix.b, matrix.a) * 180 / Math.PI;
           };
-          return fractions.map((fraction) => {
-            drift.currentTime = drift.effect.getTiming().duration * fraction;
-            const style = getComputedStyle(motion);
+          return inputs.map((input) => {
+            route.currentTime = input.percent / 100 * 64000;
+            const style = getComputedStyle(wrapper);
             const yaw = Number.parseFloat(style.getPropertyValue('--drift-yaw'));
             const inverse = Number.parseFloat(
               style.getPropertyValue('--drift-upright-yaw'),
             );
             const total = angleOf(wrapper.querySelector('.car-angle')) + angleOf(motion);
             return {
+              ...input,
               yaw,
               inverse,
               motionAngle: angleOf(motion),
@@ -511,18 +514,51 @@ test('drift yaw inverses keep glyph and code upright at quarter-cycle samples', 
               codeNet: total + angleOf(wrapper.querySelector('.car-code')),
               buttonTransform: getComputedStyle(wrapper.querySelector('.session-car')).transform,
               tooltipAngle: angleOf(wrapper.querySelector('.session-tooltip')),
+              motionAnimation: getComputedStyle(motion).animationName,
             };
           });
-        }, [0.25, 0.5, 0.75]);
-      results.forEach((result) => {
+        }, samples);
+    results.forEach((result) => {
+        const corner = schedule.corners[result.cornerIndex];
         expect(Math.abs(result.yaw + result.inverse)).toBeLessThanOrEqual(0.01);
         expect(angleDistance(result.motionAngle, result.yaw)).toBeLessThanOrEqual(0.25);
         expect(angleDistance(result.glyphNet, 0)).toBeLessThanOrEqual(0.25);
         expect(angleDistance(result.codeNet, 0)).toBeLessThanOrEqual(0.25);
         expect(result.buttonTransform).toBe('none');
         expect(angleDistance(result.tooltipAngle, 0)).toBeLessThanOrEqual(0.01);
-      });
-    }
+        expect(result.motionAnimation).toBe('none');
+        if (result.phase === 'apex') {
+          expect(Math.sign(result.yaw)).toBe(corner.sign);
+          expect(Math.abs(result.yaw)).toBeGreaterThanOrEqual(3);
+          expect(Math.abs(result.yaw)).toBeLessThanOrEqual(12);
+        } else {
+          expect(Math.abs(result.yaw)).toBeLessThanOrEqual(0.01);
+        }
+    });
+    const broad = schedule.corners.reduce((best, corner) => (
+      Math.abs(corner.peakYaw) < Math.abs(best.peakYaw) ? corner : best
+    ));
+    const tight = schedule.corners.reduce((best, corner) => (
+      Math.abs(corner.peakYaw) > Math.abs(best.peakYaw) ? corner : best
+    ));
+    expect(Math.abs(tight.peakYaw)).toBeGreaterThan(Math.abs(broad.peakYaw));
+    const straightFrame = schedule.frames.find((frame, index) => (
+      frame.driftYaw === '0' && index > 8 && schedule.corners.every((corner) => (
+        index < corner.entryFrameIndex || index > corner.exitFrameIndex
+      ))
+    ));
+    const straightYaw = await page.locator(
+      '.vehicle-anchor[data-route-slot="0"].state-active, '
+        + '.vehicle-anchor[data-route-slot="0"].state-thinking',
+    ).first().evaluate((wrapper, percent) => {
+      const route = wrapper.getAnimations().find((animation) => (
+        (animation.animationName ?? '').includes('traverse')
+      ));
+      route.pause();
+      route.currentTime = percent / 100 * 64000;
+      return Number.parseFloat(getComputedStyle(wrapper).getPropertyValue('--drift-yaw'));
+    }, Number(straightFrame.percent));
+    expect(Math.abs(straightYaw)).toBeLessThanOrEqual(0.01);
   }
 });
 
@@ -623,7 +659,7 @@ test('registration capability matrix fails static and reuses cached success or f
     }
     if (scenario.success) {
       expect(result.route).toContain('traverse');
-      expect(result.drift).toBe('active-drift');
+      expect(result.drift).toBe('none');
       expect(result.smoke).toBe('active-smoke-left');
     } else {
       expect(result.route).toBe('none');

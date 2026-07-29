@@ -28,6 +28,64 @@ The current Auto label is `Auto · workday schedule`. Exact browser-local
 contracts covered by `multi-track.test.mjs`; this manual procedure does not
 claim wall-clock boundary evidence.
 
+## Corner-aware drift evidence — 2026-07-28
+
+Item `3a — Corner-aware drifting` replaced the independent active/thinking
+drift clocks with yaw compiled into the existing route frames. The canonical
+detector produced exactly eight Ridge and eight Cypress corners. All four
+responsive schedules reproduced the approved entry/apex/exit tables, retained
+527 Ridge and 533 Cypress visible frames, and preserved the 64-second linear
+traversal, four-second phases, positions, percentages, headings, and reset
+milestones.
+
+Peak yaw in corner order is:
+
+```text
+Ridge desktop:  -3.2311, 12, -12, 6.4614, -3.246, 12, -12, 3.0185
+Ridge mobile:   -4.8726, 12, -9.5162, 8.9375, -3, 10.8814, -7.1948, 5.8634
+Cypress desktop: 8.6544, -9.8469, 9.3341, -8.9385, -9.9473, 11.6918, 9.1187, 10.9466
+Cypress mobile:  7.6827, -10.7487, 8.3317, -7.892, -10.2205, 9.6989, 6.2878, 11.6001
+```
+
+Positive values are clockwise/right turns and negative values are
+counterclockwise/left turns. The generic magnitude policy is a `3deg` floor,
+linear scaling from a `15deg` to `90deg` responsive tangent window, and a
+`12deg` cap. Entry/exit are exact zero, apex is the exact signed peak, and
+both halves use canonical-distance smoothstep interpolation. Every serialized
+inverse is the negation of the once-rounded yaw.
+
+The dependency-free suite passed 136/136 with zero failures or skips. The
+Playwright matrix passed 22/22 at 1440x900 and 390x844 with zero failures,
+skips, console warnings, console errors, or page errors. It sampled
+entry/apex/exit for every corner on both courses and both profiles, and
+verified yaw sign/bounds/inverse, `<=0.25deg` glyph/code upright error, zero
+straight yaw, stronger tight-corner yaw, `<=1px` centerline alignment,
+`>=52px`/`>=44px` target separation, containment, zero horizontal overflow,
+one 64-second linear wrapper animation, and no `.car-motion` animation.
+Hover, focus, pin, Escape, both smoke pseudos, reduced motion, capability
+failure/collision/caching, static headings, parked cars, resets, track
+switching, and focus identity also passed.
+
+Exactly six fixture screenshots were refreshed and reviewed:
+`desktop-ridge-pass.png`, `desktop-cypress-run.png`, `mobile-ridge-pass.png`,
+`mobile-cypress-run.png`, plus the byte-identical Ridge aliases `desktop.png`
+and `mobile.png`. Desktop captures are 1440x900; mobile full-page captures are
+390x1673. The capture selected the course, paused every route animation at
+`16000ms`, paused smoke at its 40% sample, waited two animation frames, and
+captured with no nested drift animation to seek. No focus, tooltip, pin, live
+import, or failure state is present.
+
+Normal-speed recordings were run concurrently at both required viewports.
+One complete 64-second Ridge lap and one complete 64-second Cypress lap were
+reviewed per viewport. Ridge boundary 8 received three additional true-speed
+passes per viewport and was inspected at 0.5-second frame spacing. Direction,
+entry/apex/exit legibility, straights, upright glyphs/codes, subtle smoke,
+route-center stability, containment, and session clearance remained sound.
+There was no reverse spin, unintended long arc, sign flicker, left/right
+ambiguity, clipping, or unstable boundary-8 behavior. The automated
+interaction matrix supplied the hover/focus/pin/Escape and reduced-motion
+exercise for the same builds.
+
 ## Tangent orientation and atmosphere evidence — 2026-07-28
 
 The generated schedules retain 527 visible Ridge frames and 533 visible
@@ -295,12 +353,13 @@ playwright-cli -s=dashboard-live run-code "async page => {
 Route wrappers must compute to the selected catalog course's committed
 `*-traverse-desktop` name at desktop width and `*-traverse-mobile` below
 760px, and sampled positions must advance over time. Every schedule retains
-the shared 64-second duration and `linear` timing. Hover, focus, and pinned states must compute
-`animation-play-state: paused` and preserve the same sampled position.
-Active nested motion computes to `active-drift`, while thinking retains
-`thinking-drift`. Parked and unknown cars must not move between samples.
-Reduced motion must set both route traversal and nested car motion to `none`,
-leaving route cars at their deterministic static anchors.
+the shared 64-second duration and `linear` timing. Hover, focus, and pinned
+states must compute `animation-play-state: paused` on the wrapper and preserve
+the same sampled position. `.car-motion` must have no animation and must rotate
+only by compiled `--drift-yaw`; the inverse keeps glyphs and codes upright.
+Parked and unknown cars must not move between samples. Reduced motion must set
+route traversal to `none`, resolve drift to zero, hide smoke, and leave route
+cars at deterministic static tangent-facing anchors.
 
 Capture synthetic-only desktop evidence:
 
