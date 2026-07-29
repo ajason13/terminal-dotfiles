@@ -9,6 +9,7 @@ copy_mode="move"
 series=""
 mode=""
 edit_after=0
+from_dir=""
 
 fail() {
   echo "background inbox import failed: $*" >&2
@@ -19,10 +20,15 @@ usage() {
   cat <<'EOF'
 Usage:
   ./scripts/import-background-inbox.sh [--move|--copy] [--series NAME] [--mode stylized|as_is] [--edit] IMAGE...
+  ./scripts/import-background-inbox.sh [--move|--copy] [--series NAME] [--mode stylized|as_is] [--edit] --from-dir DIR
 
 Examples:
-  ./scripts/import-background-inbox.sh --move --series haikyuu --mode stylized ~/Desktop/*.png
+  ./scripts/import-background-inbox.sh --move --series haikyuu --mode stylized --from-dir ~/Desktop
   ./scripts/import-background-inbox.sh --copy ~/Desktop/'Screenshot 2026-07-15 at 9.12.01 PM.png'
+
+Directory mode scans only DIR/*.png (not subdirectories), orders matches by
+basename in C/byte order, and imports up to the inbox's remaining 10-image
+capacity.
 EOF
 }
 
@@ -72,6 +78,12 @@ while (( $# > 0 )); do
     --edit)
       edit_after=1
       ;;
+    --from-dir)
+      shift
+      [[ $# -gt 0 ]] || fail "--from-dir requires a value"
+      [[ -z "$from_dir" ]] || fail "--from-dir may only be specified once"
+      from_dir="$1"
+      ;;
     -h|--help)
       usage
       exit 0
@@ -96,7 +108,12 @@ done
 
 [[ -d "$inbox_dir" ]] || fail "missing inbox directory at $inbox_dir"
 [[ -f "$sample_yaml" ]] || fail "missing sample YAML at $sample_yaml"
-(( ${#image_paths[@]} > 0 )) || fail "no image paths provided"
+if [[ -n "$from_dir" ]]; then
+  (( ${#image_paths[@]} == 0 )) || fail "--from-dir cannot be combined with explicit image paths"
+  [[ -d "$from_dir" ]] || fail "missing source directory: $from_dir"
+else
+  (( ${#image_paths[@]} > 0 )) || fail "no image paths provided"
+fi
 
 case "$mode" in
   ""|stylized|as_is) ;;
@@ -107,6 +124,28 @@ existing_image_count="$(find "$inbox_dir" \
   -path "$inbox_dir/_sample" -prune -o \
   -path "$inbox_dir/_processed" -prune -o \
   -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \) -print | wc -l | tr -d '[:space:]')"
+
+if [[ -n "$from_dir" ]]; then
+  remaining_capacity=$((max_images - existing_image_count))
+  (( remaining_capacity > 0 )) || fail "inbox already has the maximum of ${max_images} image(s)"
+
+  # Bash expands each glob in locale sort order. Pinning the locale makes the
+  # basename ordering deterministic across machines.
+  export LC_ALL=C
+  shopt -s nullglob
+  directory_pngs=("$from_dir"/*.png)
+  shopt -u nullglob
+  (( ${#directory_pngs[@]} > 0 )) || fail "no *.png files found in directory: $from_dir"
+
+  selection_count="${#directory_pngs[@]}"
+  if (( selection_count > remaining_capacity )); then
+    selection_count="$remaining_capacity"
+  fi
+  for (( index = 0; index < selection_count; index++ )); do
+    image_paths+=("${directory_pngs[$index]}")
+  done
+fi
+
 incoming_image_count="${#image_paths[@]}"
 
 (( existing_image_count + incoming_image_count <= max_images )) || \

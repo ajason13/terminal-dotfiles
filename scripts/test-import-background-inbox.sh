@@ -67,6 +67,77 @@ grep -F "mode: stylized" "$inbox_dir/scene-c.yaml" >/dev/null \
 grep -F "./scripts/check-background-inbox.sh" <<<"$move_output" >/dev/null \
   || fail "missing next-step hint"
 
+directory_inbox="$tmp_dir/directory-inbox"
+directory_source="$tmp_dir/directory-source"
+mkdir -p "$directory_inbox" "$directory_source/nested"
+for number in $(seq -w 1 12); do
+  touch "$directory_source/scene-${number}.png"
+done
+touch "$directory_source/ignored.jpg"
+touch "$directory_source/ignored.PNG"
+touch "$directory_source/nested/scene-00.png"
+
+directory_output="$(
+  BACKGROUND_INBOX_DIR="$directory_inbox" \
+  BACKGROUND_INBOX_SAMPLE_YAML="$sample_dir/scene-001.yaml" \
+  "$script" --copy --series initial-d --mode stylized --from-dir "$directory_source"
+)" || fail "directory import should succeed"
+
+for number in $(seq -w 1 10); do
+  [[ -f "$directory_inbox/scene-${number}.png" ]] \
+    || fail "directory import missing scene-${number}.png"
+  [[ -f "$directory_inbox/scene-${number}.yaml" ]] \
+    || fail "directory import missing scene-${number}.yaml"
+done
+[[ ! -e "$directory_inbox/scene-11.png" ]] \
+  || fail "directory import should stop at 10 images"
+[[ ! -e "$directory_inbox/scene-12.png" ]] \
+  || fail "directory import should stop at 10 images"
+[[ ! -e "$directory_inbox/ignored.jpg" ]] \
+  || fail "directory import should ignore JPEG files"
+[[ ! -e "$directory_inbox/ignored.PNG" ]] \
+  || fail "directory import should match lowercase *.png only"
+[[ ! -e "$directory_inbox/scene-00.png" ]] \
+  || fail "directory import should not recurse"
+grep -F "Imported 10 image(s)" <<<"$directory_output" >/dev/null \
+  || fail "directory import summary should report 10 images"
+
+capacity_inbox="$tmp_dir/capacity-inbox"
+capacity_source="$tmp_dir/capacity-source"
+mkdir -p "$capacity_inbox" "$capacity_source"
+for number in $(seq -w 1 8); do
+  touch "$capacity_inbox/existing-${number}.png"
+done
+touch "$capacity_source/a.png"
+touch "$capacity_source/b.png"
+touch "$capacity_source/c.png"
+
+capacity_output="$(
+  BACKGROUND_INBOX_DIR="$capacity_inbox" \
+  BACKGROUND_INBOX_SAMPLE_YAML="$sample_dir/scene-001.yaml" \
+  "$script" --copy --from-dir "$capacity_source"
+)" || fail "directory import should respect remaining capacity"
+
+[[ -f "$capacity_inbox/a.png" ]] || fail "remaining-capacity import missing a.png"
+[[ -f "$capacity_inbox/b.png" ]] || fail "remaining-capacity import missing b.png"
+[[ ! -e "$capacity_inbox/c.png" ]] || fail "remaining-capacity import should not include c.png"
+grep -F "Imported 2 image(s)" <<<"$capacity_output" >/dev/null \
+  || fail "remaining-capacity summary should report 2 images"
+
+empty_source="$tmp_dir/empty-source"
+mkdir -p "$empty_source"
+if BACKGROUND_INBOX_DIR="$inbox_dir" \
+  BACKGROUND_INBOX_SAMPLE_YAML="$sample_dir/scene-001.yaml" \
+  "$script" --copy --from-dir "$empty_source" >/dev/null 2>&1; then
+  fail "directory import without lowercase PNG files should fail"
+fi
+
+if BACKGROUND_INBOX_DIR="$inbox_dir" \
+  BACKGROUND_INBOX_SAMPLE_YAML="$sample_dir/scene-001.yaml" \
+  "$script" --copy --from-dir "$source_dir" "$source_dir/scene-a.png" >/dev/null 2>&1; then
+  fail "directory import combined with explicit paths should fail"
+fi
+
 touch "$source_dir/not-image.txt"
 if BACKGROUND_INBOX_DIR="$inbox_dir" \
   BACKGROUND_INBOX_SAMPLE_YAML="$sample_dir/scene-001.yaml" \

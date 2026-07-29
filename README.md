@@ -594,12 +594,15 @@ If the screenshots are still on your Desktop, use the helper to import them and
 auto-create sidecars from the sample YAML:
 
 ```sh
-./scripts/import-background-inbox.sh --move --series haikyuu --mode stylized ~/Desktop/*.png
+./scripts/import-background-inbox.sh --move --series haikyuu --mode stylized --from-dir ~/Desktop
 ```
 
 That command:
 
 - moves or copies the image files into `wezterm/assets/inbox/`
+- selects only top-level lowercase `*.png` files from the directory (it does not
+  recurse), ordered by basename in deterministic C/byte order
+- imports the first files that fit in the remaining inbox capacity, up to 10
 - creates matching `.yaml` sidecars from `_sample/scene-001.yaml`
 - optionally stamps the same `series` / `mode` onto every imported file
 - enforces a maximum of **10 pending images** in the inbox; process or archive
@@ -612,8 +615,11 @@ Useful variants:
 ./scripts/import-background-inbox.sh --copy ~/Desktop/'Screenshot 2026-07-15 at 9.12.01 PM.png'
 
 # import and jump straight into editing the generated YAML files
-./scripts/import-background-inbox.sh --move --series attack-on-titan --mode as_is --edit ~/Desktop/*.png
+./scripts/import-background-inbox.sh --move --series attack-on-titan --mode as_is --edit --from-dir ~/Desktop
 ```
+
+Explicit image paths continue to support PNG and JPEG files. Directory mode
+cannot be combined with explicit paths.
 
 For each screenshot, add a sidecar YAML file with the same basename:
 
