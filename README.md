@@ -1,14 +1,17 @@
 # Terminal Dotfiles
 
 Portable macOS configuration for a terminal-centric workflow - WezTerm, tmux,
-Neovim, and Codex - focused on LLM sessions, fast pane/window management, Quick
-Select file opening, local branch review, and rotating terminal backgrounds.
+Neovim, Codex, and Claude Code - focused on LLM sessions, fast pane/window
+management, Quick Select file opening, local branch review, and rotating
+terminal backgrounds.
 
 ## What This Includes
 
 - WezTerm starts or attaches to tmux session `main`.
 - tmux owns windows and panes; WezTerm tabs are hidden.
 - tmux status bar shows aggregate LLM activity markers.
+- The current tmux window shows its agent's session objective after a `▸`,
+  so a pane you come back to says what it was doing.
 - `Ctrl-a` is the tmux prefix.
 - `Ctrl-a \` splits horizontally and `Ctrl-a -` splits vertically.
 - `Ctrl-a h/j/k/l` moves between panes.
@@ -24,6 +27,12 @@ Select file opening, local branch review, and rotating terminal backgrounds.
 .
 ├── LICENSE
 ├── README.md
+├── bin
+│   └── session-objective
+├── claude
+│   ├── commands
+│   │   └── objective.md
+│   └── statusline.sh
 ├── codex
 │   ├── AGENTS.md
 │   ├── agents
@@ -49,7 +58,8 @@ Select file opening, local branch review, and rotating terminal backgrounds.
 │           └── which-key.lua
 ├── scripts
 │   ├── check-background-assets.sh
-│   └── check-background-inbox.sh
+│   ├── check-background-inbox.sh
+│   └── test-session-objective.sh
 ├── tmux
 │   ├── tmux.conf
 │   ├── tmux.local.conf.example
@@ -130,9 +140,14 @@ Copy mode installs files into:
 ~/.codex/agents
 ~/.codex/{deep-researcher,lead-architect,workflow-coordinator,builder}.config.toml
 ~/.local/bin/codex-role
+~/.local/bin/session-objective
+~/.claude/statusline.sh
+~/.claude/commands/objective.md
 ```
 
 Existing files are backed up before replacement when contents differ.
+`~/.claude/settings.json` is never written; see Session Objectives for the hook
+snippet to merge by hand.
 
 ## Local Editing Mode
 
@@ -155,6 +170,9 @@ This symlinks:
 ~/.codex/agents -> codex/agents
 ~/.codex/{deep-researcher,lead-architect,workflow-coordinator,builder}.config.toml -> codex/profiles/*
 ~/.local/bin/codex-role -> codex/bin/codex-role
+~/.local/bin/session-objective -> bin/session-objective
+~/.claude/statusline.sh -> claude/statusline.sh
+~/.claude/commands/objective.md -> claude/commands/objective.md
 ```
 
 ## Codex Role Routing
@@ -229,6 +247,90 @@ of sync (for example, an old status-bar position). This config re-sources itself
 whenever a client attaches, so newly opened WezTerm windows pick up the latest
 config automatically; the session you're already in still needs `Ctrl-a r`. For
 a fully clean slate, quit all WezTerm windows (or run `tmux kill-server`).
+
+## Session Objectives
+
+Every agent session gets a one-line objective, so a pane you return to after a
+day says what it was for instead of needing to be asked.
+
+- Seeded once from the session's first substantive prompt, then left alone.
+  Replies like `yes` or `run it` do not overwrite it.
+- The seed is **normalized**, because a real prompt front-loads the least useful
+  part and puts the identifier last. A raw truncation reads
+  `create a plan to implement https://leandat...`; normalized it reads
+  `plan: BB-484`. Ticket URLs collapse to their key, GitHub links to
+  `<repo> PR <n>`, other URLs to their last path segment, and interaction
+  framing (`can you`, `please`, `I want you to`) is dropped. Task verbs like
+  `fix` and `add` are kept, because those *are* the objective. Review-command
+  openers collapse too, since the command name alone can be 29 characters:
+  `/playwright-code-review-panel e2e-automation pr 469` becomes
+  `Review PR 469`. Planning and PR-description openers get a compact tag
+  (`test plan: BB-300`, `PR desc: jalvarez/eng-613`), and paste placeholders are
+  dropped.
+
+  `/rename` is deliberately kept and seeds its text, because a hand-written
+  session name is the best objective available and tmux cannot read
+  `session_name` the way Claude's status line can. Config commands (`/model`,
+  `/mcp`, `/clear`, ...) do not seed at all, so the next real prompt describes
+  the session instead. Same for a prompt that was only a paste placeholder.
+
+  An explicit
+  `/objective` is stored verbatim - your words are not rewritten.
+  Check any string with `session-objective normalize`.
+- `/objective <text>` (or a prompt starting `objective:`) sets it explicitly and
+  pins it. A bare `/objective` just reports the current one.
+- Claude Code shows it as the first status-line segment; an explicit `/rename`
+  wins over it there.
+- The tmux **status bar** shows it for the current window only, after a `▸`,
+  capped shorter than the Claude status line so a fleet of agent windows does
+  not blow out the bar. Cap: `LLM_OBJECTIVE_MAX_LEN` (default 32).
+- **Pane borders** label every pane in a split window, so four agents side by
+  side are all visible instead of just the active one. The border row is only
+  turned on for a split window that has an objective to show, so unsplit or
+  shell-only windows keep their full height; expect a one-row shift when a
+  window's first agent starts. Cap: `LLM_PANE_OBJECTIVE_MAX_LEN` (default 48,
+  wider because the border spans the pane).
+- Store: `~/.local/state/session-objectives/`, one file per session id, plus
+  `by-pane/` symlinks keyed on `$TMUX_PANE` so tmux can map a pane to its
+  objective. `SESSION_OBJECTIVE_HOME` relocates it.
+
+Claude Code and Codex both send `session_id` and `prompt` on `UserPromptSubmit`,
+so one capture path serves both. Codex cannot render this in its own footer -
+`tui.status_line` takes a fixed list of predefined identifiers, not a command -
+which is why tmux is the shared surface.
+
+Run `session-objective doctor` if an objective stops appearing. It reports the
+store, the link count, whether `$TMUX_PANE` is visible, and warns if a hook
+payload arrived with no recognisable prompt field.
+
+### Claude Code hooks (manual step)
+
+`~/.claude/settings.json` is **not** installed by this repo: it carries a
+personal MCP tool allowlist and this repo is public. Merge these two hooks into
+it by hand, keeping whatever is already there:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/session-objective capture", "timeout": 5 }] }
+    ],
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/session-objective reset", "timeout": 5 }] }
+    ]
+  }
+}
+```
+
+Also set the status line, if it is not already pointed there:
+
+```json
+{ "statusLine": { "type": "command", "command": "~/.claude/statusline.sh" } }
+```
+
+Hooks added to a running session may need `/hooks` opened once, or a restart,
+before they take effect. Codex needs no manual step - its hooks live in
+`codex/config.toml`, but they are inert until `~/.codex/config.toml` is linked.
 
 ## Local Overrides
 
@@ -506,6 +608,11 @@ Remove this setup without restoring old files:
 ```sh
 ./uninstall-macos.sh --remove-only
 ```
+
+Uninstall removes `~/.local/bin/session-objective` but cannot touch
+`~/.claude/settings.json`, since this repo never installs it. Remove the two
+`session-objective` hooks from that file by hand, or they will point at a
+binary that is no longer there.
 
 ## Backgrounds
 

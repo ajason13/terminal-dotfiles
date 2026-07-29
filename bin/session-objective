@@ -1,0 +1,193 @@
+#!/usr/bin/env bash
+# Per-session "what is this pane doing" line, shared by Claude Code and Codex.
+# Both send the same UserPromptSubmit fields (session_id, prompt), so one capture
+# path serves both; only the rendering differs per agent.
+#
+#   capture           <- UserPromptSubmit hook JSON on stdin
+#   reset             <- SessionStart hook JSON on stdin
+#   read <session_id> -> the objective, truncated
+#   pane <pane_id>    -> the objective for a tmux pane
+#   normalize         <- text on stdin, tidied the way a seed is
+#   doctor            -> store state, for diagnosing a silent hook
+#
+# Deliberately no `set -e`: this runs as a hook on every prompt, and aborting
+# mid-way would be worse than doing nothing.
+set -uo pipefail
+
+STORE="${SESSION_OBJECTIVE_HOME:-$HOME/.local/state/session-objectives}"
+MAX_LEN="${SESSION_OBJECTIVE_MAX_LEN:-48}"
+MIN_SEED_LEN=12
+
+mkdir -p "$STORE/by-pane" 2>/dev/null || true
+
+# Collapse to one line and trim; every consumer is a single-line status bar.
+clean() { tr '\n\r\t' '   ' | sed -e 's/  */ /g' -e 's/^ *//' -e 's/ *$//'; }
+
+truncate_objective() {
+  local text="$1"
+  if [[ ${#text} -gt $MAX_LEN ]]; then
+    printf '%s...' "${text:0:$MAX_LEN}"
+  else
+    printf '%s' "$text"
+  fi
+}
+
+# tmux pane ids are "%182"; the % is awkward in paths, so key on the digits.
+pane_key() { printf '%s' "${1#\%}"; }
+
+# Make a seeded prompt worth reading in ~32 characters. Real prompts front-load
+# the least useful part - polite framing and a long URL - and put the identifier
+# last, so a raw truncation reads "create a plan to implement https://leandat...".
+# Task verbs (fix, add, review) are deliberately kept: they ARE the objective.
+# Only applied when seeding; an explicit /objective is the user's own words.
+normalize_objective() {
+  sed -E \
+    -e 's%\[[Pp]asted text #[0-9]+ \+[0-9]+ lines\]%%g' \
+    -e 's%(https?://[^ ]*)#[^ ]*%\1%g' \
+    -e 's%https?://[^ ]*/browse/([A-Z][A-Z0-9]*-[0-9]+)[^ ]*%\1%g' \
+    -e 's%https?://github\.com/[^ /]+/([^ /]+)/pull/([0-9]+)[^ ]*%\1 PR \2%g' \
+    -e 's%https?://github\.com/[^ /]+/([^ /]+)/issues/([0-9]+)[^ ]*%\1 issue \2%g' \
+    -e 's%https?://[^ ]*/([^ /?]+)[^ ]*%\1%g' \
+    -e 's%^/rename +%%' \
+    -e 's%^/[a-z-]*review[a-z-]*.*[Pp][Rr] *#?([0-9]+)%Review PR \1%' \
+    -e 's%^/[a-z-]*review[a-z-]* *%Review %' \
+    -e 's%^[Cc]reate a test plan (for|to) %test plan: %' \
+    -e 's%^[Ww]rite a [Pp][Rr] description (and title )?for %PR desc: %' \
+    -e 's%^[Cc]reate a plan (to implement|to|for) %plan: %' \
+    -e 's%^[Cc]reate a plan%plan:%' \
+    -e "s%^[Ll]et'?s plan (to|for) %plan: %" \
+    -e "s%^[Ll]et'?s plan%plan:%" \
+    -e 's%^[Cc]reate a [Pp][Rr] description for %PR desc: %' \
+    -e 's%^[Dd]o we need to plan for %plan: %' \
+    -e 's%^([Cc]an|[Cc]ould|[Ww]ould) you %%' \
+    -e 's%^[Aa]re you able to %%' \
+    -e 's%^[Dd]o you have (enough context|access) (for|to) %%' \
+    -e 's%^[Dd]o you (have|know) %%' \
+    -e 's%^[Ii]s there a( way)?( for you)?( to)? %%' \
+    -e 's%^[Pp]lease %%' \
+    -e 's%^[Hh]elp me %%' \
+    -e 's%^[Ii] would like (you )?to %%' \
+    -e 's%^[Ii] (want|need) (you )?to %%' \
+    -e "s%^[Ll]et'?s %%" \
+    -e 's%  +% %g' -e 's%^ %%' -e 's% $%%'
+}
+
+emit_objective() {
+  local file="$1" text
+  [[ -s "$file" ]] || return 0
+  text="$(clean <"$file")"
+  [[ -n "$text" ]] || return 0
+  truncate_objective "$text"
+}
+
+case "${1:-}" in
+  capture)
+    payload="$(cat)"
+    sid="$(printf '%s' "$payload" | jq -r '.session_id // empty' 2>/dev/null)"
+    [[ -n "$sid" ]] || exit 0
+
+    prompt="$(printf '%s' "$payload" |
+      jq -r '.prompt // .user_prompt // .message // .content // empty' 2>/dev/null | clean)"
+    # A hook that quietly does nothing is the worst outcome, so leave the payload
+    # behind when no known prompt field matched.
+    if [[ -z "$prompt" ]]; then
+      printf '%s' "$payload" >"$STORE/.unparsed-payload.json" 2>/dev/null || true
+      exit 0
+    fi
+    rm -f "$STORE/.unparsed-payload.json" 2>/dev/null || true
+
+    file="$STORE/$sid.txt"
+    pin="$STORE/$sid.pin"
+
+    # Repoint the pane link on every prompt: a pane outlives the agent in it, so
+    # a recycled pane must follow the newest session rather than the dead one.
+    if [[ -n "${TMUX_PANE:-}" ]]; then
+      ln -sfn "$file" "$STORE/by-pane/$(pane_key "$TMUX_PANE")" 2>/dev/null || true
+    fi
+
+    # Explicit override wins and pins. Handled here rather than in the agent's
+    # slash-command body so it never depends on the model choosing to act.
+    if printf '%s' "$prompt" | grep -qiE '^(objective:|/objective\b)'; then
+      # '#' delimiter: the pattern needs both '|' for alternation and '/' for the
+      # slash-command form, so neither can be the delimiter.
+      rest="$(printf '%s' "$prompt" |
+        sed -E 's#^([Oo][Bb][Jj][Ee][Cc][Tt][Ii][Vv][Ee]:|/[Oo][Bb][Jj][Ee][Cc][Tt][Ii][Vv][Ee]) *##' | clean)"
+      # Bare `/objective` is a read, not a write - don't blank a good objective.
+      if [[ -n "$rest" ]]; then
+        printf '%s' "$rest" >"$file"
+        : >"$pin"
+      fi
+      exit 0
+    fi
+
+    [[ -f "$pin" ]] && exit 0
+
+    # Config commands describe the tool, not the work, so let the next prompt
+    # seed instead. /rename is deliberately absent: a hand-written session name
+    # is the best objective available, and tmux cannot read session_name.
+    if printf '%s' "$prompt" | grep -qE '^/(model|release-notes|mcp|clear|compact|config|help|status|cost|login|logout|doctor|hooks|resume|init|fast|theme|exit|quit|upgrade|permissions|terminal-setup|vim|memory)\b'; then
+      exit 0
+    fi
+
+    # Seed once from the first substantive prompt; "yes" and "run it" are not
+    # objectives, and without stickiness they would overwrite a good one.
+    # Length is gated on the raw prompt but the normalized form is stored, so a
+    # bare ticket URL still seeds even though it shortens to just the key.
+    if [[ ! -s "$file" ]] && [[ ${#prompt} -ge $MIN_SEED_LEN ]]; then
+      seed="$(printf '%s' "$prompt" | normalize_objective)"
+      # A prompt that was only a paste placeholder normalizes to nothing; leave
+      # it unseeded so the next real prompt gets to describe the session.
+      [[ -n "$seed" ]] && printf '%s' "$seed" >"$file"
+    fi
+    exit 0
+    ;;
+
+  reset)
+    payload="$(cat)"
+    sid="$(printf '%s' "$payload" | jq -r '.session_id // empty' 2>/dev/null)"
+    src="$(printf '%s' "$payload" | jq -r '.source // empty' 2>/dev/null)"
+    # A cleared session reuses its id for unrelated work, so the objective is dead.
+    if [[ -n "$sid" && "$src" == "clear" ]]; then
+      rm -f "$STORE/$sid.txt" "$STORE/$sid.pin"
+    fi
+    find "$STORE" -maxdepth 1 -type f -mtime +30 -delete 2>/dev/null || true
+    # Prune links whose target session file is gone. -e follows the link, so a
+    # dangling one fails it; the -L guard also absorbs a non-matching glob.
+    for link in "$STORE"/by-pane/*; do
+      [[ -L "$link" ]] || continue
+      [[ -e "$link" ]] || rm -f "$link"
+    done
+    exit 0
+    ;;
+
+  read)
+    emit_objective "$STORE/${2:-}.txt"
+    ;;
+
+  pane)
+    [[ -n "${2:-}" ]] || exit 0
+    emit_objective "$STORE/by-pane/$(pane_key "$2")"
+    ;;
+
+  normalize)
+    normalize_objective
+    ;;
+
+  doctor)
+    printf 'store:            %s\n' "$STORE"
+    printf 'max length:       %s\n' "$MAX_LEN"
+    printf 'objectives:       %s\n' "$(find "$STORE" -maxdepth 1 -name '*.txt' 2>/dev/null | wc -l | tr -d ' ')"
+    printf 'pane links:       %s\n' "$(find "$STORE/by-pane" -maxdepth 1 -type l 2>/dev/null | wc -l | tr -d ' ')"
+    printf 'TMUX_PANE (here): %s\n' "${TMUX_PANE:-<unset>}"
+    if [[ -f "$STORE/.unparsed-payload.json" ]]; then
+      printf 'WARNING:          a hook payload had no known prompt field.\n'
+      printf '                  inspect %s/.unparsed-payload.json\n' "$STORE"
+    fi
+    ;;
+
+  *)
+    printf 'Usage: %s capture | reset | read <session_id> | pane <pane_id> | normalize | doctor\n' \
+      "${0##*/}" >&2
+    exit 2
+    ;;
+esac

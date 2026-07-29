@@ -40,3 +40,22 @@ hide_rate_limit_model_nudge = true
 
 [notice.model_migrations]
 "gpt-5.4" = "gpt-5.6-terra"
+
+# Per-session objective, shared with Claude Code and rendered on the tmux status
+# bar (Codex's tui.status_line takes fixed identifiers, so it cannot show this).
+# Invoked by name, not via $HOME: Codex does not document whether hook commands
+# go through a shell, and a PATH lookup works either way. Requires ~/.local/bin
+# on PATH, which codex-role and tmux-llm-status already assume.
+[[hooks.UserPromptSubmit]]
+
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = 'session-objective capture'
+timeout = 5
+
+[[hooks.SessionStart]]
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = 'session-objective reset'
+timeout = 5

@@ -11,16 +11,17 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Check shell syntax
-        run: bash -n install-macos.sh uninstall-macos.sh tmux/tmux-llm-status scripts/background-bundles.sh scripts/check-background-assets.sh scripts/check-background-inbox.sh scripts/test-check-background-inbox.sh scripts/list-background-inbox.sh scripts/test-list-background-inbox.sh scripts/check-manifest-paths.sh scripts/test-check-manifest-paths.sh scripts/publish-backgrounds.sh scripts/test-publish-backgrounds.sh scripts/fetch-backgrounds.sh scripts/test-fetch-backgrounds.sh scripts/test-backgrounds-lua.sh scripts/test-nvim.sh
+        run: bash -n install-macos.sh uninstall-macos.sh bin/session-objective tmux/tmux-llm-status scripts/background-bundles.sh scripts/check-background-assets.sh scripts/check-background-inbox.sh scripts/test-check-background-inbox.sh scripts/list-background-inbox.sh scripts/test-list-background-inbox.sh scripts/check-manifest-paths.sh scripts/test-check-manifest-paths.sh scripts/publish-backgrounds.sh scripts/test-publish-backgrounds.sh scripts/fetch-backgrounds.sh scripts/test-fetch-backgrounds.sh scripts/test-backgrounds-lua.sh scripts/test-nvim.sh scripts/test-session-objective.sh
 
       - name: Lint shell scripts (shellcheck)
-        run: shellcheck install-macos.sh uninstall-macos.sh tmux/tmux-llm-status scripts/background-bundles.sh scripts/check-background-assets.sh scripts/check-background-inbox.sh scripts/test-check-background-inbox.sh scripts/list-background-inbox.sh scripts/test-list-background-inbox.sh scripts/check-manifest-paths.sh scripts/test-check-manifest-paths.sh scripts/publish-backgrounds.sh scripts/test-publish-backgrounds.sh scripts/fetch-backgrounds.sh scripts/test-fetch-backgrounds.sh scripts/test-backgrounds-lua.sh scripts/test-nvim.sh
+        run: shellcheck install-macos.sh uninstall-macos.sh bin/session-objective tmux/tmux-llm-status scripts/background-bundles.sh scripts/check-background-assets.sh scripts/check-background-inbox.sh scripts/test-check-background-inbox.sh scripts/list-background-inbox.sh scripts/test-list-background-inbox.sh scripts/check-manifest-paths.sh scripts/test-check-manifest-paths.sh scripts/publish-backgrounds.sh scripts/test-publish-backgrounds.sh scripts/fetch-backgrounds.sh scripts/test-fetch-backgrounds.sh scripts/test-backgrounds-lua.sh scripts/test-nvim.sh scripts/test-session-objective.sh
 
       - name: Check executable scripts
         run: |
           test -x install-macos.sh
           test -x uninstall-macos.sh
           test -x tmux/tmux-llm-status
+          test -x bin/session-objective
           test -x scripts/check-background-inbox.sh
           test -x scripts/test-check-background-inbox.sh
           test -x scripts/list-background-inbox.sh
@@ -35,6 +36,7 @@ jobs:
           test -x scripts/test-fetch-backgrounds.sh
           test -x scripts/test-backgrounds-lua.sh
           test -x scripts/test-nvim.sh
+          test -x scripts/test-session-objective.sh
 
       - name: Check ignored macOS metadata
         run: |
@@ -52,6 +54,7 @@ jobs:
           ./scripts/test-publish-backgrounds.sh
           ./scripts/test-fetch-backgrounds.sh
           ./scripts/test-list-background-inbox.sh
+          ./scripts/test-session-objective.sh
 
       - name: Install Neovim (current stable, for config headless-load test)
         run: |
