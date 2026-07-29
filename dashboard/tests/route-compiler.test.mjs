@@ -239,8 +239,8 @@ test('corner policy pins the canonical detector, thresholds, envelope, and yaw c
     broadLobeTotalTurn: 30,
     prominenceValleyRatio: 0.5,
     discontinuousJoinThreshold: 45,
-    minimumDriftYaw: 10,
-    maximumDriftYaw: 30,
+    minimumDriftYaw: 15,
+    maximumDriftYaw: 42,
   });
 });
 
@@ -431,11 +431,11 @@ test('prominence equality, plateau, earlier ties, and exact join promotion selec
 });
 
 test('drift magnitude floor, linear scaling, cap, smoothstep, and finite boundary are exact', () => {
-  assert.equal(driftMagnitudeForStrength(0), 10);
-  assert.equal(driftMagnitudeForStrength(15), 10);
-  assert.equal(driftMagnitudeForStrength(52.5), 20);
-  assert.equal(driftMagnitudeForStrength(90), 30);
-  assert.equal(driftMagnitudeForStrength(900), 30);
+  assert.equal(driftMagnitudeForStrength(0), 15);
+  assert.equal(driftMagnitudeForStrength(15), 15);
+  assert.equal(driftMagnitudeForStrength(52.5), 28.5);
+  assert.equal(driftMagnitudeForStrength(90), 42);
+  assert.equal(driftMagnitudeForStrength(900), 42);
   assert.throws(() => driftMagnitudeForStrength(NaN), /finite/);
   assert.equal(smoothstep(0), 0);
   assert.equal(smoothstep(0.5), 0.5);
@@ -570,8 +570,8 @@ test('responsive projection preserves route-turn sign and emits bounded visual y
         assert.equal(exit.driftYaw, '0');
         assert.equal(Math.sign(Number(apex.driftYaw)), corner.sign);
         assert.equal(Math.sign(corner.peakYaw), corner.sign);
-        assert.ok(Math.abs(Number(apex.driftYaw)) >= 10);
-        assert.ok(Math.abs(Number(apex.driftYaw)) <= 30);
+        assert.ok(Math.abs(Number(apex.driftYaw)) >= 15);
+        assert.ok(Math.abs(Number(apex.driftYaw)) <= 42);
         const entryHalf = schedule.frames.slice(
           corner.entryFrameIndex,
           corner.apexFrameIndex + 1,
@@ -598,6 +598,18 @@ test('responsive projection preserves route-turn sign and emits bounded visual y
         assert.equal(owners.length, 1);
         assert.equal(Math.sign(Number(frame.driftYaw)), owners[0].sign);
       });
+      for (let index = 1; index < schedule.corners.length; index += 1) {
+        const previous = schedule.corners[index - 1];
+        const current = schedule.corners[index];
+        schedule.frames.slice(
+          previous.exitFrameIndex,
+          current.entryFrameIndex + 1,
+        ).forEach((frame) => assert.equal(frame.driftYaw, '0'));
+      }
+      const adjacentYawDeltas = schedule.frames.slice(1).map((frame, index) => (
+        Math.abs(Number(frame.driftYaw) - Number(schedule.frames[index].driftYaw))
+      ));
+      assert.ok(Math.max(...adjacentYawDeltas) < 45);
       const corner = schedule.corners.find((item) => (
         item.apexFrameIndex - item.entryFrameIndex > 2
       ));

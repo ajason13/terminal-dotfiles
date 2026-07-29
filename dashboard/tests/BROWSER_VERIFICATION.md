@@ -41,20 +41,23 @@ milestones.
 Visual chassis peak yaw in corner order is:
 
 ```text
-Ridge desktop:  -10.5136, 30, -30, 17.6919, -10.5466, 30, -30, 10.0412
-Ridge mobile:   -14.1614, 30, -24.4805, 23.1945, -10, 27.5142, -19.3218, 16.3631
-Cypress desktop: 22.5654, -25.2154, 24.0758, -23.1967, -25.4383, 29.3151, 23.597, 27.6591
-Cypress mobile:  20.4059, -27.2193, 21.8482, -20.8712, -26.0456, 24.8865, 17.3061, 29.1113
+Ridge desktop:  -15.6934, 42, -42, 25.3841, -15.7379, 42, -42, 15.0556
+Ridge mobile:   -20.6179, 42, -34.5487, 32.8126, -15, 38.6441, -27.5844, 23.5902
+Cypress desktop: 31.9633, -35.5407, 34.0024, -32.8155, -35.8418, 41.0754, 33.356, 38.8397
+Cypress mobile:  29.048, -38.246, 30.9951, -29.6761, -36.6616, 35.0967, 24.8633, 40.8003
 ```
 
 The compiler's `corner.sign` remains positive for clockwise/right route turns
 and negative for counterclockwise/left route turns. Serialized chassis yaw
 uses that same sign so the nose points into the turn and the rear reads
-outward. The generic magnitude policy is a `10deg` floor,
+outward. The generic magnitude policy is a `15deg` floor,
 linear scaling from a `15deg` to `90deg` responsive tangent window, and a
-`30deg` cap. Entry/exit are exact zero, apex is the exact visual peak,
+`42deg` cap. Entry/exit are exact zero, apex is the exact visual peak,
 and both halves use canonical-distance smoothstep interpolation. Every
 serialized inverse is the negation of the once-rounded yaw.
+The maximum adjacent serialized yaw deltas are `15.7379deg` Ridge desktop,
+`20.6179deg` Ridge mobile, `6.6907deg` Cypress desktop, and `7.202deg`
+Cypress mobile, all below the `45deg` no-long-arc guard.
 
 The dependency-free suite passed 140/140 with zero failures or skips. The
 Playwright matrix passed 22/22 at 1440x900 and 390x844 with zero failures,
@@ -89,6 +92,7 @@ outward. Rendered `.car-body` bounds stayed contained and nonoverlapping at
 every apex, including Cypress mobile and Ridge boundary 8. Direction,
 entry/apex/exit legibility, straights, upright glyphs/codes, subtle smoke,
 route-center stability, containment, and session clearance remained sound.
+The short Ridge mobile corner-1 exit settled continuously without a snap.
 There was no reverse spin, unintended long arc, sign flicker, left/right
 ambiguity, clipping, or unstable boundary-8 behavior. The automated
 interaction matrix supplied the hover/focus/pin/Escape and reduced-motion

@@ -43,8 +43,8 @@ automatic terminal access, or app/runtime dependency is introduced.
 3a. **Corner-aware drifting — complete.** The compiler now derives a generic,
    deterministic signed corner envelope from canonical route geometry: eight
    corners each for Ridge Pass and Cypress Run in every responsive profile.
-   Existing route keyframes serialize same-sign smoothstep yaw from
-   `10..30deg` in the actual turn direction. Route positions, frame counts,
+   Existing route keyframes serialize same-sign smoothstep tail-out yaw from
+   `15..42deg` in the actual turn direction. Route positions, frame counts,
    geometry, anchors,
    phases, contracts, and the constant `64s linear` traversal are unchanged.
    Verification passed: 140/140 unit tests, 22/22 browser tests,
