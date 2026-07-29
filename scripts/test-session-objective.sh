@@ -127,6 +127,55 @@ check "read of an unknown session is empty" "" "$(objective_of no-such-session)"
 "$bin" doctor >/dev/null
 check "doctor exits 0" "0" "$?"
 
+# --- seed normalization ------------------------------------------------------
+# Cases taken from real prompt shapes: a raw truncation of these reads
+# "create a plan to implement https://leandat...", which says nothing.
+seeded() {
+  local sid="n$1"
+  submit "$sid" "$2"
+  "$bin" read "$sid"
+}
+
+check "jira browse url collapses to the ticket key" "plan: BB-484" \
+  "$(seeded 1 'Create a plan to implement https://leandatainc.atlassian.net/browse/BB-484')"
+check "create-a-plan-for becomes a plan tag" "plan: BB-403" \
+  "$(seeded 2 'Create a plan for https://leandatainc.atlassian.net/browse/BB-403')"
+check "lets-plan-to becomes a plan tag" "plan: make a global review skill" \
+  "$(seeded 3 "Let's plan to make a global review skill")"
+check "pr description opener is tagged" "PR desc: jalvarez/ENG-645-Refactor" \
+  "$(seeded 4 'create a pr description for jalvarez/ENG-645-Refactor')"
+check "github pull url collapses to repo and number" "Review e2e-automation PR 469 now" \
+  "$(seeded 5 'Review https://github.com/leandata/e2e-automation/pull/469 now')"
+check "github issue url collapses" "e2e-automation issue 12 is open" \
+  "$(seeded 6 'https://github.com/leandata/e2e-automation/issues/12 is open')"
+check "other urls collapse to the last path segment" "read harness-design-long-running" \
+  "$(seeded 7 'read https://www.anthropic.com/engineering/harness-design-long-running')"
+check "url fragments are dropped" "see harness-design" \
+  "$(seeded 8 'see https://www.anthropic.com/engineering/harness-design#part-two')"
+check "can-you framing is dropped" "summarize what changed since Feb" \
+  "$(seeded 9 'Can you summarize what changed since Feb')"
+check "i-want-you-to framing is dropped" "fix the booking confirm timeout" \
+  "$(seeded 10 'I want you to fix the booking confirm timeout')"
+
+# Task verbs are the objective and must survive untouched.
+check "a leading fix verb is preserved" "fix the failing smart rep spec" \
+  "$(seeded 11 'fix the failing smart rep spec')"
+check "a leading add verb is preserved" "add a way to bypass the login gate" \
+  "$(seeded 12 'add a way to bypass the login gate')"
+check "a leading review verb is preserved" "review the meeting log integrity work" \
+  "$(seeded 13 'review the meeting log integrity work')"
+
+# A bare ticket URL is long enough to seed, and normalizes below the seed floor.
+check "a bare ticket url still seeds despite shortening" "BB-277" \
+  "$(seeded 14 'https://leandatainc.atlassian.net/browse/BB-277')"
+
+# An explicit override is the user's own words and must NOT be rewritten.
+submit n15 "Create a plan to implement https://leandatainc.atlassian.net/browse/BB-1"
+submit n15 "/objective Create a plan for https://leandatainc.atlassian.net/browse/BB-9"
+check "explicit /objective is stored verbatim" \
+  "Create a plan for https://leandatainc.atlassian.net/browse/BB-9" \
+  "$(SESSION_OBJECTIVE_MAX_LEN=200 "$bin" read n15)"
+
 # --- newline and tab collapsing ----------------------------------------------
 jq -nc '{session_id:"s10", prompt:"first line\nsecond\tline with tab"}' | "$bin" capture
 check "collapses newlines and tabs to spaces" "first line second line with tab" "$(objective_of s10)"

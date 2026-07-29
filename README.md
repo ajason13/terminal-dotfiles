@@ -255,6 +255,15 @@ day says what it was for instead of needing to be asked.
 
 - Seeded once from the session's first substantive prompt, then left alone.
   Replies like `yes` or `run it` do not overwrite it.
+- The seed is **normalized**, because a real prompt front-loads the least useful
+  part and puts the identifier last. A raw truncation reads
+  `create a plan to implement https://leandat...`; normalized it reads
+  `plan: BB-484`. Ticket URLs collapse to their key, GitHub links to
+  `<repo> PR <n>`, other URLs to their last path segment, and interaction
+  framing (`can you`, `please`, `I want you to`) is dropped. Task verbs like
+  `fix` and `add` are kept, because those *are* the objective. An explicit
+  `/objective` is stored verbatim - your words are not rewritten.
+  Check any string with `session-objective normalize`.
 - `/objective <text>` (or a prompt starting `objective:`) sets it explicitly and
   pins it. A bare `/objective` just reports the current one.
 - Claude Code shows it as the first status-line segment; an explicit `/rename`
