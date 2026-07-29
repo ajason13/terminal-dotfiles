@@ -250,9 +250,15 @@ day says what it was for instead of needing to be asked.
   pins it. A bare `/objective` just reports the current one.
 - Claude Code shows it as the first status-line segment; an explicit `/rename`
   wins over it there.
-- tmux shows it on the **current** window only, after a `▸`, capped shorter
-  than the Claude status line so a fleet of agent windows does not blow out the
-  bar. Override the cap with `LLM_OBJECTIVE_MAX_LEN`.
+- The tmux **status bar** shows it for the current window only, after a `▸`,
+  capped shorter than the Claude status line so a fleet of agent windows does
+  not blow out the bar. Cap: `LLM_OBJECTIVE_MAX_LEN` (default 32).
+- **Pane borders** label every pane in a split window, so four agents side by
+  side are all visible instead of just the active one. The border row is only
+  turned on for a split window that has an objective to show, so unsplit or
+  shell-only windows keep their full height; expect a one-row shift when a
+  window's first agent starts. Cap: `LLM_PANE_OBJECTIVE_MAX_LEN` (default 48,
+  wider because the border spans the pane).
 - Store: `~/.local/state/session-objectives/`, one file per session id, plus
   `by-pane/` symlinks keyed on `$TMUX_PANE` so tmux can map a pane to its
   objective. `SESSION_OBJECTIVE_HOME` relocates it.
