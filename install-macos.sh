@@ -140,6 +140,7 @@ fetch_backgrounds() {
 run mkdir -p "$HOME/.config"
 run mkdir -p "$HOME/.local/bin"
 run mkdir -p "$HOME/.codex"
+run mkdir -p "$HOME/.claude/commands"
 
 if [[ "$mode" == "link" ]]; then
   link_path "$root_dir/wezterm/.wezterm.lua" "$HOME/.wezterm.lua"
@@ -151,11 +152,15 @@ if [[ "$mode" == "link" ]]; then
   link_path "$root_dir/codex/AGENTS.md" "$HOME/.codex/AGENTS.md"
   link_path "$root_dir/codex/agents" "$HOME/.codex/agents"
   link_path "$root_dir/codex/bin/codex-role" "$HOME/.local/bin/codex-role"
+  link_path "$root_dir/bin/session-objective" "$HOME/.local/bin/session-objective"
+  link_path "$root_dir/claude/statusline.sh" "$HOME/.claude/statusline.sh"
+  link_path "$root_dir/claude/commands/objective.md" "$HOME/.claude/commands/objective.md"
   for profile in "$root_dir"/codex/profiles/*.config.toml; do
     link_path "$profile" "$HOME/.codex/$(basename "$profile")"
   done
 
-  printf '\nLinked WezTerm, tmux, Neovim, and Codex config for local editing.\n'
+  printf '\nLinked WezTerm, tmux, Neovim, Codex, and Claude Code config for local editing.\n'
+  printf 'Claude Code hooks are NOT installed; add them to ~/.claude/settings.json by hand (see README).\n'
   printf 'Edit files in %s and reload WezTerm with Cmd-r if needed.\n' "$root_dir"
   printf 'Reload tmux with: Ctrl-a r\n'
   fetch_backgrounds "$root_dir/wezterm/assets/backgrounds"
@@ -185,6 +190,9 @@ install_file "$root_dir/tmux/tmux-llm-status" "$HOME/.local/bin/tmux-llm-status"
 install_file "$root_dir/codex/config.toml" "$HOME/.codex/config.toml" 0600
 install_file "$root_dir/codex/AGENTS.md" "$HOME/.codex/AGENTS.md"
 install_file "$root_dir/codex/bin/codex-role" "$HOME/.local/bin/codex-role" 0755
+install_file "$root_dir/bin/session-objective" "$HOME/.local/bin/session-objective" 0755
+install_file "$root_dir/claude/statusline.sh" "$HOME/.claude/statusline.sh" 0755
+install_file "$root_dir/claude/commands/objective.md" "$HOME/.claude/commands/objective.md"
 
 for agent in "$root_dir"/codex/agents/*.toml; do
   install_file "$agent" "$HOME/.codex/agents/$(basename "$agent")"
@@ -200,5 +208,6 @@ printf 'Installed %s\n' "$HOME/.config/nvim"
 
 fetch_backgrounds "$HOME/.config/wezterm/assets/backgrounds"
 
-printf '\nInstalled WezTerm, tmux, Neovim, and Codex config for macOS.\n'
+printf '\nInstalled WezTerm, tmux, Neovim, Codex, and Claude Code config for macOS.\n'
+printf 'Claude Code hooks are NOT installed; add them to ~/.claude/settings.json by hand (see README).\n'
 printf 'Reload WezTerm, then reload tmux with: Ctrl-a r\n'

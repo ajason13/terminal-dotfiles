@@ -99,6 +99,9 @@ targets=(
   "$HOME/.codex/workflow-coordinator.config.toml"
   "$HOME/.codex/builder.config.toml"
   "$HOME/.local/bin/codex-role"
+  "$HOME/.local/bin/session-objective"
+  "$HOME/.claude/statusline.sh"
+  "$HOME/.claude/commands/objective.md"
 )
 
 for target in "${targets[@]}"; do
