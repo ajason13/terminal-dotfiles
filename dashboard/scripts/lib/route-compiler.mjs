@@ -25,8 +25,8 @@ export const CORNER_POLICY = Object.freeze({
   broadLobeTotalTurn: 30,
   prominenceValleyRatio: 0.5,
   discontinuousJoinThreshold: 45,
-  minimumDriftYaw: 6,
-  maximumDriftYaw: 18,
+  minimumDriftYaw: 10,
+  maximumDriftYaw: 30,
 });
 
 function requirePlainObject(value, label) {
@@ -786,7 +786,7 @@ export function smoothstep(value) {
 export function driftMagnitudeForStrength(strength) {
   requireFinite(strength, 'corner strength');
   const normalized = Math.max(0, Math.min(1, (strength - 15) / 75));
-  return roundFour(6 + 12 * normalized);
+  return roundFour(10 + 20 * normalized);
 }
 
 export function applyCornerDrift(

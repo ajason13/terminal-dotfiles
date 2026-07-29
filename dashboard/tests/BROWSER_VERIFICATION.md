@@ -41,18 +41,18 @@ milestones.
 Visual chassis peak yaw in corner order is:
 
 ```text
-Ridge desktop:  -6.3082, 18, -18, 10.6152, -6.3279, 18, -18, 6.0247
-Ridge mobile:   -8.4968, 18, -14.6883, 13.9167, -6, 16.5085, -11.5931, 9.8179
-Cypress desktop: 13.5392, -15.1292, 14.4455, -13.918, -15.263, 17.5891, 14.1582, 16.5954
-Cypress mobile:  12.2436, -16.3316, 13.1089, -12.5227, -15.6274, 14.9319, 10.3837, 17.4668
+Ridge desktop:  -10.5136, 30, -30, 17.6919, -10.5466, 30, -30, 10.0412
+Ridge mobile:   -14.1614, 30, -24.4805, 23.1945, -10, 27.5142, -19.3218, 16.3631
+Cypress desktop: 22.5654, -25.2154, 24.0758, -23.1967, -25.4383, 29.3151, 23.597, 27.6591
+Cypress mobile:  20.4059, -27.2193, 21.8482, -20.8712, -26.0456, 24.8865, 17.3061, 29.1113
 ```
 
 The compiler's `corner.sign` remains positive for clockwise/right route turns
 and negative for counterclockwise/left route turns. Serialized chassis yaw
 uses that same sign so the nose points into the turn and the rear reads
-outward. The generic magnitude policy is a `6deg` floor,
+outward. The generic magnitude policy is a `10deg` floor,
 linear scaling from a `15deg` to `90deg` responsive tangent window, and a
-`18deg` cap. Entry/exit are exact zero, apex is the exact visual peak,
+`30deg` cap. Entry/exit are exact zero, apex is the exact visual peak,
 and both halves use canonical-distance smoothstep interpolation. Every
 serialized inverse is the negation of the once-rounded yaw.
 

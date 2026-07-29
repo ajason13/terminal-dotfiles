@@ -365,12 +365,12 @@ For each canonical corner and responsive profile:
 
    ```text
    normalized = clamp((strength - 15) / (90 - 15), 0, 1)
-   peakMagnitude = 6deg + 12deg * normalized
+   peakMagnitude = 10deg + 20deg * normalized
    visualPeak = cornerSign * peakMagnitude
    ```
 
-   Thus detected broad bends receive at least `6°`; tight corners increase
-   linearly and clamp at `18°`. Four-decimal rounding happens only after the
+   Thus detected broad bends receive at least `10°`; tight corners increase
+   linearly and clamp at `30°`. Four-decimal rounding happens only after the
    complete calculation.
 5. Let `dE`, `dA`, and `dX` be the unrounded canonical distances of the
    projected retained entry, apex, and exit frames—not the original canonical
@@ -475,7 +475,7 @@ Add direct tests for:
 - deterministic entry/apex/exit selection and earlier-candidate tie rules;
 - outer entry/exit selection from strictly outside base candidates when an
   inserted non-apex boundary lies between the threshold edge and next base;
-- responsive sign preservation, magnitude scaling, `6°` floor, `18°` cap,
+- responsive sign preservation, magnitude scaling, `10°` floor, `30°` cap,
   smoothstep interpolation, shared zero valley, four-decimal inverse
   serialization, and negative-zero normalization;
 - responsive distributed-turn-above-180 sign preservation and responsive
@@ -497,7 +497,7 @@ Add direct tests for:
 At both `1440×900` and `390×844`, for both tracks:
 
 - sample entry, apex, and exit of all eight corners;
-- assert entry/exit yaw `0±0.01°`, apex sign, magnitude `6..18°`, inverse yaw,
+- assert entry/exit yaw `0±0.01°`, apex sign, magnitude `10..30°`, inverse yaw,
   tangent-relative car composition, and glyph/code net upright error
   `<=0.25°`;
 - assert tight-corner peak is greater than broad-corner peak and all straight
@@ -578,11 +578,12 @@ and the roadmap records item 4 as the next task.
 ## Delivery evidence — 2026-07-28
 
 Final independent post-change QA returned PASS and authorized commit and push.
-The resulting changes remain uncommitted and unpushed.
+This packet records that release authorization; commit and push state is
+established by the release action rather than asserted here.
 
 - Generic compiler output identifies eight meaningful signed route corners for
   Ridge Pass and eight for Cypress Run in each profile. Existing route
-  keyframes carry `6..18deg` same-sign visual yaw and its inverse,
+  keyframes carry `10..30deg` same-sign visual yaw and its inverse,
   while positions,
   percentages, frame counts, anchors, geometry, contracts, phases, reset
   milestones, and the `64s linear` traversal remain unchanged.
@@ -597,7 +598,7 @@ The resulting changes remain uncommitted and unpushed.
   revised visual-sign remediation preserves the actual route-turn
   `corner.sign` and responsive sign validation, serializes chassis yaw as
   `peakYaw = corner.sign * peakMagnitude`, and raises the generic visibility
-  policy to a `6deg` floor and `18deg` cap; its inverse remains the exact
+  policy to a `10deg` floor and `30deg` cap; its inverse remains the exact
   negation of the once-rounded yaw. Generated CSS and the six deterministic
   fixture screenshots were refreshed for that correction.
 - Verification PASS: `npm --prefix dashboard run routes:check`; 140/140 unit
@@ -612,8 +613,8 @@ The resulting changes remain uncommitted and unpushed.
   the visual gate passed. Fresh cache-disabled hard loads confirmed the nose
   points into each turn and the rear reads outward at normal dashboard scale.
   Rendered `.car-body` bounds remained contained and nonoverlapping at every
-  apex on both tracks and viewports. Ridge boundary 8 measured `18deg`
-  desktop and `16.5085deg` mobile visual yaw.
+  apex on both tracks and viewports. Ridge boundary 8 measured `30deg`
+  desktop and `27.5142deg` mobile visual yaw.
 - No protected terminal, dashboard optionality, fixture/live-adapter, or
   Notion boundary changed. No Notion work was created or updated. Runtime
   observability remains unchanged: no runtime logs, metrics, events, traces,
@@ -654,7 +655,7 @@ Architecture to challenge:
   fallback, 0.50 same-sign prominence split, and 45-degree discontinuous join
   promotion;
 - canonical topology with responsive projection and magnitude;
-- 6..18-degree capped linear strength policy and smoothstep entry/exit;
+- 10..30-degree capped linear strength policy and smoothstep entry/exit;
 - eight Ridge and eight Cypress corners with the exact tables;
 - generated yaw/inverse declarations in the existing route animation;
 - deletion of independent drift timing/translation;

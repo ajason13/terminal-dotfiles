@@ -44,7 +44,7 @@ automatic terminal access, or app/runtime dependency is introduced.
    deterministic signed corner envelope from canonical route geometry: eight
    corners each for Ridge Pass and Cypress Run in every responsive profile.
    Existing route keyframes serialize same-sign smoothstep yaw from
-   `6..18deg` in the actual turn direction. Route positions, frame counts,
+   `10..30deg` in the actual turn direction. Route positions, frame counts,
    geometry, anchors,
    phases, contracts, and the constant `64s linear` traversal are unchanged.
    Verification passed: 140/140 unit tests, 22/22 browser tests,

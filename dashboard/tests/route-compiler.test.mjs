@@ -239,8 +239,8 @@ test('corner policy pins the canonical detector, thresholds, envelope, and yaw c
     broadLobeTotalTurn: 30,
     prominenceValleyRatio: 0.5,
     discontinuousJoinThreshold: 45,
-    minimumDriftYaw: 6,
-    maximumDriftYaw: 18,
+    minimumDriftYaw: 10,
+    maximumDriftYaw: 30,
   });
 });
 
@@ -431,11 +431,11 @@ test('prominence equality, plateau, earlier ties, and exact join promotion selec
 });
 
 test('drift magnitude floor, linear scaling, cap, smoothstep, and finite boundary are exact', () => {
-  assert.equal(driftMagnitudeForStrength(0), 6);
-  assert.equal(driftMagnitudeForStrength(15), 6);
-  assert.equal(driftMagnitudeForStrength(52.5), 12);
-  assert.equal(driftMagnitudeForStrength(90), 18);
-  assert.equal(driftMagnitudeForStrength(900), 18);
+  assert.equal(driftMagnitudeForStrength(0), 10);
+  assert.equal(driftMagnitudeForStrength(15), 10);
+  assert.equal(driftMagnitudeForStrength(52.5), 20);
+  assert.equal(driftMagnitudeForStrength(90), 30);
+  assert.equal(driftMagnitudeForStrength(900), 30);
   assert.throws(() => driftMagnitudeForStrength(NaN), /finite/);
   assert.equal(smoothstep(0), 0);
   assert.equal(smoothstep(0.5), 0.5);
@@ -570,11 +570,25 @@ test('responsive projection preserves route-turn sign and emits bounded visual y
         assert.equal(exit.driftYaw, '0');
         assert.equal(Math.sign(Number(apex.driftYaw)), corner.sign);
         assert.equal(Math.sign(corner.peakYaw), corner.sign);
-        assert.ok(Math.abs(Number(apex.driftYaw)) >= 6);
-        assert.ok(Math.abs(Number(apex.driftYaw)) <= 18);
+        assert.ok(Math.abs(Number(apex.driftYaw)) >= 10);
+        assert.ok(Math.abs(Number(apex.driftYaw)) <= 30);
+        const entryHalf = schedule.frames.slice(
+          corner.entryFrameIndex,
+          corner.apexFrameIndex + 1,
+        ).map((frame) => Math.abs(Number(frame.driftYaw)));
+        const exitHalf = schedule.frames.slice(
+          corner.apexFrameIndex,
+          corner.exitFrameIndex + 1,
+        ).map((frame) => Math.abs(Number(frame.driftYaw)));
+        entryHalf.slice(1).forEach((value, index) => {
+          assert.ok(value >= entryHalf[index], 'entry-to-apex yaw must be monotonic');
+        });
+        exitHalf.slice(1).forEach((value, index) => {
+          assert.ok(value <= exitHalf[index], 'apex-to-exit yaw must be monotonic');
+        });
       }
       schedule.frames.forEach((frame) => {
-        assert.equal(Number(frame.driftYaw) + Number(frame.driftUprightYaw), 0);
+        assert.equal(frame.driftUprightYaw, serializeFour(-Number(frame.driftYaw)));
       });
       schedule.frames.forEach((frame, frameIndex) => {
         if (Number(frame.driftYaw) === 0) return;
@@ -994,6 +1008,16 @@ test('generated serialization is deterministic, owned, precise and reset-stable'
     }
   }
   assert.equal(serializeFour(-0), '0');
+  const normalizedNonYawCss = first.css
+    .replace(/sources-sha256: [0-9a-f]{64}/, 'sources-sha256: <digest>')
+    .replace(
+      /--drift-yaw: -?\d+(?:\.\d+)?deg; --drift-upright-yaw: -?\d+(?:\.\d+)?deg;/g,
+      '--drift-yaw: <yaw>; --drift-upright-yaw: <inverse>;',
+    );
+  assert.equal(
+    createHash('sha256').update(normalizedNonYawCss).digest('hex'),
+    '2923ecc9f7263688923ddb861adc6b7cb1fce6dbd348409cbb0e16deacc87534',
+  );
 });
 
 test('generated slot selectors and every frame declaration have exact order and reset headings', () => {

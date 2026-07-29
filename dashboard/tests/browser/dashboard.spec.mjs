@@ -577,8 +577,8 @@ test('every compiled corner has signed zero-peak-zero yaw, clear body bounds, an
         expect(result.motionAnimation).toBe('none');
         if (result.phase === 'apex') {
           expect(Math.sign(result.yaw)).toBe(corner.sign);
-          expect(Math.abs(result.yaw)).toBeGreaterThanOrEqual(6);
-          expect(Math.abs(result.yaw)).toBeLessThanOrEqual(18);
+          expect(Math.abs(result.yaw)).toBeGreaterThanOrEqual(10);
+          expect(Math.abs(result.yaw)).toBeLessThanOrEqual(30);
         } else {
           expect(Math.abs(result.yaw)).toBeLessThanOrEqual(0.01);
         }
