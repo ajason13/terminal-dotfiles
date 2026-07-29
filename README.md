@@ -264,7 +264,17 @@ day says what it was for instead of needing to be asked.
   `fix` and `add` are kept, because those *are* the objective. Review-command
   openers collapse too, since the command name alone can be 29 characters:
   `/playwright-code-review-panel e2e-automation pr 469` becomes
-  `Review PR 469`. An explicit
+  `Review PR 469`. Planning and PR-description openers get a compact tag
+  (`test plan: BB-300`, `PR desc: jalvarez/eng-613`), and paste placeholders are
+  dropped.
+
+  `/rename` is deliberately kept and seeds its text, because a hand-written
+  session name is the best objective available and tmux cannot read
+  `session_name` the way Claude's status line can. Config commands (`/model`,
+  `/mcp`, `/clear`, ...) do not seed at all, so the next real prompt describes
+  the session instead. Same for a prompt that was only a paste placeholder.
+
+  An explicit
   `/objective` is stored verbatim - your words are not rewritten.
   Check any string with `session-objective normalize`.
 - `/objective <text>` (or a prompt starting `objective:`) sets it explicitly and

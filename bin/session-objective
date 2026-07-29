@@ -42,21 +42,31 @@ pane_key() { printf '%s' "${1#\%}"; }
 # Only applied when seeding; an explicit /objective is the user's own words.
 normalize_objective() {
   sed -E \
+    -e 's%\[[Pp]asted text #[0-9]+ \+[0-9]+ lines\]%%g' \
     -e 's%(https?://[^ ]*)#[^ ]*%\1%g' \
     -e 's%https?://[^ ]*/browse/([A-Z][A-Z0-9]*-[0-9]+)[^ ]*%\1%g' \
     -e 's%https?://github\.com/[^ /]+/([^ /]+)/pull/([0-9]+)[^ ]*%\1 PR \2%g' \
     -e 's%https?://github\.com/[^ /]+/([^ /]+)/issues/([0-9]+)[^ ]*%\1 issue \2%g' \
     -e 's%https?://[^ ]*/([^ /?]+)[^ ]*%\1%g' \
+    -e 's%^/rename +%%' \
     -e 's%^/[a-z-]*review[a-z-]*.*[Pp][Rr] *#?([0-9]+)%Review PR \1%' \
     -e 's%^/[a-z-]*review[a-z-]* *%Review %' \
+    -e 's%^[Cc]reate a test plan (for|to) %test plan: %' \
+    -e 's%^[Ww]rite a [Pp][Rr] description (and title )?for %PR desc: %' \
     -e 's%^[Cc]reate a plan (to implement|to|for) %plan: %' \
     -e 's%^[Cc]reate a plan%plan:%' \
     -e "s%^[Ll]et'?s plan (to|for) %plan: %" \
     -e "s%^[Ll]et'?s plan%plan:%" \
     -e 's%^[Cc]reate a [Pp][Rr] description for %PR desc: %' \
-    -e 's%^([Cc]an|[Cc]ould) you %%' \
+    -e 's%^[Dd]o we need to plan for %plan: %' \
+    -e 's%^([Cc]an|[Cc]ould|[Ww]ould) you %%' \
+    -e 's%^[Aa]re you able to %%' \
+    -e 's%^[Dd]o you have (enough context|access) (for|to) %%' \
+    -e 's%^[Dd]o you (have|know) %%' \
+    -e 's%^[Ii]s there a( way)?( for you)?( to)? %%' \
     -e 's%^[Pp]lease %%' \
     -e 's%^[Hh]elp me %%' \
+    -e 's%^[Ii] would like (you )?to %%' \
     -e 's%^[Ii] (want|need) (you )?to %%' \
     -e "s%^[Ll]et'?s %%" \
     -e 's%  +% %g' -e 's%^ %%' -e 's% $%%'
@@ -111,12 +121,23 @@ case "${1:-}" in
     fi
 
     [[ -f "$pin" ]] && exit 0
+
+    # Config commands describe the tool, not the work, so let the next prompt
+    # seed instead. /rename is deliberately absent: a hand-written session name
+    # is the best objective available, and tmux cannot read session_name.
+    if printf '%s' "$prompt" | grep -qE '^/(model|release-notes|mcp|clear|compact|config|help|status|cost|login|logout|doctor|hooks|resume|init|fast|theme|exit|quit|upgrade|permissions|terminal-setup|vim|memory)\b'; then
+      exit 0
+    fi
+
     # Seed once from the first substantive prompt; "yes" and "run it" are not
     # objectives, and without stickiness they would overwrite a good one.
     # Length is gated on the raw prompt but the normalized form is stored, so a
     # bare ticket URL still seeds even though it shortens to just the key.
     if [[ ! -s "$file" ]] && [[ ${#prompt} -ge $MIN_SEED_LEN ]]; then
-      printf '%s' "$prompt" | normalize_objective >"$file"
+      seed="$(printf '%s' "$prompt" | normalize_objective)"
+      # A prompt that was only a paste placeholder normalizes to nothing; leave
+      # it unseeded so the next real prompt gets to describe the session.
+      [[ -n "$seed" ]] && printf '%s' "$seed" >"$file"
     fi
     exit 0
     ;;

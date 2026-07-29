@@ -176,6 +176,52 @@ check "a review command with no PR number still reads well" "Review my working d
 check "a plain review verb is not treated as a command" "review the meeting log work" \
   "$(seeded 23 'review the meeting log work')"
 
+# /rename is the most common opener in practice and is a hand-written label, so it
+# is kept rather than skipped. tmux cannot read session_name; only Claude's status
+# line can, so the store has to carry it.
+check "rename keeps its text as the objective" "BB-443 - Harness Storage-State Paths" \
+  "$(seeded 24 '/rename BB-443 - Harness Storage-State Paths')"
+
+# Paste placeholders carry no information.
+check "a paste placeholder is stripped mid-prompt" "Review PR 104 pushed back:" \
+  "$(seeded 25 '/canary-review pr 104 pushed back: [Pasted text #1 +19 lines]')"
+submit pasteonly '[Pasted text #1 +103 lines]'
+check "a paste-only opener does not seed" "" "$("$bin" read pasteonly)"
+submit pasteonly 'investigate the CCIO readiness poll'
+check "the next real prompt seeds after a paste-only opener" \
+  "investigate the CCIO readiness poll" "$("$bin" read pasteonly)"
+
+# Planning and PR-description openers get a compact tag.
+check "test plan opener is tagged" "test plan: BB-300" \
+  "$(seeded 27 'Create a test plan for https://leandatainc.atlassian.net/browse/BB-300')"
+check "write-a-pr-description opener is tagged" "PR desc: jalvarez/eng-613" \
+  "$(seeded 28 'Write a PR description for jalvarez/eng-613')"
+check "the and-title variant is tagged too" "PR desc: jalvarez/ENG-658" \
+  "$(seeded 29 'Write a PR description and title for jalvarez/ENG-658')"
+check "do-we-need-to-plan-for becomes a plan tag" "plan: BB-221" \
+  "$(seeded 30 'Do we need to plan for BB-221')"
+
+# Question framing that survived the first pass.
+check "do-you-have-enough-context is dropped" "BB-39" \
+  "$(seeded 31 'Do you have enough context for https://leandatainc.atlassian.net/browse/BB-39')"
+check "are-you-able-to is dropped" "use ssh to reach the EC2 box" \
+  "$(seeded 32 'Are you able to use ssh to reach the EC2 box')"
+check "i-would-like-to is dropped" "take a look back at BB-59" \
+  "$(seeded 33 'I would like to take a look back at https://leandatainc.atlassian.net/browse/BB-59')"
+check "is-there-a-way-to is dropped" "use a ssh tunnel for postgres" \
+  "$(seeded 34 'Is there a way to use a ssh tunnel for postgres')"
+
+# Config commands describe the tool, not the work.
+submit metaA '/model sonnet'
+check "config command /model does not seed" "" "$("$bin" read metaA)"
+submit metaB '/release-notes now please'
+check "config command /release-notes does not seed" "" "$("$bin" read metaB)"
+submit metaC '/mcp list the servers'
+check "config command /mcp does not seed" "" "$("$bin" read metaC)"
+submit metaA 'fix the flaky handoff teardown'
+check "a real prompt seeds after a config command" "fix the flaky handoff teardown" \
+  "$("$bin" read metaA)"
+
 # Task verbs are the objective and must survive untouched.
 check "a leading fix verb is preserved" "fix the failing smart rep spec" \
   "$(seeded 11 'fix the failing smart rep spec')"
