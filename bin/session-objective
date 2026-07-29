@@ -47,6 +47,8 @@ normalize_objective() {
     -e 's%https?://github\.com/[^ /]+/([^ /]+)/pull/([0-9]+)[^ ]*%\1 PR \2%g' \
     -e 's%https?://github\.com/[^ /]+/([^ /]+)/issues/([0-9]+)[^ ]*%\1 issue \2%g' \
     -e 's%https?://[^ ]*/([^ /?]+)[^ ]*%\1%g' \
+    -e 's%^/[a-z-]*review[a-z-]*.*[Pp][Rr] *#?([0-9]+)%Review PR \1%' \
+    -e 's%^/[a-z-]*review[a-z-]* *%Review %' \
     -e 's%^[Cc]reate a plan (to implement|to|for) %plan: %' \
     -e 's%^[Cc]reate a plan%plan:%' \
     -e "s%^[Ll]et'?s plan (to|for) %plan: %" \

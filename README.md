@@ -261,7 +261,10 @@ day says what it was for instead of needing to be asked.
   `plan: BB-484`. Ticket URLs collapse to their key, GitHub links to
   `<repo> PR <n>`, other URLs to their last path segment, and interaction
   framing (`can you`, `please`, `I want you to`) is dropped. Task verbs like
-  `fix` and `add` are kept, because those *are* the objective. An explicit
+  `fix` and `add` are kept, because those *are* the objective. Review-command
+  openers collapse too, since the command name alone can be 29 characters:
+  `/playwright-code-review-panel e2e-automation pr 469` becomes
+  `Review PR 469`. An explicit
   `/objective` is stored verbatim - your words are not rewritten.
   Check any string with `session-objective normalize`.
 - `/objective <text>` (or a prompt starting `objective:`) sets it explicitly and

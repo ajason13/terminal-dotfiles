@@ -157,6 +157,25 @@ check "can-you framing is dropped" "summarize what changed since Feb" \
 check "i-want-you-to framing is dropped" "fix the booking confirm timeout" \
   "$(seeded 10 'I want you to fix the booking confirm timeout')"
 
+# Review-command openers. The command name alone can be 29 characters, which ate
+# the whole status-bar budget before the PR number it was about.
+check "review command collapses to Review PR n" "Review PR 469" \
+  "$(seeded 16 '/playwright-code-review-panel e2e-automation pr 469')"
+check "review command with a github url collapses the same way" "Review PR 469" \
+  "$(seeded 17 '/playwright-code-review-panel https://github.com/leandata/e2e-automation/pull/469')"
+check "an already-uppercase PR token is accepted" "Review PR 469" \
+  "$(seeded 18 '/playwright-code-review-panel e2e-automation PR 469')"
+check "a hash-prefixed number is accepted" "Review PR 512" \
+  "$(seeded 19 '/code-review-panel e2e-automation pr #512')"
+check "text after the number survives" "Review PR 12 in bearoku" \
+  "$(seeded 20 '/canary-review pr 12 in bearoku')"
+check "sibling review commands are covered" "Review the buffer time plan" \
+  "$(seeded 21 '/plan-review the buffer time plan')"
+check "a review command with no PR number still reads well" "Review my working diff" \
+  "$(seeded 22 '/code-review-panel my working diff')"
+check "a plain review verb is not treated as a command" "review the meeting log work" \
+  "$(seeded 23 'review the meeting log work')"
+
 # Task verbs are the objective and must survive untouched.
 check "a leading fix verb is preserved" "fix the failing smart rep spec" \
   "$(seeded 11 'fix the failing smart rep spec')"
