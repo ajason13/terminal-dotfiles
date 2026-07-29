@@ -7,7 +7,6 @@
 #   reset             <- SessionStart hook JSON on stdin
 #   read <session_id> -> the objective, truncated
 #   pane <pane_id>    -> the objective for a tmux pane
-#   window <target>   -> the objective for a tmux window (active pane wins)
 #   doctor            -> store state, for diagnosing a silent hook
 #
 # Deliberately no `set -e`: this runs as a hook on every prompt, and aborting
@@ -119,26 +118,6 @@ case "${1:-}" in
     emit_objective "$STORE/by-pane/$(pane_key "$2")"
     ;;
 
-  window)
-    target="${2:-}"
-    [[ -n "$target" ]] || exit 0
-    command -v tmux >/dev/null 2>&1 || exit 0
-    # The active pane's objective is what you asked for; fall back to any pane in
-    # the window so an agent stays visible while you sit in a neighbouring shell.
-    fallback=""
-    while read -r pane_id active; do
-      [[ -n "$pane_id" ]] || continue
-      found="$(emit_objective "$STORE/by-pane/$(pane_key "$pane_id")")"
-      [[ -n "$found" ]] || continue
-      if [[ "$active" == "1" ]]; then
-        printf '%s' "$found"
-        exit 0
-      fi
-      [[ -n "$fallback" ]] || fallback="$found"
-    done < <(tmux list-panes -t "$target" -F '#{pane_id} #{?pane_active,1,0}' 2>/dev/null || true)
-    printf '%s' "$fallback"
-    ;;
-
   doctor)
     printf 'store:            %s\n' "$STORE"
     printf 'max length:       %s\n' "$MAX_LEN"
@@ -152,7 +131,7 @@ case "${1:-}" in
     ;;
 
   *)
-    printf 'Usage: %s capture | reset | read <session_id> | pane <pane_id> | window <target> | doctor\n' \
+    printf 'Usage: %s capture | reset | read <session_id> | pane <pane_id> | doctor\n' \
       "${0##*/}" >&2
     exit 2
     ;;
