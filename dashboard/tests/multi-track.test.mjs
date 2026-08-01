@@ -20,6 +20,9 @@ const STYLES = `${ROUTE_STYLES}\n${BASE_STYLES}`;
 const CYPRESS_SOURCE = readFileSync(
   new URL('../routes/cypress-run.route.mjs', import.meta.url), 'utf8',
 );
+const LANTERN_SOURCE = readFileSync(
+  new URL('../routes/lantern-coil.route.mjs', import.meta.url), 'utf8',
+);
 const SOURCES = [
   'app.mjs', 'render-dashboard.mjs', 'source-controller.mjs',
   'track-catalog.mjs', 'track-layout.mjs', 'track-selection.mjs',
@@ -31,10 +34,11 @@ const cloneCatalog = () => TRACK_CATALOG.map((track) => ({
   routeAnchors: track.routeAnchors.map((anchor) => ({ ...anchor })),
 }));
 
-test('catalog has exact deeply frozen two-track definitions and capacity', () => {
+test('catalog has exact deeply frozen three-track definitions and capacity', () => {
   assert.equal(DEFAULT_TRACK_ID, 'ridge-pass');
   assert.deepEqual(TRACK_CATALOG.map(({ id, title }) => [id, title]), [
     ['ridge-pass', 'Ridge Pass'], ['cypress-run', 'Cypress Run'],
+    ['lantern-coil', 'Lantern Coil'],
   ]);
   assert.equal(Object.isFrozen(TRACK_CATALOG), true);
   for (const track of TRACK_CATALOG) {
@@ -52,7 +56,26 @@ test('catalog has exact deeply frozen two-track definitions and capacity', () =>
     'Launch Line', 'North Nineties', 'East Hairpin',
     'Drop Chute', 'South Hairpin', 'West Switchback',
   ]);
+  assert.deepEqual(getTrack('lantern-coil').segments, [
+    'Ember Gate', 'Outer Lantern', 'Prism Rise',
+    'Halo Crest', 'Inner Coil', 'Dawn Chute',
+  ]);
   assert.throws(() => getTrack('missing'), /Unknown track ID/);
+});
+
+test('Lantern Coil has the exact open-spiral source and distinct rain-garden art', () => {
+  assert.match(LANTERN_SOURCE, /M183\.779 529\.409 C165\.135 504\.06 65\.478 425\.334 71\.914 377\.312/);
+  assert.match(LANTERN_SOURCE, /C438\.706 431\.209 420\.209 408\.733 411\.182 402\.975/);
+  const start = INDEX.indexOf('id="lantern-coil-art"');
+  const lanternArt = INDEX.slice(start, INDEX.indexOf('</svg>', start));
+  for (const cue of [
+    'lantern-water-terraces', 'lantern-pools', 'lantern-inlay-arcs',
+    'lantern-reeds', 'lantern-retaining-rings',
+  ]) assert.match(lanternArt, new RegExp(`class="[^\"]*${cue}`));
+  for (const excluded of [
+    'ridge-shadow', 'terrain-contours', 'drift-paved-apron', 'drift-tire-barriers',
+    'drift-cones', 'drift-clip-markers', 'drift-service-grid', 'drift-skid-arcs',
+  ]) assert.doesNotMatch(lanternArt, new RegExp(excluded));
 });
 
 test('Cypress Run is a full-map mixed technical course with nineties and vertical chutes', () => {
@@ -139,7 +162,7 @@ test('local workday slots change at 08:30 and 12:30 without after-hours churn', 
     return autoTrackAt(new Date(2026, 6, day, index % 2 === 0 ? 8 : 12, 30)).id;
   });
   assert.equal(slots.every((id, index) => index === 0 || id !== slots[index - 1]), true);
-  assert.deepEqual(new Set(slots), new Set(['ridge-pass', 'cypress-run']));
+  assert.deepEqual(new Set(slots), new Set(['ridge-pass', 'cypress-run', 'lantern-coil']));
 });
 
 test('next boundary targets only opening or midpoint across exact boundaries and rollover', () => {
@@ -577,12 +600,15 @@ test('static SVG/CSS references are unique, scoped, and API protected boundaries
   }
   assert.match(INDEX, /data-track-id="ridge-pass"/);
   assert.equal((INDEX.match(/id="track-select"/g) ?? []).length, 1);
+  assert.deepEqual([...INDEX.matchAll(/<option value="([^"]+)"/g)].map((match) => match[1]), [
+    'auto', 'ridge-pass', 'cypress-run', 'lantern-coil',
+  ]);
   assert.doesNotMatch(SOURCES, /localStorage|sessionStorage|document\.cookie|requestAnimationFrame|requestIdleCallback|serviceWorker|history\.(?:push|replace)State|fetch\(/);
   assert.doesNotMatch(SOURCES, /setInterval\s*\(/);
   assert.equal((SOURCES.match(/setTimeoutFn\(/g) ?? []).length, 1);
 });
 
-test('both tracks keep sixteen mobile anchors separated and generated schedules have fixed counts', () => {
+test('all three tracks keep sixteen mobile anchors separated and generated schedules have fixed counts', () => {
   for (const track of TRACK_CATALOG) {
     for (let left = 0; left < track.routeAnchors.length; left += 1) {
       for (let right = left + 1; right < track.routeAnchors.length; right += 1) {
@@ -596,9 +622,11 @@ test('both tracks keep sixteen mobile anchors separated and generated schedules 
   for (const [name, scaleX, scaleY] of [
     ['cypress-run-traverse-desktop', 11.6, 6.82],
     ['cypress-run-traverse-mobile', 3.72, 5.8],
+    ['lantern-coil-traverse-desktop', 11.6, 6.82],
+    ['lantern-coil-traverse-mobile', 3.72, 5.8],
   ]) {
     const block = STYLES.slice(STYLES.indexOf(`@keyframes ${name}`));
-    const expectedCount = 533;
+    const expectedCount = name.startsWith('cypress') ? 533 : 528;
     const points = [...block.matchAll(
       /(?:^|\n)\s*(?:\d+(?:\.\d+)?)% \{ left: ([\d.]+)%; top: ([\d.]+)%/g,
     )].slice(0, expectedCount).map((match) => [

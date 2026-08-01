@@ -28,6 +28,77 @@ The current Auto label is `Auto · workday schedule`. Exact browser-local
 contracts covered by `multi-track.test.mjs`; this manual procedure does not
 claim wall-clock boundary evidence.
 
+## Lantern Coil third-course evidence — 2026-07-31
+
+Roadmap item 6 adds the exact canonical `lantern-coil` open spiral as the third
+and final configured course, after Ridge Pass and Cypress Run. The compiler
+retains 528 visible frames per responsive profile (513 equal-distance base
+positions plus 15 cubic boundaries), sixteen ordered static anchors, the shared
+64-second linear lap, exact four-second phase spacing, and no course-specific
+presentation scale.
+
+The committed compiler reproduced these measurements:
+
+```text
+desktop displayed path length                 2881.5085400383px
+mobile displayed path length                  1294.2558205702px
+canonical 1024-step nonlocal spacing minimum    76.6568482792 units
+desktop nonlocal spacing minimum                 68.8020641682px
+mobile nonlocal spacing minimum                  54.9833118647px
+desktop emitted-frame target edge clearance      57.1615600000px
+mobile emitted-frame target edge clearance        4.6426400000px
+desktop 16-anchor target edge clearance           87.5999600000px
+mobile 16-anchor target edge clearance             14.4303320000px
+desktop 16-anchor center separation               101.8898707548px
+mobile 16-anchor center separation                 59.5665035316px
+```
+
+A flattened 32-subdivision-per-cubic intersection audit found zero
+self-intersections. The detector produced exactly five positive clockwise
+regions at canonical apex fractions `0.072265625`, `0.421875`,
+`0.693359375`, `0.880859375`, and `0.98046875`. Desktop peak yaws are
+`34.0332`, `30.7834`, `33.1415`, `40.164`, and `19.1235` degrees; mobile
+peaks are `19.8528`, `18.6834`, `20.1688`, `23.8153`, and `25.0196`
+degrees. Desktop retains 359 exact zero-yaw frames and mobile retains 303,
+including every envelope boundary and separated between-envelope frames.
+
+The dependency-free suite passed `159/159`. The final two-profile Playwright
+matrix passed `40/40` and covers fixtures and fresh synthetic live mode for
+all three courses, every retained Lantern frame, the full sixteen-slot
+Lantern capacity,
+759/760px and 959/960px layout boundaries, all compiled corner landmarks,
+normal and reduced motion, hover/focus/pin/Escape, switching, accessibility,
+and clean console/page-error channels. Every target and focus exterior stayed
+contained; phased targets and the sixteen static anchors did not overlap;
+course art and vehicle transforms remained isolated. The independently
+authored nested terraces remained visually distinguishable as separate road
+arms at both reference sizes.
+
+Exactly two new neutral fixture references were captured with the course
+selected, traversal paused at `16000ms`, no focus, tooltip, pin, pressed,
+import, skip-link, or failure state, and mobile `fullPage: true`:
+
+```text
+desktop-lantern-coil.png  1440x900  sha256 7161cf45bc822eb6fad88476621319f62a75a375ebe2ee9d66a814774505cfa1
+mobile-lantern-coil.png   390x1673  sha256 ef29439aa4e4229c4f17a022bb72b38566c9e3cd64a125ed2f522622c2ecde8d
+```
+
+The ordinary browser suite prepares and checks this neutral reference state
+without writing either tracked PNG. Screenshot updates are an explicit,
+test-only operation that runs the same test in both viewport projects:
+
+```sh
+DASHBOARD_UPDATE_SCREENSHOTS=1 npm --prefix dashboard run test:browser -- --grep "prepares the neutral Lantern Coil reference"
+```
+
+Only use that command when intentionally refreshing the two Lantern Coil
+references. Review the resulting bytes and dimensions before retaining them;
+the default `npm --prefix dashboard run test:browser` command must leave all
+tracked screenshots untouched.
+
+All nine prior screenshot hashes remained byte-identical. Browser commands
+used synthetic data only, and ports 43917 and 43918 were clear afterward.
+
 ## Cypress mobile clearance implementation evidence — 2026-07-28
 
 Roadmap item 4 applies a Cypress-mobile-only centered `0.94` presentation

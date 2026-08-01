@@ -51,6 +51,7 @@
                 <option value="auto">Auto · workday schedule</option>
                 <option value="ridge-pass">Ridge Pass</option>
                 <option value="cypress-run">Cypress Run</option>
+                <option value="lantern-coil">Lantern Coil</option>
               </select>
               <span id="track-status" class="track-status">Active course: Ridge Pass</span>
               <span id="track-live-region" class="visually-hidden" aria-live="polite"></span>
@@ -193,6 +194,59 @@
                   <text class="label-drop-chute" x="510" y="552">DROP CHUTE</text>
                   <text class="label-south-hairpin" x="714" y="680">SOUTH HAIRPIN</text>
                   <text class="label-west-switchback" x="146" y="480">WEST SWITCHBACK</text>
+                </g>
+              </g>
+
+              <g id="lantern-coil-art" class="course-art lantern-coil-art" data-track-art="lantern-coil">
+                <g class="lantern-water-terraces">
+                  <ellipse cx="486" cy="376" rx="438" ry="250" />
+                  <ellipse cx="486" cy="376" rx="326" ry="184" />
+                  <ellipse cx="486" cy="376" rx="216" ry="119" />
+                  <ellipse cx="486" cy="376" rx="112" ry="61" />
+                </g>
+                <g class="lantern-pools">
+                  <circle cx="112" cy="392" r="56" />
+                  <circle cx="782" cy="300" r="62" />
+                  <circle cx="294" cy="468" r="48" />
+                  <circle cx="638" cy="362" r="42" />
+                  <circle cx="468" cy="420" r="34" />
+                </g>
+                <g class="lantern-inlay-arcs">
+                  <path d="M110 485 C70 400 92 306 186 248" />
+                  <path d="M676 220 C788 248 846 316 826 402" />
+                  <path d="M710 480 C608 526 456 536 340 488" />
+                  <path d="M280 402 C274 332 356 282 470 286" />
+                  <path d="M606 326 C662 366 626 426 548 442" />
+                </g>
+                <g class="lantern-reeds">
+                  <path d="M128 568l-8-38m12 38 4-45m2 45 14-36 M814 470l-5-34m10 34 7-42m0 42 15-30" />
+                  <path d="M248 210l-6-30m11 30 5-38m1 38 14-27 M548 536l-4-29m10 29 6-35m2 35 13-26" />
+                </g>
+                <g class="lantern-retaining-rings">
+                  <path d="M54 376 C54 220 252 134 486 134 C720 134 918 222 918 376" />
+                  <path d="M162 376 C162 270 306 206 486 206 C666 206 810 270 810 376" />
+                  <path d="M270 376 C270 316 366 258 486 258 C606 258 702 316 702 376" />
+                </g>
+                <path id="lantern-coil-centerline" fill="none" />
+                <g class="route-bed" filter="url(#road-glow)">
+                  <use class="road-shoulder" href="#lantern-coil-centerline" />
+                  <use class="road-surface" href="#lantern-coil-centerline" />
+                </g>
+                <g class="route-centerlines lantern-route-centerlines">
+                  <path class="segment-ember-gate" data-route-segment-index="0" />
+                  <path class="segment-outer-lantern" data-route-segment-index="1" />
+                  <path class="segment-prism-rise" data-route-segment-index="2" />
+                  <path class="segment-halo-crest" data-route-segment-index="3" />
+                  <path class="segment-inner-coil" data-route-segment-index="4" />
+                  <path class="segment-dawn-chute" data-route-segment-index="5" />
+                </g>
+                <g class="segment-labels">
+                  <text class="label-ember-gate" x="130" y="552">EMBER GATE</text>
+                  <text class="label-outer-lantern" x="266" y="188">OUTER LANTERN</text>
+                  <text class="label-prism-rise" x="784" y="238">PRISM RISE</text>
+                  <text class="label-halo-crest" x="716" y="532">HALO CREST</text>
+                  <text class="label-inner-coil" x="292" y="500">INNER COIL</text>
+                  <text class="label-dawn-chute" x="492" y="392">DAWN CHUTE</text>
                 </g>
               </g>
             </svg>

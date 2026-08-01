@@ -83,10 +83,23 @@ automatic terminal access, or app/runtime dependency is introduced.
    browser tests, routes/syntax/diff/artifact/screenshot/port/protected-boundary
    audits. Automated tests accessed no real tmux server; no runtime
    observability or Notion work was added.
-6. **Third original course — next; not implemented.** Add one original
-   medium-speed technical course through the route compiler rather than
-   hand-writing another responsive motion schedule.
+6. **Third original course — complete.** Lantern Coil is the canonical
+   compiler-owned third course, appended after Ridge Pass and Cypress Run;
+   the catalog is exactly three courses. Delivery verification passed:
+   `routes:check`, 159/159 unit tests, 40/40 browser tests, browser syntax,
+   scoped whitespace/diff and generated-artifact checks, and port cleanup for
+   43917/43918. The two new neutral Lantern screenshots were added and the
+   nine existing references remain byte-identical. Independent pre-QA and a
+   different independent post-QA both returned PASS. No observability,
+   Notion, tmux-server, collector, or terminal access was added or used.
+   The delivery coordination audit used Git base
+   `e61c3317ec52047e20b6d790277ab7989f3e2a04`, equal to `origin/main` with
+   divergence `0/0`; later commit and push status is authoritative in Git history.
+   Delivery evidence and handoff are in
+   `docs/superpowers/specs/2026-07-31-dashboard-third-course-design.md`.
 
-Items 1 through 5 are complete. Item 6 — Third original course — is the next
-and only remaining roadmap implementation item; it has not been started and is
-not authorized by this roadmap status update.
+Items 1 through 6 are complete. There is no remaining authorized roadmap
+implementation item. Proposed, unimplemented, and unauthorized future work is
+limited to permanent neutral-screenshot assertions and checked-in breakpoint
+focus-clearance/pairwise-overlap assertions; the current delivery evidence
+already passed without them.

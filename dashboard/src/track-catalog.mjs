@@ -21,8 +21,8 @@ function exactKeys(value, expected, label) {
 }
 
 export function validateTrackCatalog(input) {
-  if (!Array.isArray(input) || input.length < 2) {
-    throw new TypeError('Track catalog must contain at least two tracks');
+  if (!Array.isArray(input) || input.length !== 3) {
+    throw new TypeError('Track catalog must contain exactly three tracks');
   }
   const unique = {
     id: new Set(), artId: new Set(), centerlineId: new Set(),
