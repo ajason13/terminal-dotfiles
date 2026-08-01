@@ -70,13 +70,23 @@ automatic terminal access, or app/runtime dependency is introduced.
    or Notion synchronization occurred. Commit and push are authorized; release
    status is established by Git history. Final evidence is in
    `docs/superpowers/specs/2026-07-28-dashboard-cypress-mobile-clearance-design.md`.
-5. **Opt-in live workflow — next recommended; not implemented.** Add a one-command, one-shot snapshot export and
-   clearer explicit-refresh guidance. Retain no polling, daemon, automatic
-   terminal access, browser file reread, or implicit collection.
-6. **Third course — deferred after item 5; not implemented.** After the route compiler lands, add one original
-   medium-speed technical course through that compiler rather than hand-writing
-   another responsive motion schedule.
+5. **Opt-in live workflow — complete.** From the repository root,
+   `node dashboard/export-tmux.mjs /tmp/dashboard-tmux-snapshot.json` creates
+   one fresh schema-v2 snapshot at an explicit destination. The workflow uses
+   mode `0600` and same-directory atomic rename; closed errors preserve an
+   existing valid destination and clean temporary output on caught failures
+   when the filesystem permits. Users intentionally
+   refresh by rerunning the one-shot export and manually reselecting/importing
+   the new file; the browser never rereads it automatically. Pre-QA returned
+   FAIL then PASS and post-change QA returned FAIL then PASS. Verification
+   passed: 15/15 focused export tests, 156/156 unit tests, 32/32 desktop/mobile
+   browser tests, routes/syntax/diff/artifact/screenshot/port/protected-boundary
+   audits. Automated tests accessed no real tmux server; no runtime
+   observability or Notion work was added.
+6. **Third original course — next; not implemented.** Add one original
+   medium-speed technical course through the route compiler rather than
+   hand-writing another responsive motion schedule.
 
-Item 4 is complete. Item 5 is the next recommended task; item 6 remains
-deferred after it. Neither is part of item 4 or authorized by this roadmap
-status update.
+Items 1 through 5 are complete. Item 6 — Third original course — is the next
+and only remaining roadmap implementation item; it has not been started and is
+not authorized by this roadmap status update.

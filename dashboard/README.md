@@ -19,7 +19,7 @@ user's default socket passes the ownership/type checks, run from the repository
 root:
 
 ```sh
-node dashboard/collect-tmux.mjs > /tmp/dashboard-tmux-snapshot.json
+node dashboard/export-tmux.mjs /tmp/dashboard-tmux-snapshot.json
 ```
 
 The collector makes exactly one hardened `list-panes -a` call. It reads pane
@@ -30,12 +30,19 @@ only from window name plus pane index, inferred state, provenance, confidence,
 and one observation timestamp. Raw titles, commands, sockets, tmux IDs, and
 server times are never emitted.
 
+The exporter writes a same-directory temporary file with mode `0600`, flushes
+and closes the complete snapshot, and then atomically replaces the named
+regular file. If collection, writing, or replacement fails, it exits nonzero,
+prints one closed error code to stderr, removes its temporary file when the
+filesystem permits, and preserves any previously valid destination. The
+destination must be an absolute path in an existing safe, writable directory;
+directories, symlinks, and special-file destinations are rejected.
+
 The implementation deliberately fails closed on non-macOS layouts, custom
 sockets/server names, alternate tmux paths, unsafe executables/sockets,
 timeouts, stderr, malformed or oversized output, or any validation error. A
-failure writes one closed error code to stderr, exits nonzero, and writes no
-JSON or partial JSON to stdout. Delete an empty redirected file after a failed
-command.
+failure writes one closed error code to stderr, exits nonzero, and writes
+nothing to stdout.
 
 ## Import and run
 
@@ -51,6 +58,10 @@ for validation. A valid schema-v2 snapshot replaces the map and shows its
 observed age. An invalid, stale, future-dated, oversized, schema-v1, or modified
 file is rejected as a whole and fresh fixtures are rendered with a rejection
 notice. **Reset to fixtures** explicitly returns to fixture mode.
+
+To refresh, rerun the one-shot export command and then explicitly choose
+**Import live snapshot** and select the file again. The browser does not reread
+the previously selected file automatically.
 
 The browser never discovers or executes tmux, rereads an imported file, or
 refreshes session data. The successful-live-source interval updates only the
