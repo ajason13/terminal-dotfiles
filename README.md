@@ -834,7 +834,7 @@ The current scaling approach is:
 - Keep bundle totals within their current caps:
   - `general`: 16 MiB
   - `vehicles`: 24 MiB
-  - `anime`: 132 MiB
+  - `anime`: 164 MiB
 
 `./scripts/publish-backgrounds.sh` enforces the current image size limits
 (via `./scripts/check-background-assets.sh`) before publishing bundle releases,
