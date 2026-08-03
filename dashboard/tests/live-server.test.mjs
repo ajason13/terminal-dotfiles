@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createLiveRequestHandler } from '../src/live-server.mjs';
 import { LIVE_CONSTANTS, LIVE_REQUEST_FORBIDDEN } from '../src/live-constants.mjs';
+import { createLiveServer, parseServeArgs } from '../serve-live.mjs';
 
 const TOKEN = 'a'.repeat(32);
 const PORT = 4173;
@@ -123,4 +124,31 @@ test('symlink escaping the root is rejected with 403', async () => {
 test('missing file is 404', async () => {
   const res = await makeReader()('/nope.js');
   assert.equal(res.status, 404);
+});
+
+test('parseServeArgs reads --port and defaults otherwise', () => {
+  assert.equal(parseServeArgs([]).port, LIVE_CONSTANTS.LIVE_SERVER_DEFAULT_PORT);
+  assert.equal(parseServeArgs(['--port', '5001']).port, 5001);
+});
+
+test('live server round-trips /live/snapshot over a real loopback socket', async () => {
+  const { server, port, token } = await createLiveServer({
+    port: 0,
+    host: '127.0.0.1',
+    token: TOKEN,
+    collect: async () => OK_SNAPSHOT,
+    root: '/dash',
+    readFile: async () => { const e = new Error('ENOENT'); e.code = 'ENOENT'; throw e; },
+    realpath: async (p) => p,
+  });
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/live/snapshot`, { headers: { 'x-live-token': token } });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), OK_SNAPSHOT);
+
+    const bad = await fetch(`http://127.0.0.1:${port}/live/snapshot`);
+    assert.equal(bad.status, 403);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 });
