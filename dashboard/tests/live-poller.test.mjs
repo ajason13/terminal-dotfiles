@@ -15,8 +15,8 @@ const harness = (overrides = {}) => {
     onResult: (s) => events.results.push(s),
     onFailure: (n) => events.failures.push(n),
     onExhausted: () => { events.exhausted += 1; },
-    intervalMs: 5000,
-    maxFailures: 3,
+    intervalMs: overrides.intervalMs ?? 5000,
+    maxFailures: overrides.maxFailures ?? 3,
     setIntervalFn: (fn, delay) => { intervals.push({ fn, delay }); return intervals.length; },
     clearIntervalFn: (id) => cleared.push(id),
     visibility: {
@@ -79,4 +79,42 @@ test('hidden tab skips polling; becoming visible triggers a tick', async () => {
   h.setHidden(false);
   await h.fireVisibility();
   assert.equal(h.events.results.length, 1);
+});
+
+test('reentrancy guard: prevents onExhausted from firing twice on overlapping failures', async () => {
+  let callCount = 0;
+  let deferred = null;
+  const h = harness({
+    maxFailures: 1,
+    pollOnce: async () => {
+      callCount += 1;
+      return new Promise((resolve, reject) => {
+        deferred = { resolve, reject };
+      });
+    }
+  });
+
+  h.poller.start().catch(() => {});  // don't await, allow test to continue
+  await settle();
+
+  // First tick is now pending, waiting for the deferred
+  assert.equal(callCount, 1);
+
+  // Try to fire a second tick while first is still pending
+  await h.tick();
+  await settle();
+
+  // Reentrancy guard should prevent the second tick from running
+  // so callCount should still be 1
+  assert.equal(callCount, 1);
+
+  // Reject the deferred to fail the tick
+  deferred.reject(new Error('fail'));
+  await settle();
+
+  // One failure should be recorded
+  assert.equal(h.events.failures.length, 1);
+  // onExhausted should have been called exactly once
+  assert.equal(h.events.exhausted, 1);
+  assert.equal(h.poller.isRunning(), false);
 });

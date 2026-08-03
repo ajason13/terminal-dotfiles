@@ -13,21 +13,28 @@ export function createLivePoller({
   let unsubscribe = null;
   let failures = 0;
   let running = false;
+  let ticking = false;
 
   async function tick() {
     if (!running) return;
-    if (visibility && visibility.isHidden()) return; // paused; no poll, no failure
+    if (ticking) return;  // prevent concurrent ticks
+    ticking = true;
     try {
-      const snapshot = await pollOnce();
-      failures = 0;
-      onResult(snapshot);
-    } catch {
-      failures += 1;
-      onFailure(failures);
-      if (failures >= maxFailures) {
-        stop();
-        onExhausted();
+      if (visibility && visibility.isHidden()) return;  // paused; no poll, no failure
+      try {
+        const snapshot = await pollOnce();
+        failures = 0;
+        onResult(snapshot);
+      } catch {
+        failures += 1;
+        onFailure(failures);
+        if (failures >= maxFailures) {
+          stop();
+          onExhausted();
+        }
       }
+    } finally {
+      ticking = false;
     }
   }
 
@@ -37,8 +44,9 @@ export function createLivePoller({
     if (visibility) {
       unsubscribe = visibility.subscribe(() => { if (!visibility.isHidden()) void tick(); });
     }
+    const tickPromise = tick();
     timer = setIntervalFn(() => { void tick(); }, intervalMs);
-    return tick();
+    return tickPromise;
   }
 
   function stop() {
