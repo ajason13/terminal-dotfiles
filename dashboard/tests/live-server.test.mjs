@@ -131,6 +131,18 @@ test('parseServeArgs reads --port and defaults otherwise', () => {
   assert.equal(parseServeArgs(['--port', '5001']).port, 5001);
 });
 
+test('parseServeArgs rejects a non-integer --port', () => {
+  assert.throws(() => parseServeArgs(['--port', 'abc']));
+});
+
+test('parseServeArgs rejects a negative --port', () => {
+  assert.throws(() => parseServeArgs(['--port', '-1']));
+});
+
+test('parseServeArgs rejects a --port above 65535', () => {
+  assert.throws(() => parseServeArgs(['--port', '70000']));
+});
+
 test('live server round-trips /live/snapshot over a real loopback socket', async () => {
   const { server, port, token } = await createLiveServer({
     port: 0,

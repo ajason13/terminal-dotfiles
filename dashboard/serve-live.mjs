@@ -41,7 +41,15 @@ export async function createLiveServer({
   // Fail closed: requests that land before the real handler is wired below get a 503.
   let handleRef = async (req, res) => { res.writeHead(503); res.end(); };
 
-  const server = createServer((req, res) => { void handleRef(req, res); });
+  // A client aborting mid-response can make writeHead/end throw; guard so that
+  // becomes a destroyed socket, not an unhandled rejection that crashes the process.
+  const server = createServer((req, res) => {
+    handleRef(req, res).catch((err) => {
+      if (!res.writableEnded) {
+        try { res.destroy(err); } catch { /* socket already gone */ }
+      }
+    });
+  });
 
   await new Promise((resolve) => server.listen(port, host, resolve));
   // Build the handler against the actual bound port (not the requested one) so the
