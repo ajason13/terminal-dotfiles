@@ -912,6 +912,78 @@ test('repeated failure transitions render fresh fixtures before a later successf
   controller.destroy();
 });
 
+test('goLive polls, validates, and renders live snapshots', async () => {
+  const rendered = [];
+  const intervals = [];
+  const hidden = false;
+  const controller = createSourceController({
+    fileInput: new FakeElement(),
+    resetButton: new FakeElement(),
+    importRegion: new FakeElement(),
+    sourceLabel: new FakeElement(),
+    sourceAge: new FakeElement(),
+    sourceNotice: new FakeElement(),
+    readFixtures: async () => liveSnapshot(),
+    render: (snapshot) => {
+      rendered.push(snapshot);
+      return { destroy() {}, clearInteraction() {} };
+    },
+    fetchSnapshot: async () => ({ ok: true, json: async () => liveSnapshot() }),
+    token: 'tok',
+    now: () => NOW,
+    setIntervalFn: (fn, delay) => { intervals.push({ fn, delay }); return intervals.length; },
+    clearIntervalFn: () => {},
+    visibility: { isHidden: () => hidden, subscribe: () => () => {} },
+    windowRef: new FakeElement(),
+  });
+  await controller.start();
+  const went = await controller.goLive();
+  assert.equal(went, true);
+  assert.equal(controller.mode, 'live_polling');
+  assert.ok(rendered.length >= 1);
+  assert.equal(rendered.at(-1).sessions.length, 1);
+  assert.equal(intervals.length, 1);
+  assert.equal(intervals[0].delay, LIVE_CONSTANTS.LIVE_POLL_INTERVAL_MS);
+  controller.destroy();
+});
+
+test('goLive falls back to rejected fixtures after max consecutive failures', async () => {
+  const rendered = [];
+  const intervals = [];
+  const controller = createSourceController({
+    fileInput: new FakeElement(),
+    resetButton: new FakeElement(),
+    importRegion: new FakeElement(),
+    sourceLabel: new FakeElement(),
+    sourceAge: new FakeElement(),
+    sourceNotice: new FakeElement(),
+    readFixtures: async () => liveSnapshot(),
+    render: (snapshot) => {
+      rendered.push(snapshot);
+      return { destroy() {}, clearInteraction() {} };
+    },
+    fetchSnapshot: async () => ({ ok: true, json: async () => ({ bad: true }) }),
+    token: 'tok',
+    now: () => NOW,
+    setIntervalFn: (fn, delay) => { intervals.push({ fn, delay }); return intervals.length; },
+    clearIntervalFn: () => {},
+    windowRef: new FakeElement(),
+  });
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+  await controller.start();
+  await controller.goLive();
+  assert.equal(controller.mode, 'live_polling');
+  for (let attempt = 0; attempt < LIVE_CONSTANTS.LIVE_MAX_CONSECUTIVE_FAILURES - 1; attempt += 1) {
+    intervals[0].fn();
+    await flush();
+    await flush();
+  }
+  await flush();
+  assert.equal(controller.mode, 'rejected_fixtures');
+  assert.equal(rendered.at(-1).sessions.length, 1);
+  controller.destroy();
+});
+
 test('unknown hold has independent 0/1/3/4 capacity and canonical probing', () => {
   assert.equal(UNKNOWN_HOLD_ANCHORS.length, 3);
   for (const count of [0, 1, 3, 4]) {
