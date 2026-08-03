@@ -44,6 +44,24 @@ timeouts, stderr, malformed or oversized output, or any validation error. A
 failure writes one closed error code to stderr, exits nonzero, and writes
 nothing to stdout.
 
+## Live auto-refresh (opt-in)
+
+`node serve-live.mjs` starts a server bound to 127.0.0.1 that serves the
+dashboard and one read-only endpoint, `GET /live/snapshot`, which runs the same
+one-shot collector on each request. Open the printed URL, click "Go live", and
+the dashboard polls every 5 seconds.
+
+This mode deliberately reverses the no-server / no-polling transport boundary
+the rest of this dashboard holds to. It is opt-in and off by default: nothing
+starts it automatically, and the export-and-import workflow above remains the
+default. Every fetched payload passes the same validation as an imported file
+(hashed IDs, closed status enum, no pane content, size and age bounds), so the
+data guarantees are unchanged - only the transport is new.
+
+Hardening: loopback-only bind, a Host-header allowlist (DNS-rebinding defense),
+cross-site request rejection, and a per-process token required on the endpoint.
+The server writes nothing to disk and stops on Ctrl-C.
+
 ## Import and run
 
 Start the loopback-only static preview:
