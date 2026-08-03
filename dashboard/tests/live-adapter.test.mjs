@@ -912,6 +912,16 @@ test('repeated failure transitions render fresh fixtures before a later successf
   controller.destroy();
 });
 
+const LIVE_POLL_SENTINEL_ID = 'tmux-abcdef0123456789abcdef0123456789';
+const LIVE_POLL_SENTINEL_NAME = 'Live poll · sentinel';
+
+function livePollSnapshot() {
+  return liveSnapshot([liveSession({
+    id: LIVE_POLL_SENTINEL_ID,
+    displayName: LIVE_POLL_SENTINEL_NAME,
+  })]);
+}
+
 test('goLive polls, validates, and renders live snapshots', async () => {
   const rendered = [];
   const intervals = [];
@@ -928,7 +938,7 @@ test('goLive polls, validates, and renders live snapshots', async () => {
       rendered.push(snapshot);
       return { destroy() {}, clearInteraction() {} };
     },
-    fetchSnapshot: async () => ({ ok: true, json: async () => liveSnapshot() }),
+    fetchSnapshot: async () => ({ ok: true, json: async () => livePollSnapshot() }),
     token: 'tok',
     now: () => NOW,
     setIntervalFn: (fn, delay) => { intervals.push({ fn, delay }); return intervals.length; },
@@ -937,13 +947,54 @@ test('goLive polls, validates, and renders live snapshots', async () => {
     windowRef: new FakeElement(),
   });
   await controller.start();
+  assert.equal(rendered[0].sessions[0].displayName, 'Synthetic · pane 0');
   const went = await controller.goLive();
   assert.equal(went, true);
   assert.equal(controller.mode, 'live_polling');
-  assert.ok(rendered.length >= 1);
-  assert.equal(rendered.at(-1).sessions.length, 1);
+  assert.equal(rendered.length, 2);
+  // The distinguishing sentinel proves this render came from the live poll,
+  // not a repeat of the initial fixtures render (both fixtures do exist in liveSnapshot() shape).
+  assert.equal(rendered.at(-1).sessions[0].displayName, LIVE_POLL_SENTINEL_NAME);
   assert.equal(intervals.length, 1);
   assert.equal(intervals[0].delay, LIVE_CONSTANTS.LIVE_POLL_INTERVAL_MS);
+  controller.destroy();
+});
+
+test('goLive marks the view stale on a single failed poll without falling back to fixtures', async () => {
+  const rendered = [];
+  const intervals = [];
+  const sourceNotice = new FakeElement();
+  let callCount = 0;
+  const controller = createSourceController({
+    fileInput: new FakeElement(),
+    resetButton: new FakeElement(),
+    importRegion: new FakeElement(),
+    sourceLabel: new FakeElement(),
+    sourceAge: new FakeElement(),
+    sourceNotice,
+    readFixtures: async () => liveSnapshot(),
+    render: (snapshot) => {
+      rendered.push(snapshot);
+      return { destroy() {}, clearInteraction() {} };
+    },
+    fetchSnapshot: async () => {
+      callCount += 1;
+      if (callCount === 1) return { ok: false };
+      return { ok: true, json: async () => livePollSnapshot() };
+    },
+    token: 'tok',
+    now: () => NOW,
+    setIntervalFn: (fn, delay) => { intervals.push({ fn, delay }); return intervals.length; },
+    clearIntervalFn: () => {},
+    windowRef: new FakeElement(),
+  });
+  await controller.start();
+  const lastGoodRender = rendered.at(-1);
+  await controller.goLive();
+  assert.equal(controller.mode, 'live_polling');
+  assert.equal(sourceNotice.textContent, 'Live update failed; retrying…');
+  assert.equal(rendered.at(-1), lastGoodRender);
+  assert.equal(rendered.length, 1);
   controller.destroy();
 });
 
