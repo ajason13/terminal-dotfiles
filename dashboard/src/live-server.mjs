@@ -1,4 +1,5 @@
 import { LIVE_CONSTANTS, LIVE_REQUEST_FORBIDDEN, COLLECTOR_ERROR_CODES } from './live-constants.mjs';
+import path from 'node:path';
 
 const forbidden = () => ({
   status: 403,
@@ -44,5 +45,43 @@ export function createLiveRequestHandler({ token, port, collect, readStaticFile 
       return { status: 405, headers: { Allow: 'GET' }, body: '' };
     }
     return readStaticFile(path, { token });
+  };
+}
+
+const CONTENT_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+};
+
+const staticForbidden = { status: 403, headers: {}, body: 'forbidden' };
+
+export function createStaticFileReader({ root, token, readFile, realpath }) {
+  const rootResolved = path.resolve(root);
+  return async function readStaticFile(requestPath) {
+    const rel = requestPath === '/' ? 'index.html' : requestPath.replace(/^\/+/, '');
+    const abs = path.resolve(rootResolved, rel);
+    // Containment check before any fs touch (blocks ../ traversal).
+    if (abs !== rootResolved && !abs.startsWith(rootResolved + path.sep)) return staticForbidden;
+
+    let real;
+    try {
+      const buffer = await readFile(abs);
+      // Resolve symlinks and re-check containment (blocks symlink escape).
+      real = await realpath(abs);
+      if (real !== rootResolved && !real.startsWith(rootResolved + path.sep)) return staticForbidden;
+      const ext = path.extname(abs);
+      const type = CONTENT_TYPES[ext] || 'application/octet-stream';
+      if (ext === '.html') {
+        const html = buffer.toString('utf8').split(LIVE_CONSTANTS.LIVE_TOKEN_PLACEHOLDER).join(token);
+        return { status: 200, headers: { 'Content-Type': type, 'Cache-Control': 'no-store' }, body: html };
+      }
+      return { status: 200, headers: { 'Content-Type': type, 'Cache-Control': 'no-store' }, body: buffer.toString('utf8') };
+    } catch {
+      return { status: 404, headers: {}, body: 'not found' };
+    }
   };
 }

@@ -76,3 +76,51 @@ test('unexpected collector error is a generic 503, not raw text', async () => {
   assert.equal(res.status, 503);
   assert.equal(res.body.includes('secret'), false);
 });
+
+import { createStaticFileReader } from '../src/live-server.mjs';
+import path from 'node:path';
+
+const ROOT = '/dash';
+
+const makeReader = (overrides = {}) =>
+  createStaticFileReader({
+    root: ROOT,
+    token: TOKEN,
+    realpath: async (p) => p, // no symlink escape by default
+    readFile: async (abs) => {
+      if (abs === path.join(ROOT, 'index.html')) return Buffer.from(`<script>window.__LIVE_TOKEN__="${LIVE_CONSTANTS.LIVE_TOKEN_PLACEHOLDER}";</script>`);
+      if (abs === path.join(ROOT, 'styles.css')) return Buffer.from('body{}');
+      if (abs === path.join(ROOT, 'link.css')) return Buffer.from('/* symlink */');
+      const err = new Error('ENOENT'); err.code = 'ENOENT'; throw err;
+    },
+    ...overrides,
+  });
+
+test('serves index.html with the token injected', async () => {
+  const res = await makeReader()('/');
+  assert.equal(res.status, 200);
+  assert.equal(res.headers['Content-Type'], 'text/html; charset=utf-8');
+  assert.equal(res.body.includes(`"${TOKEN}"`), true);
+  assert.equal(res.body.includes(LIVE_CONSTANTS.LIVE_TOKEN_PLACEHOLDER), false);
+});
+
+test('serves a css file with the right content type', async () => {
+  const res = await makeReader()('/styles.css');
+  assert.equal(res.status, 200);
+  assert.equal(res.headers['Content-Type'], 'text/css; charset=utf-8');
+});
+
+test('path traversal is rejected with 403', async () => {
+  const res = await makeReader()('/../../etc/passwd');
+  assert.equal(res.status, 403);
+});
+
+test('symlink escaping the root is rejected with 403', async () => {
+  const res = await makeReader({ realpath: async () => '/etc/shadow' })('/link.css');
+  assert.equal(res.status, 403);
+});
+
+test('missing file is 404', async () => {
+  const res = await makeReader()('/nope.js');
+  assert.equal(res.status, 404);
+});
