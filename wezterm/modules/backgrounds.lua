@@ -117,12 +117,16 @@ local function shuffled_index(count, slot)
   return order[(slot % count) + 1]
 end
 
-local function current_background(backgrounds, interval)
+-- The wallpaper for the current time slot, shifted by an optional manual offset.
+-- The offset (see M.apply) lets a keybind skip ahead without disturbing the
+-- time-based cadence: it is added to every slot, so the timer keeps rotating on
+-- schedule from wherever the manual skips left off.
+local function current_background(backgrounds, interval, offset)
   if #backgrounds == 0 then
     return nil
   end
 
-  local slot = math.floor(os.time() / interval)
+  local slot = math.floor(os.time() / interval) + (offset or 0)
   return backgrounds[shuffled_index(#backgrounds, slot)]
 end
 
@@ -178,6 +182,39 @@ local function apply_window_background(wezterm, window, background, hsb, text_op
   wezterm.GLOBAL.last_background_by_window = cache
 end
 
+-- Skip to the next wallpaper immediately in response to a keybind, while leaving
+-- the rotation cadence intact. Bumps the shared slot offset (persisted in
+-- wezterm.GLOBAL so the rotation timer and every reloaded config agree) and
+-- repaints all live windows so they stay in sync, exactly as a timer tick would.
+local function advance_background(wezterm)
+  local state = wezterm.GLOBAL.background_state
+  if not state or not state.images or #state.images == 0 or state.forced then
+    return
+  end
+
+  wezterm.GLOBAL.background_slot_offset = (wezterm.GLOBAL.background_slot_offset or 0) + 1
+  local background = current_background(state.images, state.interval, wezterm.GLOBAL.background_slot_offset)
+  if not background then
+    return
+  end
+
+  for _, mux_window in ipairs(wezterm.mux.all_windows()) do
+    local gui_window = mux_window:gui_window()
+    if gui_window then
+      apply_window_background(
+        wezterm,
+        gui_window,
+        background,
+        state.hsb,
+        state.text_opacity,
+        state.fit,
+        state.h_align,
+        state.v_align
+      )
+    end
+  end
+end
+
 -- Pure ownership decision for the rotation timer, factored out so it can be
 -- unit-tested without WezTerm (see scripts/test-backgrounds-lua.sh). Given the
 -- current owner claim (`{ id, beat }` or nil), this timer's id, the current
@@ -204,7 +241,9 @@ function M.apply(config, wezterm, env)
   local h_align = local_config.background_horizontal_align or background_horizontal_align
   local v_align = local_config.background_vertical_align or background_vertical_align
   local forced = forced_background(env, local_config)
-  local initial_background = forced or current_background(backgrounds, interval)
+  -- Manual "next wallpaper" skips accumulate here, shared across config reloads.
+  wezterm.GLOBAL.background_slot_offset = wezterm.GLOBAL.background_slot_offset or 0
+  local initial_background = forced or current_background(backgrounds, interval, wezterm.GLOBAL.background_slot_offset)
 
   if initial_background then
     config.background = build_background_layers(initial_background, hsb, fit, h_align, v_align)
@@ -225,6 +264,18 @@ function M.apply(config, wezterm, env)
     v_align = v_align,
     forced = forced,
   }
+
+  -- Keybind: skip to the next wallpaper now, without resetting the 15-minute
+  -- timer. Handy for stepping past a wallpaper that reads poorly behind terminal
+  -- text. Append (never assign) config.keys so an earlier module's bindings survive.
+  config.keys = config.keys or {}
+  table.insert(config.keys, {
+    key = 'b',
+    mods = 'CTRL|SHIFT',
+    action = wezterm.action_callback(function()
+      advance_background(wezterm)
+    end),
+  })
 
   -- Drive rotation with a chained call_after timer. The obvious choice,
   -- update-status, is unreliable for this: WezTerm suspends that event's
@@ -273,7 +324,7 @@ function M.apply(config, wezterm, env)
         return
       end
       delay = math.max(1, math.min(state.interval, poll_interval_seconds))
-      local background = state.forced or current_background(state.images, state.interval)
+      local background = state.forced or current_background(state.images, state.interval, wezterm.GLOBAL.background_slot_offset)
       if not background then
         return
       end
