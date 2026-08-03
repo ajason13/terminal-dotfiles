@@ -1,5 +1,6 @@
 import { FixtureSessionAdapter } from './fixture-adapter.mjs';
 import { FIXTURE_SNAPSHOT } from './fixture-sessions.mjs';
+import { LIVE_CONSTANTS } from './live-constants.mjs';
 import { renderApplicationError, renderDashboard } from './render-dashboard.mjs';
 import { normalizeSnapshot } from './session-contract.mjs';
 import { createSourceController } from './source-controller.mjs';
@@ -100,6 +101,12 @@ export async function startDashboard(documentRef = document, windowRef = window)
     activeTrack = trackController.start();
     if (fatalHandler.fatal || !activeTrack) return;
     const adapter = new FixtureSessionAdapter(FIXTURE_SNAPSHOT);
+    const goLiveButton = exactlyOne(documentRef, '#go-live');
+    const rawLiveToken = windowRef.__LIVE_TOKEN__;
+    const liveToken = typeof rawLiveToken === 'string' && rawLiveToken
+      && rawLiveToken !== LIVE_CONSTANTS.LIVE_TOKEN_PLACEHOLDER
+      ? rawLiveToken
+      : null;
     sourceController = createSourceController({
       fileInput: exactlyOne(documentRef, '#snapshot-file'),
       resetButton: exactlyOne(documentRef, '#reset-source'),
@@ -112,8 +119,25 @@ export async function startDashboard(documentRef = document, windowRef = window)
       initialTrack: activeTrack,
       onFatal,
       windowRef,
+      ...(liveToken ? {
+        token: liveToken,
+        fetchSnapshot: () => windowRef.fetch(LIVE_CONSTANTS.LIVE_SNAPSHOT_ROUTE, {
+          headers: { [LIVE_CONSTANTS.LIVE_TOKEN_HEADER]: liveToken },
+        }),
+        visibility: {
+          isHidden: () => documentRef.hidden === true,
+          subscribe: (fn) => {
+            documentRef.addEventListener('visibilitychange', fn);
+            return () => documentRef.removeEventListener('visibilitychange', fn);
+          },
+        },
+      } : {}),
     });
     await sourceController.start();
+    if (liveToken) {
+      goLiveButton.disabled = false;
+      goLiveButton.addEventListener('click', () => { void sourceController.goLive(); });
+    }
   } catch (error) {
     onFatal(error);
   }

@@ -1069,7 +1069,10 @@ test('browser sources omit unsafe APIs and contain exactly one interval call sit
     '../src/render-dashboard.mjs', '../index.html',
   ].map(async (path) => (await import('node:fs/promises')).readFile(new URL(path, import.meta.url), 'utf8')));
   const joined = sources.join('\n');
-  assert.doesNotMatch(joined, /\.innerHTML\s*=|insertAdjacentHTML|fetch\(|WebSocket|EventSource/);
+  assert.doesNotMatch(joined, /\.innerHTML\s*=|insertAdjacentHTML|WebSocket|EventSource/);
+  // The one permitted fetch() call site is the opt-in, token-gated live snapshot poll.
+  assert.equal((joined.match(/\bfetch\(/g) ?? []).length, 1);
+  assert.match(joined, /windowRef\.fetch\(LIVE_CONSTANTS\.LIVE_SNAPSHOT_ROUTE,/);
   assert.doesNotMatch(joined, /capture-pane|send-keys|run-shell|wezterm\s+cli/);
   assert.doesNotMatch(joined, /chat|terminal façade|terminal-facade|session-card/);
   assert.equal((joined.match(/setIntervalFn\(/g) ?? []).length, 1);

@@ -603,7 +603,10 @@ test('static SVG/CSS references are unique, scoped, and API protected boundaries
   assert.deepEqual([...INDEX.matchAll(/<option value="([^"]+)"/g)].map((match) => match[1]), [
     'auto', 'ridge-pass', 'cypress-run', 'lantern-coil',
   ]);
-  assert.doesNotMatch(SOURCES, /localStorage|sessionStorage|document\.cookie|requestAnimationFrame|requestIdleCallback|serviceWorker|history\.(?:push|replace)State|fetch\(/);
+  assert.doesNotMatch(SOURCES, /localStorage|sessionStorage|document\.cookie|requestAnimationFrame|requestIdleCallback|serviceWorker|history\.(?:push|replace)State/);
+  // The one permitted fetch() call site is the opt-in, token-gated live snapshot poll.
+  assert.equal((SOURCES.match(/\bfetch\(/g) ?? []).length, 1);
+  assert.match(SOURCES, /windowRef\.fetch\(LIVE_CONSTANTS\.LIVE_SNAPSHOT_ROUTE,/);
   assert.doesNotMatch(SOURCES, /setInterval\s*\(/);
   assert.equal((SOURCES.match(/setTimeoutFn\(/g) ?? []).length, 1);
 });
