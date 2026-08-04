@@ -968,8 +968,6 @@ textarea {
   box-shadow: 0 10px 24px rgb(0 0 0 / .5);
 }
 
-.overflow-notice[hidden] { display: none; }
-
 .pit-lane {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr 0.8fr;
@@ -1307,10 +1305,6 @@ details[open] > .overflow-toggle::before {
     flex-basis: 100%;
   }
 
-  .source-controls {
-    margin-left: 0;
-  }
-
   .bar-course {
     gap: 0 .4rem;
   }
@@ -1335,6 +1329,7 @@ details[open] > .overflow-toggle::before {
     font-size: .6rem;
   }
 
+  /* re-declare the #pit-lane:has() base selector so its higher specificity does not keep the desktop 3-track override at the mobile width */
   .pit-lane,
   #pit-lane:has(.pit-hold .unknown-hold[hidden]) {
     grid-template-columns: 1fr 1fr;
@@ -1376,7 +1371,10 @@ details[open] > .overflow-toggle::before {
     line-height: 1.15;
     text-align: left;
   }
-  .source-controls { align-items: flex-start; }
+  .source-controls {
+    margin-left: 0;
+    align-items: flex-start;
+  }
   .state-legend {
     display: grid;
     grid-template-columns: repeat(4, max-content);
