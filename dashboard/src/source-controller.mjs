@@ -168,9 +168,15 @@ export function createSourceController({
       },
       onResult: (snapshot) => {
         if (!isCurrent(transition)) return;
-        replaceView(snapshot);
-        updateAge(snapshot.observedAt);
-        sourceNotice.textContent = '';
+        // Never throw out of the poller: a render error here must route through the
+        // same fatal path as start()/selectFile, not become an unhandled rejection.
+        try {
+          replaceView(snapshot);
+          updateAge(snapshot.observedAt);
+          sourceNotice.textContent = '';
+        } catch (error) {
+          if (isCurrent(transition)) onFatal(error);
+        }
       },
       onFailure: () => {
         if (!isCurrent(transition)) return;

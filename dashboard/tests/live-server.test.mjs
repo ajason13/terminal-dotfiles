@@ -136,6 +136,23 @@ test('tests/ path is 403 forbidden, not served', async () => {
   assert.equal(res.status, 403);
 });
 
+test('uppercase-cased excluded segment is 403 forbidden, not served (case-insensitive filesystem bypass)', async () => {
+  const reader = makeReader({
+    readFile: async () => { throw new Error('readFile must not be reached for an excluded segment'); },
+  });
+  const upper = await reader('/NODE_MODULES/x.mjs');
+  assert.equal(upper.status, 403);
+  const mixed = await reader('/Tests/y.mjs');
+  assert.equal(mixed.status, 403);
+});
+
+test('uppercase extension on an otherwise-excluded/unknown type is 403 forbidden', async () => {
+  const res = await makeReader({
+    readFile: async () => { throw new Error('readFile must not be reached for an unknown extension'); },
+  })('/secret.PEM');
+  assert.equal(res.status, 403);
+});
+
 test('dotfile path is 403 forbidden, not served', async () => {
   const res = await makeReader()('/.env');
   assert.equal(res.status, 403);

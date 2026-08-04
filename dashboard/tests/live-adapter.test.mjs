@@ -960,6 +960,50 @@ test('goLive polls, validates, and renders live snapshots', async () => {
   controller.destroy();
 });
 
+test('goLive routes a render throw on a live poll through onFatal, not an unhandled rejection', async () => {
+  // Regression for a render error inside onResult propagating out of tick() as an
+  // unhandled rejection at the `void tick()` call sites instead of hitting onFatal.
+  const rendered = [];
+  const fatal = [];
+  const sourceNotice = new FakeElement();
+  const intervals = [];
+  let renderCount = 0;
+  const controller = createSourceController({
+    fileInput: new FakeElement(),
+    resetButton: new FakeElement(),
+    importRegion: new FakeElement(),
+    sourceLabel: new FakeElement(),
+    sourceAge: new FakeElement(),
+    sourceNotice,
+    readFixtures: async () => liveSnapshot(),
+    render: (snapshot) => {
+      renderCount += 1;
+      if (renderCount === 2) throw new Error('render blew up on live poll');
+      rendered.push(snapshot);
+      return { destroy() {}, clearInteraction() {} };
+    },
+    fetchSnapshot: async () => ({ ok: true, json: async () => livePollSnapshot() }),
+    token: 'tok',
+    now: () => NOW,
+    onFatal: (error) => fatal.push(error),
+    setIntervalFn: (fn, delay) => { intervals.push({ fn, delay }); return intervals.length; },
+    clearIntervalFn: () => {},
+    visibility: { isHidden: () => false, subscribe: () => () => {} },
+    windowRef: new FakeElement(),
+  });
+  await controller.start();
+  const went = await controller.goLive();
+  assert.equal(went, true);
+
+  assert.equal(fatal.length, 1);
+  assert.equal(fatal[0].message, 'render blew up on live poll');
+  // Must not have been miscounted as a poll/transport failure (which would set this
+  // notice) or tripped exhaustion (which would flip mode to rejected_fixtures).
+  assert.equal(sourceNotice.textContent, '');
+  assert.equal(controller.mode, 'live_polling');
+  controller.destroy();
+});
+
 test('goLive marks the view stale on a single failed poll without falling back to fixtures', async () => {
   const rendered = [];
   const intervals = [];

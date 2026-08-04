@@ -65,8 +65,10 @@ const EXCLUDED_SEGMENTS = new Set([
 ]);
 
 // Any path segment that is excluded, or a dotfile/dotdir (e.g. .env, .git), is off-limits.
+// Lowercased before the Set check: macOS/Windows filesystems are case-insensitive, so
+// /NODE_MODULES would otherwise dodge the exact-case Set and still resolve to the real dir.
 const hasForbiddenSegment = (rel) =>
-  rel.split(path.sep).some((segment) => EXCLUDED_SEGMENTS.has(segment) || segment.startsWith('.'));
+  rel.split(path.sep).some((segment) => EXCLUDED_SEGMENTS.has(segment.toLowerCase()) || segment.startsWith('.'));
 
 export function createStaticFileReader({ root, token, readFile, realpath }) {
   const rootResolved = path.resolve(root);
@@ -77,7 +79,8 @@ export function createStaticFileReader({ root, token, readFile, realpath }) {
     if (abs !== rootResolved && !abs.startsWith(rootResolved + path.sep)) return staticForbidden;
     // Allowlist: excluded directories, dotfiles/dotdirs, and unknown extensions are never served.
     if (hasForbiddenSegment(path.relative(rootResolved, abs))) return staticForbidden;
-    const ext = path.extname(abs);
+    // Lowercase so an uppercase extension (e.g. .MJS) can't dodge the allowlist either.
+    const ext = path.extname(abs).toLowerCase();
     if (!(ext in CONTENT_TYPES)) return staticForbidden;
 
     let real;
