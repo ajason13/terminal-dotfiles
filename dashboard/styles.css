@@ -89,6 +89,7 @@ textarea {
   align-items: center;
   gap: 12px;
   flex-wrap: nowrap;
+  min-width: 0;
   padding: 6px 14px;
   border-bottom: 1px solid color-mix(in srgb, var(--color-boundary) 48%, transparent);
   background: color-mix(in srgb, var(--color-surface-panel) 94%, transparent);
@@ -103,8 +104,9 @@ textarea {
 }
 
 .dashboard-bar h1 {
-  font-size: clamp(.85rem, 1.3vw, 1rem);
+  font-size: .95rem;
   line-height: 1.1;
+  letter-spacing: .01em;
 }
 
 .brand {
@@ -113,17 +115,28 @@ textarea {
   gap: .5rem;
 }
 
+.mode-pill {
+  font-size: .7rem;
+  padding: 1px 8px;
+  border: 1px solid var(--color-boundary);
+  border-radius: 999px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
 .bar-course {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: .3rem .5rem;
+  flex-wrap: nowrap;
+  gap: .3rem .4rem;
+  min-width: 0;
 }
 
 .bar-course label {
   color: var(--color-text-primary);
   font-weight: 700;
   font-size: .68rem;
+  white-space: nowrap;
 }
 
 .bar-course select {
@@ -138,17 +151,22 @@ textarea {
 
 .snapshot-summary {
   margin: 0;
+  overflow: hidden;
+  min-width: 0;
+  max-width: 22vw;
   color: var(--color-text-muted);
-  font-size: .72rem;
+  font-size: .75rem;
   text-align: right;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .source-controls {
   display: flex;
   margin-left: auto;
   align-items: center;
-  flex-wrap: wrap;
-  gap: .55rem;
+  flex-wrap: nowrap;
+  gap: 8px;
   min-width: 0;
   color: var(--color-text-muted);
   font-size: .68rem;
@@ -216,6 +234,43 @@ textarea {
   display: none;
 }
 
+.legend-disclosure {
+  position: relative;
+}
+
+.legend-disclosure > summary {
+  list-style: none;
+  cursor: pointer;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--color-boundary);
+  color: var(--color-text-muted);
+  font-size: .68rem;
+}
+
+.legend-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.legend-disclosure[open] > .state-legend {
+  position: absolute;
+  z-index: 30;
+  top: 26px;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-boundary);
+  justify-content: flex-start;
+}
+
 .state-legend li {
   display: inline-flex;
   align-items: center;
@@ -241,7 +296,14 @@ textarea {
 .legend-complete { color: var(--color-complete-ink); }
 .legend-unknown { color: var(--color-unknown-ink); }
 
-.track-status { line-height: 1.3; }
+.track-status {
+  overflow: hidden;
+  min-width: 0;
+  max-width: 20vw;
+  line-height: 1.3;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -962,20 +1024,17 @@ textarea {
 }
 
 .on-track-summary {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: .55rem;
+  display: flex;
   align-items: center;
-  min-height: 52px;
+  gap: 8px;
 }
 
 .on-track-count {
-  display: grid;
-  grid-template-columns: auto 1fr;
+  display: flex;
   align-items: center;
-  gap: .35rem;
+  gap: .3rem;
   min-width: 0;
-  padding: .48rem .4rem;
+  padding: .2rem .4rem;
   border: 2px solid var(--state-ink);
   border-radius: .55rem;
   color: var(--state-ink);
@@ -983,16 +1042,17 @@ textarea {
   font-size: .66rem;
   font-weight: 850;
   line-height: 1.15;
+  white-space: nowrap;
 }
 
 .on-track-glyph {
   display: grid;
-  width: 1.4rem;
-  height: 1.4rem;
+  width: 1.1rem;
+  height: 1.1rem;
   place-items: center;
   border: 1px solid currentColor;
   border-radius: .3rem;
-  font-size: .95rem;
+  font-size: .8rem;
 }
 
 .on-track-count.state-active .on-track-glyph {
