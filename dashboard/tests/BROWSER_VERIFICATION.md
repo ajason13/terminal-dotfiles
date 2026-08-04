@@ -467,7 +467,26 @@ playwright-cli -s=dashboard-live run-code "async page => {
 For each transition, inspect source and age labels, actual input
 `disabled`/`aria-busy` settlement, duplicate-node absence, and cleared pinned
 state. For live mode assert three rendered unknown cars, one explicit
-Unclassified-hold overflow, and a visible distinct dashed `?` region.
+Unclassified-hold overflow, and a visible distinct dashed `?` region, and that
+the fourth pit-lane bay (`.pit-hold`) becomes visible only for that live
+observation.
+
+Fold/unfold the legend and confirm the bottom readout strip tracks focus:
+
+```sh
+playwright-cli -s=dashboard-live click ".legend-disclosure summary"
+playwright-cli -s=dashboard-live run-code "async page => {
+  await page.waitForSelector('.legend-disclosure[open] .state-legend', { state: 'visible' });
+}"
+playwright-cli -s=dashboard-live click ".legend-disclosure summary"
+```
+
+The seven legend entries must be hidden until the disclosure is opened and
+hidden again once it is closed; opening it must not reflow the rest of the
+bar. Focus a route car and confirm `#session-readout` in the bottom
+`footer.readout-strip` replaces its neutral instruction text with the
+identity/state/activity lines; blur it and confirm the readout returns to the
+neutral instruction line.
 
 Keyboard/accessibility checks:
 
@@ -490,10 +509,12 @@ Geometry assertions at 1440x900:
   High Moor -> Pass Ladder -> Cedar Chain -> Cloud Ridge -> Long Arc
   -> Valley Gate direction while cars remain centered over the roadway;
 - distinct session controls do not overlap at the canonical starting phases;
-- map, pits, Unclassified hold, tooltips, and overflow notices remain inside
-  their intended bounds;
+- the full-bleed `#map-stage`, the bottom `#pit-lane` bays, the Unclassified
+  hold, tooltips, the corner `#overflow-notice` pill, and the bottom
+  `.readout-strip` all remain inside their intended bounds;
 - the Unclassified hold bottom remains inside the viewport;
-- source controls remain secondary to the map.
+- `#pit-lane` sits below `#map-stage` as a row of labeled bays, and the header
+  bar's source controls remain secondary to the stage.
 
 For each manually selected course, run the canonical twelve-route fixture and
 then a separate synthetic sixteen-route phase fixture. Drive every route
@@ -566,14 +587,18 @@ motion, source/age/rejection labels, and unknown overflow checks.
 
 At 390x844 assert:
 
-- document scroll width equals client width;
+- document scroll width equals client width (no horizontal overflow);
+- the header bar wraps to multiple rows and the pit lane reflows to a 2x2
+  grid of bays (`getComputedStyle('#pit-lane').gridTemplateColumns` reports
+  two tracks);
 - no car controls overlap;
 - route cars advance between samples while remaining centered over the scaled
   roadway and inside the map bounds;
-- map precedes all pit regions;
+- `#map-stage` precedes `#pit-lane`, which precedes `.readout-strip`;
 - long synthetic names and overflow details wrap without clipping;
 - import label and reset button are at least 44px high;
-- the focused hidden file input produces the visible 3px label outline.
+- the focused hidden file input produces the visible 3px label outline;
+- the folded legend opens and closes the same as on desktop.
 
 Capture synthetic-only mobile evidence:
 

@@ -164,6 +164,45 @@ rm "$DASHBOARD_BROWSER_FIXTURES/live-invalid.json"
 rmdir "$DASHBOARD_BROWSER_FIXTURES"
 ```
 
+## Layout
+
+The dashboard is a full-bleed track: a slim header bar, a full-bleed map stage,
+a bottom pit lane of labeled bays, and a persistent bottom readout strip. There
+is no side panel and no clock.
+
+The header bar (`header.dashboard-bar`) holds the title, the mode pill, the
+Course selector, the live snapshot summary and on-track state counts, a folded
+legend disclosure, and the import/reset/go-live source controls, all on one
+row that wraps at the mobile breakpoint. The legend is a native `<details>`
+(`.legend-disclosure`) collapsed by default behind a small `?` summary button;
+opening it drops down the seven state entries without pushing the rest of the
+bar around.
+
+Below the bar, `main#map-stage` fills the remaining viewport height with the
+selected course's SVG art, route centerlines, and moving session cars. A
+corner heading (`#map-heading`) names the active course in the top-left, and a
+calm corner overflow pill (`#overflow-notice`) appears top-right only when a
+pit bay's own list has more sessions than it can show inline.
+
+`section#pit-lane` is a row of labeled bays below the stage: Service Bay
+(errored sessions), Permission Checkpoint (awaiting permission), and the
+shared idle/complete Pit Stop, plus a fourth Unclassified hold bay that only
+appears when there are unknown sessions to show (the lane reflows to fill the
+row when that bay is empty). Each bay is its own labeled region with a heading
+and its own overflow affordance, replacing the former `aside.pit-stack` side
+column.
+
+`footer.readout-strip` is a persistent single-line readout
+(`#session-readout`) at the very bottom of the viewport. It updates on hover,
+keyboard focus, or pin and returns to a neutral instruction line when nothing
+is focused; it is not a tooltip and does not require the pointer to stay over
+a car.
+
+Below 760px, the bar wraps to multiple rows, the pit lane reflows to a 2x2
+grid of bays, route targets shrink to a true 44px hit region, and the stage
+keeps a minimum height so the track stays the visual hero within the
+available chrome budget.
+
 ## Architecture
 
 Fixture startup remains:
@@ -230,11 +269,12 @@ and tooltip remain unclipped. Responsive tangent-based car orientation and
 corner-aware drifting are compiler-owned protected behavior.
 
 Service Bay, Permission Checkpoint, and the shared idle/complete Pit Stop each
-use six stationary anchors. Unknown observations remain stationary in a
-distinct dashed **Unclassified hold** with three gray `?` anchors and
-independent overflow, for a total map capacity of 37. Colors are paired with
-glyphs/patterns, and native buttons provide keyboard and screen-reader
-behavior.
+mount their six stationary anchors inside their own bottom pit-lane bay.
+Unknown observations remain stationary in a distinct dashed **Unclassified
+hold** bay with three gray `?` anchors and independent overflow, appearing
+only while an unknown session exists, for a total map capacity of 37. Colors
+are paired with glyphs/patterns, and native buttons provide keyboard and
+screen-reader behavior.
 
 ## Remove
 
