@@ -189,12 +189,13 @@ test('document removes the status rail and declares the exact ordered pit stack'
 });
 
 test('dashboard uses a compact header and preserves document scrolling on desktop', () => {
-  const header = STYLES.match(/\.dashboard-header\s*\{([^}]*)\}/s)?.[1] ?? '';
+  const header = STYLES.match(/\.dashboard-bar\s*\{([^}]*)\}/s)?.[1] ?? '';
   const controls = STYLES.match(/\.source-controls\s*\{([^}]*)\}/s)?.[1] ?? '';
   const legend = STYLES.match(/\.state-legend\s*\{([^}]*)\}/s)?.[1] ?? '';
-  assert.match(header, /padding:\s*\.45rem clamp\(\.8rem,\s*1\.5vw,\s*1\.5rem\)/);
-  assert.match(controls, /grid-column:\s*1/);
-  assert.match(legend, /grid-column:\s*2/);
+  assert.match(header, /display:\s*flex/);
+  assert.match(header, /padding:\s*6px 14px/);
+  assert.match(controls, /margin-left:\s*auto/);
+  assert.match(legend, /display:\s*flex/);
   assert.doesNotMatch(
     STYLES,
     /@media\s*\(min-width:\s*760px\)[\s\S]*?\.dashboard-root\s*\{[\s\S]*?overflow:\s*hidden/,
@@ -816,20 +817,19 @@ test('CSS and document preserve 44px targets and map-first responsive behavior',
   assert.match(carRule, /min-width:\s*44px/);
   assert.match(carRule, /min-height:\s*44px/);
 
-  const desktopLayout = STYLES.match(/\.dashboard-layout\s*\{([^}]*)\}/s)?.[1] ?? '';
-  assert.match(desktopLayout, /display:\s*grid/);
-  assert.match(desktopLayout, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(13\.5rem,\s*15rem\)/);
-  const pitStackRule = STYLES.match(/\.pit-stack\s*\{([^}]*)\}/s)?.[1] ?? '';
-  assert.match(pitStackRule, /overflow:\s*visible/);
-  assert.doesNotMatch(pitStackRule, /overflow:\s*auto/);
+  const rootLayout = STYLES.match(/\.dashboard-root\s*\{([^}]*)\}/s)?.[1] ?? '';
+  assert.match(rootLayout, /display:\s*grid/);
+  assert.match(rootLayout, /grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\)\s+auto\s+auto/);
+  const pitLaneRule = STYLES.match(/\.pit-lane\s*\{([^}]*)\}/s)?.[1] ?? '';
+  assert.match(pitLaneRule, /display:\s*grid/);
+  assert.match(pitLaneRule, /overflow:\s*visible/);
+  assert.doesNotMatch(pitLaneRule, /overflow:\s*auto/);
 
   const mobileStart = STYLES.indexOf('@media (max-width: 759px)');
   const mobileEnd = STYLES.indexOf('@media (max-width: 420px)', mobileStart);
   const mobile = STYLES.slice(mobileStart, mobileEnd);
   assert.ok(mobileStart >= 0, '759px mobile breakpoint must exist');
-  assert.match(mobile, /\.dashboard-layout\s*\{[^}]*flex-direction:\s*column/si);
-  assert.match(mobile, /\.map-stage\s*\{[^}]*height:\s*580px/si);
-  assert.match(mobile, /\.pit-stack\s*\{[^}]*display:\s*grid/si);
+  assert.match(mobile, /\.map-stage\s*\{[^}]*min-height:\s*580px/si);
   assert.match(
     mobile,
     /\.vehicle-anchor \.session-car\s*\{[^}]*border-radius:\s*50%;[^}]*clip-path:\s*circle\(22px at 50% 50%\);[^}]*pointer-events:\s*auto/si,
@@ -839,7 +839,7 @@ test('CSS and document preserve 44px targets and map-first responsive behavior',
     /\.vehicle-anchor:has\(\.session-car:focus-visible\)::after\s*\{[^}]*border:\s*3px solid var\(--color-focus\);[^}]*pointer-events:\s*none/si,
   );
   assert.match(mobile, /\.vehicle-anchor \.car-body\s*\{[^}]*width:\s*24px;[^}]*height:\s*36px/si);
-  assert.ok(INDEX.indexOf('class="map-panel"') < INDEX.indexOf('class="pit-stack"'));
+  assert.ok(INDEX.indexOf('id="map-stage"') < INDEX.indexOf('id="pit-lane"'));
   assert.match(STYLES, /overflow-x:\s*hidden/);
   assert.match(STYLES, /\.pit-mount\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*52px\)/si);
   assert.match(STYLES, /\.session-readout\s*\{[^}]*overflow-wrap:\s*anywhere/si);

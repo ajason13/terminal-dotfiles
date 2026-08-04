@@ -12,60 +12,53 @@
     <link rel="stylesheet" href="./styles.css">
   </head>
   <body>
-    <a class="skip-link" href="#pit-stack">Skip to session pits</a>
+    <a class="skip-link" href="#pit-lane">Skip to pit lane</a>
     <div id="dashboard-root" class="dashboard-root" data-track-id="ridge-pass">
-      <header class="dashboard-header">
-        <div class="dashboard-title-group">
-          <p id="source-label" class="eyebrow">Fixtures · Night sector</p>
+      <header class="dashboard-bar">
+        <div class="brand">
           <h1>Night Pass Session Map</h1>
+          <p id="source-label" class="mode-pill">Fixtures · Night sector</p>
+        </div>
+        <div class="bar-course">
+          <label for="track-select">Course</label>
+          <select id="track-select">
+            <option value="auto">Auto · workday schedule</option>
+            <option value="ridge-pass">Ridge Pass</option>
+            <option value="cypress-run">Cypress Run</option>
+            <option value="lantern-coil">Lantern Coil</option>
+          </select>
+          <span id="track-status" class="track-status">Active course: Ridge Pass</span>
+          <span id="track-live-region" class="visually-hidden" aria-live="polite"></span>
         </div>
         <p id="snapshot-summary" class="snapshot-summary">Preparing the route…</p>
+        <div id="on-track-summary" class="on-track-summary" aria-label="Route session summary"></div>
+        <details class="legend-disclosure">
+          <summary aria-label="Session state legend">?</summary>
+          <ul class="state-legend" aria-label="Session state legend">
+            <li class="legend-active"><span aria-hidden="true">›</span> Active</li>
+            <li class="legend-thinking"><span aria-hidden="true">…</span> Thinking</li>
+            <li class="legend-waiting"><span aria-hidden="true">!</span> Permission</li>
+            <li class="legend-idle"><span aria-hidden="true">‖</span> Idle</li>
+            <li class="legend-error"><span aria-hidden="true">×</span> Error</li>
+            <li class="legend-complete"><span aria-hidden="true">✓</span> Complete</li>
+            <li class="legend-unknown"><span aria-hidden="true">?</span> Unknown</li>
+          </ul>
+        </details>
         <section id="source-controls" class="source-controls" aria-label="Snapshot source">
-          <label class="import-label" for="snapshot-file">Import live snapshot</label>
+          <label class="import-label" for="snapshot-file">Import</label>
           <input id="snapshot-file" type="file" accept=".json,application/json">
-          <button id="reset-source" type="button">Reset to fixtures</button>
-          <button id="go-live" type="button" disabled>Go live (auto-refresh)</button>
+          <button id="reset-source" type="button">Fixtures</button>
+          <button id="go-live" type="button" disabled>Go live</button>
           <span id="source-age" class="source-age"></span>
           <span id="source-notice" class="source-notice" role="status"></span>
         </section>
-        <ul class="state-legend" aria-label="Session state legend">
-          <li class="legend-active"><span aria-hidden="true">›</span> Active</li>
-          <li class="legend-thinking"><span aria-hidden="true">…</span> Thinking</li>
-          <li class="legend-waiting"><span aria-hidden="true">!</span> Permission</li>
-          <li class="legend-idle"><span aria-hidden="true">‖</span> Idle</li>
-          <li class="legend-error"><span aria-hidden="true">×</span> Error</li>
-          <li class="legend-complete"><span aria-hidden="true">✓</span> Complete</li>
-          <li class="legend-unknown"><span aria-hidden="true">?</span> Unknown</li>
-        </ul>
       </header>
 
-      <main class="dashboard-layout">
-        <section class="map-panel" aria-labelledby="map-heading">
-          <div class="panel-heading">
-            <div>
-              <p class="panel-kicker">Touge operations view</p>
-              <h2 id="map-heading">Ridge Pass</h2>
-            </div>
-            <div class="track-controls">
-              <label for="track-select">Course</label>
-              <select id="track-select">
-                <option value="auto">Auto · workday schedule</option>
-                <option value="ridge-pass">Ridge Pass</option>
-                <option value="cypress-run">Cypress Run</option>
-                <option value="lantern-coil">Lantern Coil</option>
-              </select>
-              <span id="track-status" class="track-status">Active course: Ridge Pass</span>
-              <span id="track-live-region" class="visually-hidden" aria-live="polite"></span>
-            </div>
-            <div id="session-readout" class="session-readout">
-              Focus or hover a car for exact activity time. Enter or Space pins; Escape clears.
-            </div>
-          </div>
-
-          <div id="map-stage" class="map-stage">
-            <svg class="route-map" viewBox="0 0 1000 760" preserveAspectRatio="none"
-              aria-hidden="true" focusable="false">
-              <defs>
+      <main id="map-stage" class="map-stage" aria-labelledby="map-heading">
+        <h2 id="map-heading" class="map-heading">Ridge Pass</h2>
+        <svg class="route-map" viewBox="0 0 1000 760" preserveAspectRatio="none"
+          aria-hidden="true" focusable="false">
+          <defs>
                 <pattern id="contour-dashes" width="80" height="48" patternUnits="userSpaceOnUse">
                   <path d="M-8 34 Q20 14 46 32 T96 26" fill="none" stroke="currentColor" stroke-width="1" opacity=".22" />
                 </pattern>
@@ -252,39 +245,41 @@
               </g>
             </svg>
 
-            <div id="vehicle-layer" class="vehicle-layer" aria-label="Sessions positioned on the route"></div>
-            <div id="tooltip-layer" class="tooltip-layer"></div>
-            <div id="overflow-notice" class="overflow-notice" hidden></div>
-          </div>
-        </section>
-
-        <aside id="pit-stack" class="pit-stack" aria-label="Session pit areas" tabindex="-1">
-          <section class="pit-zone zone-on-track" aria-labelledby="on-track-heading">
-            <header><span aria-hidden="true">↗</span><h2 id="on-track-heading">On Track</h2></header>
-            <div id="on-track-summary" class="on-track-summary" aria-label="Route session summary"></div>
-          </section>
-          <section class="pit-zone pit-error" aria-labelledby="pit-error-heading">
-            <header><span aria-hidden="true">×</span><h2 id="pit-error-heading">Service Bay</h2></header>
-            <div id="pit-error" class="pit-mount" aria-label="Error sessions"></div>
-            <div id="pit-error-overflow" class="pit-overflow" hidden></div>
-          </section>
-          <section class="pit-zone pit-permission" aria-labelledby="pit-permission-heading">
-            <header><span aria-hidden="true">!</span><h2 id="pit-permission-heading">Permission Checkpoint</h2></header>
-            <div id="pit-permission" class="pit-mount" aria-label="Sessions waiting for permission"></div>
-            <div id="pit-permission-overflow" class="pit-overflow" hidden></div>
-          </section>
-          <section class="pit-zone pit-stop" aria-labelledby="pit-stop-heading">
-            <header><span aria-hidden="true">‖</span><h2 id="pit-stop-heading">Pit Stop</h2></header>
-            <div id="pit-pitstop" class="pit-mount" aria-label="Idle and complete sessions"></div>
-            <div id="pit-pitstop-overflow" class="pit-overflow" hidden></div>
-            <section id="unknown-hold" class="unknown-hold" aria-labelledby="unknown-hold-heading" hidden>
-              <h3 id="unknown-hold-heading"><span aria-hidden="true">?</span> Unclassified hold</h3>
-              <div id="pit-unknown" class="unknown-mount" aria-label="Unclassified sessions"></div>
-              <div id="pit-unknown-overflow" class="pit-overflow" hidden></div>
-            </section>
-          </section>
-        </aside>
+        <div id="vehicle-layer" class="vehicle-layer" aria-label="Sessions positioned on the route"></div>
+        <div id="tooltip-layer" class="tooltip-layer"></div>
+        <div id="overflow-notice" class="overflow-notice" hidden></div>
       </main>
+
+      <section id="pit-lane" class="pit-lane" aria-label="Pit lane" tabindex="-1">
+        <div class="pit-bay pit-error">
+          <header><span aria-hidden="true">×</span><h2>Service Bay</h2></header>
+          <div id="pit-error" class="pit-mount" aria-label="Error sessions"></div>
+          <div id="pit-error-overflow" class="pit-overflow" hidden></div>
+        </div>
+        <div class="pit-bay pit-permission">
+          <header><span aria-hidden="true">!</span><h2>Permission Checkpoint</h2></header>
+          <div id="pit-permission" class="pit-mount" aria-label="Sessions waiting for permission"></div>
+          <div id="pit-permission-overflow" class="pit-overflow" hidden></div>
+        </div>
+        <div class="pit-bay pit-stop">
+          <header><span aria-hidden="true">‖</span><h2>Pit Stop</h2></header>
+          <div id="pit-pitstop" class="pit-mount" aria-label="Idle and complete sessions"></div>
+          <div id="pit-pitstop-overflow" class="pit-overflow" hidden></div>
+        </div>
+        <div class="pit-bay pit-hold">
+          <section id="unknown-hold" class="unknown-hold" aria-label="Unclassified sessions" hidden>
+            <header><span aria-hidden="true">?</span><h2>Unclassified hold</h2></header>
+            <div id="pit-unknown" class="unknown-mount" aria-label="Unclassified sessions"></div>
+            <div id="pit-unknown-overflow" class="pit-overflow" hidden></div>
+          </section>
+        </div>
+      </section>
+
+      <footer class="readout-strip">
+        <div id="session-readout" class="session-readout">
+          Focus or hover a car for exact activity time. Enter or Space pins; Escape clears.
+        </div>
+      </footer>
     </div>
     <noscript>
       <p class="noscript-message">This local dashboard needs JavaScript to render its fixture snapshot.</p>
