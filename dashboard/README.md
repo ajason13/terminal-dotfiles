@@ -181,8 +181,10 @@ bar around.
 Below the bar, `main#map-stage` fills the remaining viewport height with the
 selected course's SVG art, route centerlines, and moving session cars. A
 corner heading (`#map-heading`) names the active course in the top-left, and a
-calm corner overflow pill (`#overflow-notice`) appears top-right only when a
-pit bay's own list has more sessions than it can show inline.
+calm corner overflow pill (`#overflow-notice`) appears top-right only when
+there are more on-track (active/thinking) sessions than the course's route
+anchor slots, distinct from the separate `.pit-overflow` affordance inside
+each pit bay.
 
 `section#pit-lane` is a row of labeled bays below the stage: Service Bay
 (errored sessions), Permission Checkpoint (awaiting permission), and the
