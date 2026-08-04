@@ -43,6 +43,26 @@ function keydown(key) {
   return event;
 }
 
+const routeSession = (id, overrides = {}) => ({
+  id,
+  displayName: `Route ${id}`,
+  status: 'active',
+  lastActivityAt: '2026-07-26T16:59:00Z',
+  permissionState: 'not_required',
+  progress: 0,
+  ...overrides,
+});
+
+const routeSnapshot = (sessions, generatedAt = '2026-07-26T17:00:00Z') => normalizeSnapshot({
+  schemaVersion: 1,
+  generatedAt,
+  sessions,
+});
+
+function findCar(root, id) {
+  return root.querySelectorAll('.session-car').find((button) => button.dataset.sessionId === id);
+}
+
 const overflowingSnapshot = (count) => normalizeSnapshot({
   schemaVersion: 1,
   generatedAt: '2026-07-26T17:00:00Z',
@@ -75,6 +95,115 @@ test('overflow renders a calm collapsed parked summary, not the error boilerplat
   const rendered = [toggle.textContent, ...items.map((item) => item.textContent)].join(' ');
   assert.equal(rendered.includes('Map capacity exceeded'), false);
   assert.equal(rendered.includes('Permission state unknown'), false);
+});
+
+test('update() reuses a persisting route car element in place so its CSS animation is not restarted', () => {
+  const { root } = dashboardRoot();
+  const initial = routeSnapshot([
+    routeSession('alpha', { progress: 0 }),
+    routeSession('bravo', { progress: 0.25 }),
+    routeSession('charlie', { progress: 0.5 }),
+  ]);
+  const controller = renderDashboard(initial, root, getTrack('ridge-pass'));
+  const before = findCar(root, 'alpha');
+  assert.ok(before, 'alpha car exists before update');
+
+  const next = routeSnapshot([
+    routeSession('alpha', { progress: 0 }),
+    routeSession('bravo', { progress: 0.25 }),
+    routeSession('charlie', { progress: 0.5 }),
+  ], '2026-07-26T17:00:05Z');
+  controller.update(next);
+
+  const after = findCar(root, 'alpha');
+  assert.ok(Object.is(before, after), 'the persisting route car element is reused, not recreated');
+  controller.destroy();
+});
+
+test('update() creates a car for an added session and removes the car for a dropped session', () => {
+  const { root } = dashboardRoot();
+  const initial = routeSnapshot([
+    routeSession('alpha', { progress: 0 }),
+    routeSession('bravo', { progress: 0.25 }),
+  ]);
+  const controller = renderDashboard(initial, root, getTrack('ridge-pass'));
+  const bravoBefore = findCar(root, 'bravo');
+  assert.ok(bravoBefore);
+  assert.equal(findCar(root, 'delta'), undefined);
+
+  const next = routeSnapshot([
+    routeSession('bravo', { progress: 0.25 }),
+    routeSession('delta', { progress: 0.75 }),
+  ]);
+  controller.update(next);
+
+  assert.equal(findCar(root, 'alpha'), undefined, 'the dropped session no longer has a car');
+  const bravoAfter = findCar(root, 'bravo');
+  assert.ok(Object.is(bravoBefore, bravoAfter), 'the persisting session keeps its element');
+  const deltaAfter = findCar(root, 'delta');
+  assert.ok(deltaAfter, 'the added session gets a new car');
+  controller.destroy();
+});
+
+test('update() reflects a status change in place without recreating the element', () => {
+  const { root } = dashboardRoot();
+  const initial = routeSnapshot([routeSession('alpha', { progress: 0, status: 'active' })]);
+  const controller = renderDashboard(initial, root, getTrack('ridge-pass'));
+  const before = findCar(root, 'alpha');
+  const wrapperBefore = before.parentElement;
+  assert.ok(wrapperBefore.classList.contains('state-active'));
+
+  const next = routeSnapshot([routeSession('alpha', { progress: 0, status: 'thinking' })]);
+  controller.update(next);
+
+  const after = findCar(root, 'alpha');
+  assert.ok(Object.is(before, after), 'the element is reused across the status change');
+  const wrapperAfter = after.parentElement;
+  assert.equal(wrapperAfter.dataset.status, 'thinking');
+  assert.ok(wrapperAfter.classList.contains('state-thinking'), 'state class updated in place');
+  assert.equal(wrapperAfter.classList.contains('state-active'), false, 'stale state class removed');
+  assert.match(after.getAttribute('aria-label'), /Thinking/);
+  controller.destroy();
+});
+
+test('update() still renders the overflow notice for the current snapshot', () => {
+  const { root } = dashboardRoot();
+  const controller = renderDashboard(routeSnapshot([routeSession('alpha')]), root, getTrack('ridge-pass'));
+  assert.equal(root.querySelector('#pit-pitstop-overflow').hidden, true);
+
+  controller.update(overflowingSnapshot(16));
+
+  const notice = root.querySelector('#pit-pitstop-overflow');
+  assert.equal(notice.hidden, false);
+  assert.ok(notice.querySelector('.overflow-toggle'), 'overflow toggle renders after update()');
+  controller.destroy();
+});
+
+test('update() keeps a pinned car pinned when it persists across the update', () => {
+  const { root } = dashboardRoot();
+  const initial = routeSnapshot([
+    routeSession('alpha', { progress: 0 }),
+    routeSession('bravo', { progress: 0.25 }),
+  ]);
+  const controller = renderDashboard(initial, root, getTrack('ridge-pass'));
+  const alphaButton = findCar(root, 'alpha');
+  alphaButton.focus();
+  alphaButton.dispatchEvent(keydown('Enter'));
+  assert.equal(alphaButton.getAttribute('aria-pressed'), 'true');
+  assert.equal(alphaButton.parentElement.dataset.pinned, 'true');
+
+  const next = routeSnapshot([
+    routeSession('alpha', { progress: 0 }),
+    routeSession('bravo', { progress: 0.25 }),
+  ], '2026-07-26T17:00:05Z');
+  controller.update(next);
+
+  const alphaAfter = findCar(root, 'alpha');
+  assert.ok(Object.is(alphaButton, alphaAfter));
+  assert.equal(alphaAfter.getAttribute('aria-pressed'), 'true');
+  assert.equal(alphaAfter.parentElement.dataset.pinned, 'true');
+  assert.match(root.querySelector('#session-readout').textContent, /Route alpha/);
+  controller.destroy();
 });
 
 test('renderer setTrack preserves identity, focus, pin, parked placement, and updates accessibility', () => {

@@ -160,6 +160,7 @@ export function createSourceController({
     mode = 'live_polling';
     sourceLabel.textContent = 'Live · auto-refresh';
     sourceNotice.textContent = '';
+    let liveRendered = false;
     poller = createLivePoller({
       pollOnce: async () => {
         const res = await fetchSnapshot();
@@ -171,7 +172,15 @@ export function createSourceController({
         // Never throw out of the poller: a render error here must route through the
         // same fatal path as start()/selectFile, not become an unhandled rejection.
         try {
-          replaceView(snapshot);
+          // The first live snapshot still needs a full render (switching from
+          // fixtures); subsequent ticks update in place so persisting route cars
+          // keep their element (and CSS motion animation) instead of restarting it.
+          if (liveRendered && currentRender?.update) {
+            currentRender.update(snapshot);
+          } else {
+            replaceView(snapshot);
+            liveRendered = true;
+          }
           updateAge(snapshot.observedAt);
           sourceNotice.textContent = '';
         } catch (error) {
