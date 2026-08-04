@@ -39,3 +39,22 @@ test('the legend is folded behind a disclosure until opened', async ({ page }) =
   await expect(legend).toBeVisible();
   await expect(page.locator('.legend-disclosure .state-legend li')).toHaveCount(7);
 });
+
+test('the pit lane is a row of four labeled bays below the stage', async ({ page }) => {
+  const bays = page.locator('.pit-bay');
+  await expect(bays).toHaveCount(4);
+  const stage = await page.locator('#map-stage').boundingBox();
+  const lane = await page.locator('#pit-lane').boundingBox();
+  expect(lane.y).toBeGreaterThanOrEqual(stage.y + stage.height - 1); // lane sits below the stage
+  for (const label of ['Service Bay', 'Permission Checkpoint', 'Pit Stop']) {
+    await expect(page.locator('.pit-bay header h2', { hasText: label })).toBeVisible();
+  }
+});
+
+test('parked (pit) cars mount inside a pit bay, not on the stage', async ({ page }) => {
+  const pitCars = page.locator('.pit-mount .pit-vehicle, .unknown-mount .pit-vehicle');
+  const count = await pitCars.count();
+  expect(count).toBeGreaterThan(0); // fixtures populate pit pools
+  const strays = await page.locator('#vehicle-layer .pit-vehicle').count();
+  expect(strays).toBe(0);
+});

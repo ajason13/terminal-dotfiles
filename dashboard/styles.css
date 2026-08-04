@@ -961,7 +961,14 @@ textarea {
 }
 
 .pit-bay {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--color-boundary);
+  border-radius: 8px;
+  background: var(--color-surface-panel);
 }
 
 .pit-bay > header h2,
@@ -969,6 +976,7 @@ textarea {
   margin: 0;
   font-size: .72rem;
   line-height: 1.2;
+  white-space: nowrap;
 }
 
 .pit-bay > header,
@@ -982,6 +990,11 @@ textarea {
 .pit-lane:focus-visible {
   outline: 3px solid var(--color-focus);
   outline-offset: 2px;
+}
+
+/* the unknown bay only earns its border/background when it actually holds sessions */
+.pit-bay:has(> .unknown-hold[hidden]) {
+  display: none;
 }
 
 .pit-error { --state-ink: var(--color-error-ink); }
@@ -999,9 +1012,9 @@ textarea {
 
 .unknown-mount {
   display: grid;
-  grid-template-columns: repeat(3, 52px);
+  grid-template-columns: repeat(3, 1fr);
   grid-template-rows: 52px;
-  justify-content: center;
+  justify-items: center;
   gap: .45rem .55rem;
 }
 
@@ -1068,9 +1081,9 @@ textarea {
 
 .pit-mount {
   display: grid;
-  grid-template-columns: repeat(3, 52px);
+  grid-template-columns: repeat(3, 1fr);
   grid-auto-rows: 52px;
-  justify-content: center;
+  justify-items: center;
   gap: .45rem .55rem;
   min-height: 52px;
 }
@@ -1098,7 +1111,7 @@ textarea {
 }
 
 .pit-overflow {
-  margin-top: .45rem;
+  margin-top: 2px;
   padding: .4rem;
   border: 1px solid var(--color-boundary);
   border-radius: .4rem;
@@ -1113,6 +1126,11 @@ textarea {
   cursor: pointer;
   font-weight: 600;
   list-style: none;
+}
+
+/* fit the shared collapsed-overflow disclosure inside a narrow pit bay */
+.pit-overflow .overflow-toggle {
+  font-size: .68rem;
 }
 
 .overflow-toggle::-webkit-details-marker {
