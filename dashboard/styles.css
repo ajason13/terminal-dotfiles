@@ -1298,8 +1298,17 @@ details[open] > .overflow-toggle::before {
 
   .dashboard-bar {
     flex-wrap: wrap;
-    gap: 4px 10px;
+    gap: 6px 10px;
     padding: 4px 10px;
+  }
+
+  .snapshot-summary,
+  .on-track-summary {
+    flex-basis: 100%;
+  }
+
+  .source-controls {
+    margin-left: 0;
   }
 
   .bar-course {
@@ -1326,15 +1335,11 @@ details[open] > .overflow-toggle::before {
     font-size: .6rem;
   }
 
-  .on-track-glyph {
-    width: 1.1rem;
-    height: 1.1rem;
-    font-size: .78rem;
-  }
-
-  .pit-lane {
-    gap: 6px;
-    padding: 4px 10px;
+  .pit-lane,
+  #pit-lane:has(.pit-hold .unknown-hold[hidden]) {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 6px 10px;
   }
 
   .pit-bay > header,
@@ -1348,6 +1353,7 @@ details[open] > .overflow-toggle::before {
 
   .session-readout {
     padding: .3rem .45rem;
+    font-size: .72rem;
   }
 
   .dashboard-root[data-track-id="cypress-run"] #cypress-run-art {

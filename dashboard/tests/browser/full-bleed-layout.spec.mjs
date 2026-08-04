@@ -100,3 +100,17 @@ test('the route-overflow notice keeps z-index 12 and the map heading names the c
   const z = await page.locator('#overflow-notice').evaluate((el) => getComputedStyle(el).zIndex);
   expect(z).toBe('12');
 });
+
+test('mobile stacks the bar, uses a 2x2 pit lane, and never overflows horizontally', async ({ page }) => {
+  test.skip(page.viewportSize().width > 759, 'mobile project only');
+  const overflow = await page.evaluate(() => (
+    document.documentElement.scrollWidth - document.documentElement.clientWidth
+  ));
+  expect(overflow).toBe(0);
+  const stage = await page.locator('#map-stage').boundingBox();
+  expect(stage.height).toBeGreaterThan(500); // stage stays the hero within the chrome budget
+  const columns = await page.locator('#pit-lane').evaluate((el) => (
+    getComputedStyle(el).gridTemplateColumns.split(' ').length
+  ));
+  expect(columns).toBe(2); // 2x2 bays on mobile
+});
