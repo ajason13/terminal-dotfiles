@@ -1,18 +1,23 @@
+// Mirrors a real DOMTokenList: iterable via [Symbol.iterator] (so `[...classList]`
+// works), with `.values()` as a METHOD (so a bare `[...classList.values]` throws
+// here just like it does against a real DOMTokenList, instead of silently working).
 class FakeClassList {
   constructor(node) {
     this.node = node;
-    this.values = new Set();
+    this._set = new Set();
   }
-  add(...names) { names.forEach((name) => this.values.add(name)); }
-  remove(...names) { names.forEach((name) => this.values.delete(name)); }
-  contains(name) { return this.values.has(name); }
+  add(...names) { names.forEach((name) => this._set.add(name)); }
+  remove(...names) { names.forEach((name) => this._set.delete(name)); }
+  contains(name) { return this._set.has(name); }
   toggle(name, force) {
-    const enabled = force === undefined ? !this.values.has(name) : Boolean(force);
-    if (enabled) this.values.add(name);
-    else this.values.delete(name);
+    const enabled = force === undefined ? !this._set.has(name) : Boolean(force);
+    if (enabled) this._set.add(name);
+    else this._set.delete(name);
     return enabled;
   }
-  toString() { return [...this.values].join(' '); }
+  toString() { return [...this._set].join(' '); }
+  values() { return this._set.values(); }
+  [Symbol.iterator]() { return this._set[Symbol.iterator](); }
 }
 
 class FakeStyle {
@@ -39,7 +44,7 @@ export class FakeElement extends EventTarget {
     this._text = '';
   }
   set className(value) {
-    this.classList.values = new Set(String(value).split(/\s+/).filter(Boolean));
+    this.classList._set = new Set(String(value).split(/\s+/).filter(Boolean));
   }
   get className() { return this.classList.toString(); }
   set id(value) { this.setAttribute('id', value); }
@@ -78,6 +83,12 @@ export class FakeElement extends EventTarget {
     this.children = [];
     this._text = '';
     this.append(...items);
+  }
+  remove() {
+    if (!this.parentElement) return;
+    const index = this.parentElement.children.indexOf(this);
+    if (index !== -1) this.parentElement.children.splice(index, 1);
+    this.parentElement = null;
   }
   querySelector(selector) { return this.querySelectorAll(selector)[0] ?? null; }
   querySelectorAll(selector) {

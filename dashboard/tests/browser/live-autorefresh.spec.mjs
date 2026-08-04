@@ -65,6 +65,71 @@ test('Go live switches to auto-refresh and renders a mocked live session', async
   expect(requestsSeen[0]).toBe(MOCK_LIVE_TOKEN);
 });
 
+// Regression for a real-browser crash: the first live snapshot goes through a full
+// render, but the SECOND poll tick is the first one to exercise renderDashboard's
+// update() path (in-place DOM mutation instead of a full rebuild). A bug there
+// (spreading classList.values, a method on real DOMTokenList, instead of the
+// iterable classList itself) only surfaced once update() actually ran - the unit
+// suite's fake DOM didn't catch it because its classList.values was a Set, not a
+// method. This drives the poller to a real second tick with a status change on the
+// persisting session (active -> thinking, same route pool, so it takes the
+// mutate-in-place branch that calls the buggy code) and asserts the dashboard is
+// still alive, not on the fatal screen.
+test('a second live poll tick updates a persisting session in place without crashing', async ({
+  page,
+}) => {
+  test.setTimeout(30_000);
+  await injectLiveToken(page);
+  const sentinelId = 'tmux-a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4';
+  let pollCount = 0;
+  await page.route('**/live/snapshot', async (route) => {
+    pollCount += 1;
+    const first = pollCount === 1;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        schemaVersion: 2,
+        source: { kind: 'tmux_oneshot', collectorVersion: '1.0.0' },
+        observedAt: new Date().toISOString(),
+        sessions: [{
+          id: sentinelId,
+          displayName: 'Live Mock Session',
+          status: first ? 'active' : 'thinking',
+          permissionState: 'unknown',
+          confidence: 'medium',
+          provenance: first ? 'tmux_title_spinner' : 'tmux_title_thinking',
+          activity: { kind: 'observed', at: new Date().toISOString() },
+        }],
+      }),
+    });
+  });
+
+  await page.reload();
+  await expect(page.locator('#snapshot-summary')).toContainText('24 sessions');
+
+  const goLiveButton = page.locator('#go-live');
+  await expect(goLiveButton).toBeEnabled();
+  await goLiveButton.click();
+  await expect(page.locator('#source-label')).toHaveText('Live · auto-refresh');
+
+  const sentinelCar = page.locator(`.session-car[data-session-id="${sentinelId}"]`);
+  await expect(sentinelCar).toHaveCount(1);
+  await expect(sentinelCar).toHaveAttribute('aria-label', /Active/);
+
+  // Wait out a real LIVE_POLL_INTERVAL_MS (5s) tick so update() actually runs a second
+  // time against the persisting session, rather than only asserting the first render.
+  await expect.poll(() => pollCount, { timeout: 20_000 }).toBeGreaterThanOrEqual(2);
+
+  // The dashboard must still be live (not fallen to the fatal or rejected-fixtures
+  // screen) and the persisting car must still be the one visible element for this id,
+  // now reflecting the second tick's status.
+  await expect(page.locator('#source-label')).toHaveText('Live · auto-refresh');
+  await expect(page.locator('.invalid-snapshot.application-failure')).toHaveCount(0);
+  await expect(sentinelCar).toHaveCount(1);
+  await expect(sentinelCar).toHaveAttribute('aria-label', /Thinking/);
+});
+
 test('repeated 503s from the live endpoint fall back to fixtures with a rejection notice', async ({
   page,
 }) => {

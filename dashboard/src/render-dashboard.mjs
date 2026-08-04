@@ -276,32 +276,6 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
   const tooltipsById = new Map();
   const overflows = new Map();
 
-  for (const session of snapshot.sessions) {
-    const placement = placementsById.get(session.id);
-    const text = buildAccessibleText(session, placement, snapshot.generatedAt);
-    textById.set(session.id, text);
-    if (placement.overflow) {
-      if (!overflows.has(placement.pool)) overflows.set(placement.pool, []);
-      overflows.get(placement.pool).push({ code: session.mapCode, name: session.displayName });
-      continue;
-    }
-    const target = placement.pool === 'route' ? 'route' : placement.pool;
-    const car = makeCar(documentRef, session, placement, text, target);
-    if (target === 'route') vehicleLayer.append(car.wrapper);
-    else pitMounts.get(target).append(car.wrapper);
-    carsById.set(session.id, car.wrapper);
-    buttonsById.set(session.id, car.button);
-    tooltipsById.set(session.id, car.wrapper.querySelector('.session-tooltip'));
-  }
-
-  summary.textContent = summaryText(snapshot);
-  for (const [pool, entries] of overflows) {
-    const notice = pool === 'route' ? mapOverflow : pitOverflows.get(pool);
-    const capacity = placements.filter((item) => item.pool === pool && !item.overflow).length;
-    renderOverflowNotice(documentRef, notice, entries, POOL_LABELS[pool] ?? pool, capacity);
-    notice.hidden = false;
-  }
-
   let pinnedId = null;
   let viewedId = null;
 
@@ -327,8 +301,11 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
     else renderReadout(documentRef, readout);
   }
 
-  for (const [id, button] of buttonsById) {
+  // Hoisted so both the initial creation loop and update() can wire a freshly
+  // created car's listeners without recreating elements that already have them.
+  function attachCarInteractions(id) {
     const car = carsById.get(id);
+    const button = buttonsById.get(id);
     car.addEventListener('pointerenter', () => {
       viewedId = id;
       show(id);
@@ -353,6 +330,65 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
       event.preventDefault();
       setPinned(pinnedId === id ? null : id);
     }, { signal });
+  }
+
+  // Swaps a wrapper's state-* class and dataset.status in place, without touching
+  // its base (vehicle-anchor/pit-vehicle) class or recreating the element.
+  function swapStateClass(wrapper, status) {
+    wrapper.dataset.status = status;
+    // DOMTokenList is iterable but `.values` is a METHOD, not an array/Set - spreading
+    // the bare function reference throws in real browsers. Iterate the list itself.
+    for (const cls of [...wrapper.classList]) {
+      if (cls.startsWith('state-')) wrapper.classList.remove(cls);
+    }
+    wrapper.classList.add(stateClass(status));
+  }
+
+  // Mutates a route car's position/phase/tooltip/aria/state in place; reused by
+  // setTrack and update() so a persisting element (and its CSS motion animation) survives.
+  // Note: slotIndex is recomputed from `placement` on every call, so a persisting session
+  // whose `progress` crosses a 1/16 route bucket between ticks gets its anchor
+  // (--vehicle-x/--vehicle-y) and --route-phase rewritten to the new slot - the element
+  // (and its running CSS animation) still persists, but its on-track position can jump.
+  // Accepted limitation.
+  function applyRouteCar(wrapper, button, tooltip, session, placement, text) {
+    wrapper.style.setProperty('--vehicle-x', `${placement.x / 10}%`);
+    wrapper.style.setProperty('--vehicle-y', `${placement.y / 7.6}%`);
+    wrapper.style.setProperty('--route-phase', `${-placement.slotIndex * ROUTE_PHASE_SECONDS}s`);
+    wrapper.dataset.routeSlot = String(placement.slotIndex);
+    wrapper.classList.toggle('tooltip-up', placement.y >= 560);
+    wrapper.classList.toggle('edge-left', placement.x <= 210);
+    wrapper.classList.toggle('edge-right', placement.x >= 790);
+    swapStateClass(wrapper, session.status);
+    button.setAttribute('aria-label', text.label);
+    replaceTooltip(documentRef, tooltip, session, text);
+  }
+
+  for (const session of snapshot.sessions) {
+    const placement = placementsById.get(session.id);
+    const text = buildAccessibleText(session, placement, snapshot.generatedAt);
+    textById.set(session.id, text);
+    if (placement.overflow) {
+      if (!overflows.has(placement.pool)) overflows.set(placement.pool, []);
+      overflows.get(placement.pool).push({ code: session.mapCode, name: session.displayName });
+      continue;
+    }
+    const target = placement.pool === 'route' ? 'route' : placement.pool;
+    const car = makeCar(documentRef, session, placement, text, target);
+    if (target === 'route') vehicleLayer.append(car.wrapper);
+    else pitMounts.get(target).append(car.wrapper);
+    carsById.set(session.id, car.wrapper);
+    buttonsById.set(session.id, car.button);
+    tooltipsById.set(session.id, car.wrapper.querySelector('.session-tooltip'));
+    attachCarInteractions(session.id);
+  }
+
+  summary.textContent = summaryText(snapshot);
+  for (const [pool, entries] of overflows) {
+    const notice = pool === 'route' ? mapOverflow : pitOverflows.get(pool);
+    const capacity = placements.filter((item) => item.pool === pool && !item.overflow).length;
+    renderOverflowNotice(documentRef, notice, entries, POOL_LABELS[pool] ?? pool, capacity);
+    notice.hidden = false;
   }
 
   root.addEventListener('keydown', (event) => {
@@ -384,33 +420,114 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
         if (!wrapper || !button || !tooltip) throw new Error('Route car is missing');
         prepared.push({
           session, placement, text, wrapper, button, tooltip,
-          x: `${placement.x / 10}%`,
-          y: `${placement.y / 7.6}%`,
-          phase: `${-placement.slotIndex * ROUTE_PHASE_SECONDS}s`,
-          tooltipUp: placement.y >= 560,
-          edgeLeft: placement.x <= 210,
-          edgeRight: placement.x >= 790,
         });
       }
       // Commit begins only after the complete replacement view has been derived.
       root.dataset.trackId = candidate.id;
       mapHeading.textContent = candidate.title;
       for (const item of prepared) {
-        item.wrapper.style.setProperty('--vehicle-x', item.x);
-        item.wrapper.style.setProperty('--vehicle-y', item.y);
-        item.wrapper.style.setProperty('--route-phase', item.phase);
-        item.wrapper.dataset.routeSlot = String(item.placement.slotIndex);
-        item.wrapper.classList.toggle('tooltip-up', item.tooltipUp);
-        item.wrapper.classList.toggle('edge-left', item.edgeLeft);
-        item.wrapper.classList.toggle('edge-right', item.edgeRight);
-        item.button.setAttribute('aria-label', item.text.label);
-        replaceTooltip(documentRef, item.tooltip, item.session, item.text);
+        applyRouteCar(item.wrapper, item.button, item.tooltip, item.session, item.placement, item.text);
         textById.set(item.session.id, item.text);
         placementsById.set(item.session.id, item.placement);
       }
       placements = nextPlacements;
       track = candidate;
       restore();
+    },
+    update(nextSnapshot) {
+      const nextPlacements = allocateSessions(nextSnapshot.sessions, track);
+      const nextPlacementsById = new Map(nextPlacements.map((placement) => [placement.id, placement]));
+      const nextIds = new Set(nextSnapshot.sessions.map((session) => session.id));
+
+      // Remove cars whose session vanished, is now overflow, or changed pool.
+      // Persisting same-pool cars are left alone below so their element (and its
+      // CSS motion animation) survives the update.
+      for (const [id, wrapper] of [...carsById]) {
+        const nextPlacement = nextPlacementsById.get(id);
+        const prevPlacement = placementsById.get(id);
+        const gone = !nextIds.has(id);
+        const overflowed = Boolean(nextPlacement?.overflow);
+        const poolChanged = Boolean(nextPlacement) && Boolean(prevPlacement)
+          && nextPlacement.pool !== prevPlacement.pool;
+        if (gone || overflowed || poolChanged) {
+          wrapper.remove();
+          carsById.delete(id);
+          buttonsById.delete(id);
+          tooltipsById.delete(id);
+        }
+      }
+
+      const nextOverflows = new Map();
+
+      for (const session of nextSnapshot.sessions) {
+        const placement = nextPlacementsById.get(session.id);
+        const text = buildAccessibleText(session, placement, nextSnapshot.generatedAt);
+        sessionsById.set(session.id, session);
+        textById.set(session.id, text);
+        placementsById.set(session.id, placement);
+
+        if (placement.overflow) {
+          if (!nextOverflows.has(placement.pool)) nextOverflows.set(placement.pool, []);
+          nextOverflows.get(placement.pool).push({ code: session.mapCode, name: session.displayName });
+          continue;
+        }
+
+        const target = placement.pool === 'route' ? 'route' : placement.pool;
+        const existingWrapper = carsById.get(session.id);
+
+        if (existingWrapper) {
+          const button = buttonsById.get(session.id);
+          const tooltip = tooltipsById.get(session.id);
+          if (target === 'route') {
+            applyRouteCar(existingWrapper, button, tooltip, session, placement, text);
+          } else {
+            button.setAttribute('aria-label', text.label);
+            replaceTooltip(documentRef, tooltip, session, text);
+            swapStateClass(existingWrapper, session.status);
+          }
+        } else {
+          const car = makeCar(documentRef, session, placement, text, target);
+          if (target === 'route') vehicleLayer.append(car.wrapper);
+          else pitMounts.get(target).append(car.wrapper);
+          carsById.set(session.id, car.wrapper);
+          buttonsById.set(session.id, car.button);
+          tooltipsById.set(session.id, car.wrapper.querySelector('.session-tooltip'));
+          attachCarInteractions(session.id);
+        }
+      }
+
+      // Delete stale bookkeeping for ids no longer present in the snapshot.
+      for (const id of [...sessionsById.keys()]) {
+        if (nextIds.has(id)) continue;
+        sessionsById.delete(id);
+        textById.delete(id);
+        placementsById.delete(id);
+      }
+
+      mapOverflow.replaceChildren();
+      mapOverflow.hidden = true;
+      for (const notice of pitOverflows.values()) {
+        notice.replaceChildren();
+        notice.hidden = true;
+      }
+      for (const [pool, entries] of nextOverflows) {
+        const notice = pool === 'route' ? mapOverflow : pitOverflows.get(pool);
+        const capacity = nextPlacements.filter((item) => item.pool === pool && !item.overflow).length;
+        renderOverflowNotice(documentRef, notice, entries, POOL_LABELS[pool] ?? pool, capacity);
+        notice.hidden = false;
+      }
+
+      summary.textContent = summaryText(nextSnapshot);
+      renderOnTrackSummary(documentRef, onTrackSummary, nextSnapshot.sessions);
+      unknownHold.hidden = !nextSnapshot.sessions.some((session) => session.status === 'unknown');
+
+      if (pinnedId && !carsById.has(pinnedId)) pinnedId = null;
+      if (viewedId && !carsById.has(viewedId)) viewedId = null;
+      setPinned(pinnedId);
+      restore();
+
+      snapshot = nextSnapshot;
+      placements = nextPlacements;
     },
     clearInteraction: () => {
       setPinned(null);
