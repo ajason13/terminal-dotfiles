@@ -103,6 +103,9 @@ test('serves index.html with the token injected', async () => {
   assert.equal(res.headers['Content-Type'], 'text/html; charset=utf-8');
   assert.equal(res.body.includes(`"${TOKEN}"`), true);
   assert.equal(res.body.includes(LIVE_CONSTANTS.LIVE_TOKEN_PLACEHOLDER), false);
+  // The property name window.__LIVE_TOKEN__ must survive: the placeholder must
+  // only match the value, not the property, or app.mjs reads an undefined token.
+  assert.equal(res.body.includes(`window.__LIVE_TOKEN__="${TOKEN}"`), true);
 });
 
 test('serves a css file with the right content type', async () => {
