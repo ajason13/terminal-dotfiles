@@ -21,10 +21,9 @@ export function createLivePoller({
     ticking = true;
     try {
       if (visibility && visibility.isHidden()) return;  // paused; no poll, no failure
+      let snapshot;
       try {
-        const snapshot = await pollOnce();
-        failures = 0;
-        onResult(snapshot);
+        snapshot = await pollOnce();
       } catch {
         failures += 1;
         onFailure(failures);
@@ -32,7 +31,12 @@ export function createLivePoller({
           stop();
           onExhausted();
         }
+        return;
       }
+      // Outside the catch: a throw from onResult (e.g. a render error) must not
+      // be miscounted as a poll/transport failure.
+      failures = 0;
+      onResult(snapshot);
     } finally {
       ticking = false;
     }

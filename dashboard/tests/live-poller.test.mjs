@@ -81,6 +81,32 @@ test('hidden tab skips polling; becoming visible triggers a tick', async () => {
   assert.equal(h.events.results.length, 1);
 });
 
+test('an onResult that throws does not count as a failure or trip onExhausted', async () => {
+  // Built directly (not via harness) so onResult can throw, observable independent of pollOnce.
+  // start()'s initial tick is awaited directly (not fire-and-forgotten like the interval
+  // path), so the rejection from onResult is caught here rather than becoming unhandled.
+  const cleared = [];
+  const events = { results: 0, failures: [], exhausted: 0 };
+  const poller = createLivePoller({
+    pollOnce: async () => ({ ok: true }),
+    onResult: () => { events.results += 1; throw new Error('render blew up'); },
+    onFailure: (n) => events.failures.push(n),
+    onExhausted: () => { events.exhausted += 1; },
+    intervalMs: 5000,
+    maxFailures: 1,
+    setIntervalFn: () => 1,
+    clearIntervalFn: (id) => cleared.push(id),
+  });
+
+  await poller.start().catch(() => {});
+  await settle();
+
+  assert.equal(events.results, 1);
+  assert.deepEqual(events.failures, []);
+  assert.equal(events.exhausted, 0);
+  assert.equal(poller.isRunning(), true);
+});
+
 test('reentrancy guard: prevents onExhausted from firing twice on overlapping failures', async () => {
   let callCount = 0;
   let deferred = null;

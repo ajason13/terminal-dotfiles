@@ -193,11 +193,6 @@ export function createSourceController({
     return true;
   }
 
-  async function stopLive() {
-    stopPoller();
-    return reset();
-  }
-
   fileInput.addEventListener('change', () => {
     if (mode === 'validating') return;
     const [file] = fileInput.files ?? [];
@@ -211,7 +206,6 @@ export function createSourceController({
     selectFile,
     reset,
     goLive,
-    stopLive,
     setTrack(nextTrack) {
       if (disposed) return;
       track = nextTrack;

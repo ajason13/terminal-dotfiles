@@ -23,12 +23,12 @@ const collectorErrorCode = (error) =>
 
 export function createLiveRequestHandler({ token, port, collect, readStaticFile }) {
   return async function handle(request) {
-    const { method, path, headers = {} } = request;
+    const { method, path: requestPath, headers = {} } = request;
 
     if (!hostAllowed(headers.host, port)) return forbidden();
     if (crossSiteBlocked(headers['sec-fetch-site'])) return forbidden();
 
-    if (path === LIVE_CONSTANTS.LIVE_SNAPSHOT_ROUTE) {
+    if (requestPath === LIVE_CONSTANTS.LIVE_SNAPSHOT_ROUTE) {
       if (method !== 'GET') {
         return { status: 405, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', Allow: 'GET' }, body: JSON.stringify({ error: LIVE_REQUEST_FORBIDDEN }) };
       }
@@ -44,7 +44,7 @@ export function createLiveRequestHandler({ token, port, collect, readStaticFile 
     if (method !== 'GET') {
       return { status: 405, headers: { Allow: 'GET' }, body: '' };
     }
-    return readStaticFile(path, { token });
+    return readStaticFile(requestPath, { token });
   };
 }
 
@@ -59,6 +59,15 @@ const CONTENT_TYPES = {
 
 const staticForbidden = { status: 403, headers: {}, body: 'forbidden' };
 
+// Directories that must never be served even though they resolve under root.
+const EXCLUDED_SEGMENTS = new Set([
+  'node_modules', 'tests', 'scripts', 'test-results', 'playwright-report', 'docs', '.superpowers',
+]);
+
+// Any path segment that is excluded, or a dotfile/dotdir (e.g. .env, .git), is off-limits.
+const hasForbiddenSegment = (rel) =>
+  rel.split(path.sep).some((segment) => EXCLUDED_SEGMENTS.has(segment) || segment.startsWith('.'));
+
 export function createStaticFileReader({ root, token, readFile, realpath }) {
   const rootResolved = path.resolve(root);
   return async function readStaticFile(requestPath) {
@@ -66,6 +75,10 @@ export function createStaticFileReader({ root, token, readFile, realpath }) {
     const abs = path.resolve(rootResolved, rel);
     // Containment check before any fs touch (blocks ../ traversal).
     if (abs !== rootResolved && !abs.startsWith(rootResolved + path.sep)) return staticForbidden;
+    // Allowlist: excluded directories, dotfiles/dotdirs, and unknown extensions are never served.
+    if (hasForbiddenSegment(path.relative(rootResolved, abs))) return staticForbidden;
+    const ext = path.extname(abs);
+    if (!(ext in CONTENT_TYPES)) return staticForbidden;
 
     let real;
     try {
@@ -73,8 +86,7 @@ export function createStaticFileReader({ root, token, readFile, realpath }) {
       // Resolve symlinks and re-check containment (blocks symlink escape).
       real = await realpath(abs);
       if (real !== rootResolved && !real.startsWith(rootResolved + path.sep)) return staticForbidden;
-      const ext = path.extname(abs);
-      const type = CONTENT_TYPES[ext] || 'application/octet-stream';
+      const type = CONTENT_TYPES[ext];
       if (ext === '.html') {
         const html = buffer.toString('utf8').split(LIVE_CONSTANTS.LIVE_TOKEN_PLACEHOLDER).join(token);
         return { status: 200, headers: { 'Content-Type': type, 'Cache-Control': 'no-store' }, body: html };

@@ -126,6 +126,45 @@ test('missing file is 404', async () => {
   assert.equal(res.status, 404);
 });
 
+test('node_modules path is 403 forbidden, not served', async () => {
+  const res = await makeReader()('/node_modules/some-pkg/index.mjs');
+  assert.equal(res.status, 403);
+});
+
+test('tests/ path is 403 forbidden, not served', async () => {
+  const res = await makeReader()('/tests/live-server.test.mjs');
+  assert.equal(res.status, 403);
+});
+
+test('dotfile path is 403 forbidden, not served', async () => {
+  const res = await makeReader()('/.env');
+  assert.equal(res.status, 403);
+});
+
+test('unknown extension is 403 forbidden (no octet-stream fallback)', async () => {
+  const res = await makeReader({
+    readFile: async (abs) => {
+      if (abs === path.join(ROOT, 'secret.pem')) return Buffer.from('should never be reached');
+      const err = new Error('ENOENT'); err.code = 'ENOENT'; throw err;
+    },
+  })('/secret.pem');
+  assert.equal(res.status, 403);
+});
+
+test('index.html, styles.css, and an .mjs file still serve 200 through the allowlist', async () => {
+  const reader = makeReader({
+    readFile: async (abs) => {
+      if (abs === path.join(ROOT, 'index.html')) return Buffer.from('<html></html>');
+      if (abs === path.join(ROOT, 'styles.css')) return Buffer.from('body{}');
+      if (abs === path.join(ROOT, 'src', 'app.mjs')) return Buffer.from('export const x = 1;');
+      const err = new Error('ENOENT'); err.code = 'ENOENT'; throw err;
+    },
+  });
+  assert.equal((await reader('/')).status, 200);
+  assert.equal((await reader('/styles.css')).status, 200);
+  assert.equal((await reader('/src/app.mjs')).status, 200);
+});
+
 test('parseServeArgs reads --port and defaults otherwise', () => {
   assert.equal(parseServeArgs([]).port, LIVE_CONSTANTS.LIVE_SERVER_DEFAULT_PORT);
   assert.equal(parseServeArgs(['--port', '5001']).port, 5001);
