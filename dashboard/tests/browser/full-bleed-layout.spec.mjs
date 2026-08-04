@@ -58,3 +58,25 @@ test('parked (pit) cars mount inside a pit bay, not on the stage', async ({ page
   const strays = await page.locator('#vehicle-layer .pit-vehicle').count();
   expect(strays).toBe(0);
 });
+
+test('the pit lane reflows to fill its width when the unknown bay is empty', async ({ page }) => {
+  // fixtures have no unclassified sessions, so the fourth bay collapses
+  await expect(page.locator('.pit-hold')).toBeHidden();
+
+  const lane = page.locator('#pit-lane');
+  const laneBox = await lane.boundingBox();
+  const paddingRight = await lane.evaluate((element) => (
+    Number.parseFloat(getComputedStyle(element).paddingRight)
+  ));
+  const laneContentRight = laneBox.x + laneBox.width - paddingRight;
+
+  const bays = page.locator('.pit-bay');
+  let rightmostVisibleEdge = -Infinity;
+  for (const bay of await bays.all()) {
+    if (!(await bay.isVisible())) continue;
+    const box = await bay.boundingBox();
+    rightmostVisibleEdge = Math.max(rightmostVisibleEdge, box.x + box.width);
+  }
+  // the visible bays must reach the lane's right edge; no leftover empty track
+  expect(rightmostVisibleEdge).toBeGreaterThanOrEqual(laneContentRight - 3);
+});

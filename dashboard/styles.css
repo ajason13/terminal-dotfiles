@@ -960,6 +960,11 @@ textarea {
   border-top: 2px dashed var(--color-boundary);
 }
 
+/* reflow to three even tracks so the collapsed unknown bay leaves no trailing gap */
+#pit-lane:has(.pit-hold .unknown-hold[hidden]) {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
 .pit-bay {
   display: flex;
   flex-direction: column;
