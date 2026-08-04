@@ -199,8 +199,29 @@ function renderOnTrackSummary(documentRef, mount, sessions) {
   }
 }
 
-function overflowSummary(session, text) {
-  return `${session.mapCode} ${session.displayName}: ${text.location}. ${text.details}`;
+const POOL_LABELS = Object.freeze({
+  route: 'route',
+  error: 'error hold',
+  permission: 'permission hold',
+  pitstop: 'Pit Stop',
+  unknown: 'unclassified hold',
+});
+
+// Overflow is expected when live sessions outnumber a pool's slots. Render it as
+// a calm, collapsed "parked" summary (code + name only) rather than repeating the
+// full capacity/permission/observed boilerplate once per overflowed session.
+function renderOverflowNotice(documentRef, notice, entries, label, capacity) {
+  notice.replaceChildren();
+  const details = element(documentRef, 'details', 'overflow-details');
+  const slots = `${capacity} ${capacity === 1 ? 'slot' : 'slots'}`;
+  const toggle = element(documentRef, 'summary', 'overflow-toggle',
+    `${entries.length} parked · over ${label} capacity (${slots})`);
+  const list = element(documentRef, 'ul', 'overflow-list');
+  for (const entry of entries) {
+    list.append(element(documentRef, 'li', 'overflow-item', `${entry.code} ${entry.name}`));
+  }
+  details.append(toggle, list);
+  notice.append(details);
 }
 
 export function renderDashboard(snapshot, root = document, initialTrack = getTrack('ridge-pass')) {
@@ -261,7 +282,7 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
     textById.set(session.id, text);
     if (placement.overflow) {
       if (!overflows.has(placement.pool)) overflows.set(placement.pool, []);
-      overflows.get(placement.pool).push(overflowSummary(session, text));
+      overflows.get(placement.pool).push({ code: session.mapCode, name: session.displayName });
       continue;
     }
     const target = placement.pool === 'route' ? 'route' : placement.pool;
@@ -274,12 +295,10 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
   }
 
   summary.textContent = summaryText(snapshot);
-  for (const [pool, messages] of overflows) {
+  for (const [pool, entries] of overflows) {
     const notice = pool === 'route' ? mapOverflow : pitOverflows.get(pool);
-    const capacityLabel = pool === 'route'
-      ? 'route'
-      : pool === 'unknown' ? 'Unclassified hold' : 'pit';
-    notice.textContent = `${messages.length} ${messages.length === 1 ? 'session exceeds' : 'sessions exceed'} ${capacityLabel} capacity. ${messages.join(' ')}`;
+    const capacity = placements.filter((item) => item.pool === pool && !item.overflow).length;
+    renderOverflowNotice(documentRef, notice, entries, POOL_LABELS[pool] ?? pool, capacity);
     notice.hidden = false;
   }
 
