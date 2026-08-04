@@ -80,3 +80,23 @@ test('the pit lane reflows to fill its width when the unknown bay is empty', asy
   // the visible bays must reach the lane's right edge; no leftover empty track
   expect(rightmostVisibleEdge).toBeGreaterThanOrEqual(laneContentRight - 3);
 });
+
+test('focusing a route car updates the bottom readout strip; Escape clears it', async ({ page }) => {
+  const readout = page.locator('.readout-strip #session-readout');
+  await expect(readout).toContainText('Focus or hover'); // neutral default
+  const button = page.locator('.vehicle-anchor .session-car').first();
+  await button.focus();
+  await expect(readout.locator('.readout-identity')).toBeVisible();
+  await button.press('Enter');            // pin
+  await expect(page.locator('.vehicle-anchor[data-pinned="true"]')).toHaveCount(1);
+  await page.keyboard.press('Escape');    // clear pin
+  await expect(page.locator('.vehicle-anchor[data-pinned="true"]')).toHaveCount(0);
+});
+
+test('the route-overflow notice keeps z-index 12 and the map heading names the course', async ({ page }) => {
+  // auto mode picks the course by wall-clock workday window; select explicitly so this assertion is deterministic
+  await page.locator('#track-select').selectOption('ridge-pass');
+  await expect(page.locator('#map-heading')).toHaveText('Ridge Pass');
+  const z = await page.locator('#overflow-notice').evaluate((el) => getComputedStyle(el).zIndex);
+  expect(z).toBe('12');
+});
