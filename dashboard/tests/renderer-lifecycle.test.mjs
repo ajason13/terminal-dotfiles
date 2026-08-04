@@ -43,6 +43,40 @@ function keydown(key) {
   return event;
 }
 
+const overflowingSnapshot = (count) => normalizeSnapshot({
+  schemaVersion: 1,
+  generatedAt: '2026-07-26T17:00:00Z',
+  sessions: Array.from({ length: count }, (unused, index) => ({
+    id: `idle-${index}`,
+    displayName: `Idle Session ${index}`,
+    status: 'idle',
+    lastActivityAt: '2026-07-26T16:59:00Z',
+    permissionState: 'not_required',
+  })),
+});
+
+test('overflow renders a calm collapsed parked summary, not the error boilerplate', () => {
+  const { root } = dashboardRoot();
+  renderDashboard(overflowingSnapshot(16), root, getTrack('ridge-pass'));
+
+  const notice = root.querySelector('#pit-pitstop-overflow');
+  assert.equal(notice.hidden, false);
+  const toggle = notice.querySelector('.overflow-toggle');
+  assert.ok(toggle, 'collapsed summary toggle is present');
+  assert.match(toggle.textContent, /^\d+ parked · over Pit Stop capacity \(\d+ slots?\)$/);
+
+  const items = notice.querySelectorAll('.overflow-item');
+  const parkedCount = Number(toggle.textContent.match(/^(\d+) parked/)[1]);
+  assert.ok(parkedCount > 0, 'some sessions overflowed the pit');
+  assert.equal(items.length, parkedCount);
+  for (const item of items) assert.match(item.textContent, /^S\d+ Idle Session \d+$/);
+
+  // The verbose per-session error boilerplate must be gone from the notice.
+  const rendered = [toggle.textContent, ...items.map((item) => item.textContent)].join(' ');
+  assert.equal(rendered.includes('Map capacity exceeded'), false);
+  assert.equal(rendered.includes('Permission state unknown'), false);
+});
+
 test('renderer setTrack preserves identity, focus, pin, parked placement, and updates accessibility', () => {
   const { documentRef, root } = dashboardRoot();
   const controller = renderDashboard(snapshot(), root, getTrack('ridge-pass'));

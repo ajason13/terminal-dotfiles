@@ -917,12 +917,12 @@ textarea {
   bottom: 1rem;
   max-width: min(24rem, calc(100% - 2rem));
   padding: .65rem .8rem;
-  border: 2px solid var(--color-error-ink);
+  border: 1px solid var(--color-boundary);
   border-radius: .65rem;
-  color: var(--color-error-ink);
-  background: var(--color-error-bg);
+  color: var(--color-idle-ink);
+  background: var(--color-idle-bg);
   font-size: .75rem;
-  font-weight: 800;
+  font-weight: 600;
   box-shadow: 0 10px 24px rgb(0 0 0 / .5);
 }
 
@@ -1112,13 +1112,45 @@ textarea {
 .pit-overflow {
   margin-top: .45rem;
   padding: .4rem;
-  border: 1px dashed var(--color-error-ink);
+  border: 1px solid var(--color-boundary);
   border-radius: .4rem;
-  color: var(--color-error-ink);
-  background: var(--color-error-bg);
+  color: var(--color-idle-ink);
+  background: var(--color-idle-bg);
   font-size: .66rem;
   line-height: 1.35;
   overflow-wrap: anywhere;
+}
+
+.overflow-toggle {
+  cursor: pointer;
+  font-weight: 600;
+  list-style: none;
+}
+
+.overflow-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.overflow-toggle::before {
+  content: '\25B8  ';
+}
+
+details[open] > .overflow-toggle::before {
+  content: '\25BE  ';
+}
+
+.overflow-list {
+  margin: .35rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .1rem .55rem;
+  list-style: none;
+}
+
+.overflow-item {
+  white-space: nowrap;
+  color: var(--color-text-muted);
 }
 
 .invalid-snapshot {

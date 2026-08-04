@@ -182,7 +182,7 @@ test('document removes the status rail and declares the exact ordered pit stack'
   assert.match(RENDERER, /aria-label', `\$\{count\} \$\{presentation\.label\.toLowerCase\(\)\} sessions on track`/);
   const summarySource = RENDERER.slice(
     RENDERER.indexOf('function renderOnTrackSummary'),
-    RENDERER.indexOf('function overflowSummary'),
+    RENDERER.indexOf('const POOL_LABELS'),
   );
   assert.doesNotMatch(summarySource, /makeCar|session-car|createElement\('button'/);
   assert.doesNotMatch(INDEX, /Summit Overlook|Scenic Turnout|pit-complete|pit-idle/);
