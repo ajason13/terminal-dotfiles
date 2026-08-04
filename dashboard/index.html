@@ -24,6 +24,7 @@
           <label class="import-label" for="snapshot-file">Import live snapshot</label>
           <input id="snapshot-file" type="file" accept=".json,application/json">
           <button id="reset-source" type="button">Reset to fixtures</button>
+          <button id="go-live" type="button" disabled>Go live (auto-refresh)</button>
           <span id="source-age" class="source-age"></span>
           <span id="source-notice" class="source-notice" role="status"></span>
         </section>
@@ -288,6 +289,7 @@
     <noscript>
       <p class="noscript-message">This local dashboard needs JavaScript to render its fixture snapshot.</p>
     </noscript>
+    <script>window.__LIVE_TOKEN__ = "%%LIVE_TOKEN%%";</script>
     <script type="module" src="./src/app.mjs"></script>
   </body>
 </html>

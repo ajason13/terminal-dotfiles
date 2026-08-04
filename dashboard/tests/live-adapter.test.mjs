@@ -90,6 +90,12 @@ test('exports every resolved constant, enum, error code, and exact tmux format',
     MAX_IMPORT_AGE_MS: 900000,
     MAX_FUTURE_SKEW_MS: 120000,
     STALE_LABEL_TICK_MS: 60000,
+    LIVE_POLL_INTERVAL_MS: 5000,
+    LIVE_MAX_CONSECUTIVE_FAILURES: 3,
+    LIVE_SERVER_DEFAULT_PORT: 4173,
+    LIVE_SNAPSHOT_ROUTE: '/live/snapshot',
+    LIVE_TOKEN_PLACEHOLDER: '%%LIVE_TOKEN%%',
+    LIVE_TOKEN_HEADER: 'x-live-token',
     FRESH_DISPLAY_AGE_MS: 300000,
     TMUX_TIMEOUT_MS: 3000,
     TMUX_MAX_BUFFER_BYTES: 1048576,
@@ -906,6 +912,173 @@ test('repeated failure transitions render fresh fixtures before a later successf
   controller.destroy();
 });
 
+const LIVE_POLL_SENTINEL_ID = 'tmux-abcdef0123456789abcdef0123456789';
+const LIVE_POLL_SENTINEL_NAME = 'Live poll · sentinel';
+
+function livePollSnapshot() {
+  return liveSnapshot([liveSession({
+    id: LIVE_POLL_SENTINEL_ID,
+    displayName: LIVE_POLL_SENTINEL_NAME,
+  })]);
+}
+
+test('goLive polls, validates, and renders live snapshots', async () => {
+  const rendered = [];
+  const intervals = [];
+  const hidden = false;
+  const controller = createSourceController({
+    fileInput: new FakeElement(),
+    resetButton: new FakeElement(),
+    importRegion: new FakeElement(),
+    sourceLabel: new FakeElement(),
+    sourceAge: new FakeElement(),
+    sourceNotice: new FakeElement(),
+    readFixtures: async () => liveSnapshot(),
+    render: (snapshot) => {
+      rendered.push(snapshot);
+      return { destroy() {}, clearInteraction() {} };
+    },
+    fetchSnapshot: async () => ({ ok: true, json: async () => livePollSnapshot() }),
+    token: 'tok',
+    now: () => NOW,
+    setIntervalFn: (fn, delay) => { intervals.push({ fn, delay }); return intervals.length; },
+    clearIntervalFn: () => {},
+    visibility: { isHidden: () => hidden, subscribe: () => () => {} },
+    windowRef: new FakeElement(),
+  });
+  await controller.start();
+  assert.equal(rendered[0].sessions[0].displayName, 'Synthetic · pane 0');
+  const went = await controller.goLive();
+  assert.equal(went, true);
+  assert.equal(controller.mode, 'live_polling');
+  assert.equal(rendered.length, 2);
+  // The distinguishing sentinel proves this render came from the live poll,
+  // not a repeat of the initial fixtures render (both fixtures do exist in liveSnapshot() shape).
+  assert.equal(rendered.at(-1).sessions[0].displayName, LIVE_POLL_SENTINEL_NAME);
+  assert.equal(intervals.length, 1);
+  assert.equal(intervals[0].delay, LIVE_CONSTANTS.LIVE_POLL_INTERVAL_MS);
+  controller.destroy();
+});
+
+test('goLive routes a render throw on a live poll through onFatal, not an unhandled rejection', async () => {
+  // Regression for a render error inside onResult propagating out of tick() as an
+  // unhandled rejection at the `void tick()` call sites instead of hitting onFatal.
+  const rendered = [];
+  const fatal = [];
+  const sourceNotice = new FakeElement();
+  const intervals = [];
+  let renderCount = 0;
+  const controller = createSourceController({
+    fileInput: new FakeElement(),
+    resetButton: new FakeElement(),
+    importRegion: new FakeElement(),
+    sourceLabel: new FakeElement(),
+    sourceAge: new FakeElement(),
+    sourceNotice,
+    readFixtures: async () => liveSnapshot(),
+    render: (snapshot) => {
+      renderCount += 1;
+      if (renderCount === 2) throw new Error('render blew up on live poll');
+      rendered.push(snapshot);
+      return { destroy() {}, clearInteraction() {} };
+    },
+    fetchSnapshot: async () => ({ ok: true, json: async () => livePollSnapshot() }),
+    token: 'tok',
+    now: () => NOW,
+    onFatal: (error) => fatal.push(error),
+    setIntervalFn: (fn, delay) => { intervals.push({ fn, delay }); return intervals.length; },
+    clearIntervalFn: () => {},
+    visibility: { isHidden: () => false, subscribe: () => () => {} },
+    windowRef: new FakeElement(),
+  });
+  await controller.start();
+  const went = await controller.goLive();
+  assert.equal(went, true);
+
+  assert.equal(fatal.length, 1);
+  assert.equal(fatal[0].message, 'render blew up on live poll');
+  // Must not have been miscounted as a poll/transport failure (which would set this
+  // notice) or tripped exhaustion (which would flip mode to rejected_fixtures).
+  assert.equal(sourceNotice.textContent, '');
+  assert.equal(controller.mode, 'live_polling');
+  controller.destroy();
+});
+
+test('goLive marks the view stale on a single failed poll without falling back to fixtures', async () => {
+  const rendered = [];
+  const intervals = [];
+  const sourceNotice = new FakeElement();
+  let callCount = 0;
+  const controller = createSourceController({
+    fileInput: new FakeElement(),
+    resetButton: new FakeElement(),
+    importRegion: new FakeElement(),
+    sourceLabel: new FakeElement(),
+    sourceAge: new FakeElement(),
+    sourceNotice,
+    readFixtures: async () => liveSnapshot(),
+    render: (snapshot) => {
+      rendered.push(snapshot);
+      return { destroy() {}, clearInteraction() {} };
+    },
+    fetchSnapshot: async () => {
+      callCount += 1;
+      if (callCount === 1) return { ok: false };
+      return { ok: true, json: async () => livePollSnapshot() };
+    },
+    token: 'tok',
+    now: () => NOW,
+    setIntervalFn: (fn, delay) => { intervals.push({ fn, delay }); return intervals.length; },
+    clearIntervalFn: () => {},
+    windowRef: new FakeElement(),
+  });
+  await controller.start();
+  const lastGoodRender = rendered.at(-1);
+  await controller.goLive();
+  assert.equal(controller.mode, 'live_polling');
+  assert.equal(sourceNotice.textContent, 'Live update failed; retrying…');
+  assert.equal(rendered.at(-1), lastGoodRender);
+  assert.equal(rendered.length, 1);
+  controller.destroy();
+});
+
+test('goLive falls back to rejected fixtures after max consecutive failures', async () => {
+  const rendered = [];
+  const intervals = [];
+  const controller = createSourceController({
+    fileInput: new FakeElement(),
+    resetButton: new FakeElement(),
+    importRegion: new FakeElement(),
+    sourceLabel: new FakeElement(),
+    sourceAge: new FakeElement(),
+    sourceNotice: new FakeElement(),
+    readFixtures: async () => liveSnapshot(),
+    render: (snapshot) => {
+      rendered.push(snapshot);
+      return { destroy() {}, clearInteraction() {} };
+    },
+    fetchSnapshot: async () => ({ ok: true, json: async () => ({ bad: true }) }),
+    token: 'tok',
+    now: () => NOW,
+    setIntervalFn: (fn, delay) => { intervals.push({ fn, delay }); return intervals.length; },
+    clearIntervalFn: () => {},
+    windowRef: new FakeElement(),
+  });
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+  await controller.start();
+  await controller.goLive();
+  assert.equal(controller.mode, 'live_polling');
+  for (let attempt = 0; attempt < LIVE_CONSTANTS.LIVE_MAX_CONSECUTIVE_FAILURES - 1; attempt += 1) {
+    intervals[0].fn();
+    await flush();
+    await flush();
+  }
+  await flush();
+  assert.equal(controller.mode, 'rejected_fixtures');
+  assert.equal(rendered.at(-1).sessions.length, 1);
+  controller.destroy();
+});
+
 test('unknown hold has independent 0/1/3/4 capacity and canonical probing', () => {
   assert.equal(UNKNOWN_HOLD_ANCHORS.length, 3);
   for (const count of [0, 1, 3, 4]) {
@@ -940,7 +1113,10 @@ test('browser sources omit unsafe APIs and contain exactly one interval call sit
     '../src/render-dashboard.mjs', '../index.html',
   ].map(async (path) => (await import('node:fs/promises')).readFile(new URL(path, import.meta.url), 'utf8')));
   const joined = sources.join('\n');
-  assert.doesNotMatch(joined, /\.innerHTML\s*=|insertAdjacentHTML|fetch\(|WebSocket|EventSource/);
+  assert.doesNotMatch(joined, /\.innerHTML\s*=|insertAdjacentHTML|WebSocket|EventSource/);
+  // The one permitted fetch() call site is the opt-in, token-gated live snapshot poll.
+  assert.equal((joined.match(/\bfetch\(/g) ?? []).length, 1);
+  assert.match(joined, /windowRef\.fetch\(LIVE_CONSTANTS\.LIVE_SNAPSHOT_ROUTE,/);
   assert.doesNotMatch(joined, /capture-pane|send-keys|run-shell|wezterm\s+cli/);
   assert.doesNotMatch(joined, /chat|terminal façade|terminal-facade|session-card/);
   assert.equal((joined.match(/setIntervalFn\(/g) ?? []).length, 1);

@@ -1,5 +1,6 @@
 import { LIVE_CONSTANTS } from './live-constants.mjs';
-import { ageLabel, readImportFile } from './import-snapshot.mjs';
+import { ageLabel, normalizeImportedSnapshot, readImportFile } from './import-snapshot.mjs';
+import { createLivePoller } from './live-poller.mjs';
 
 export function createSourceController({
   fileInput,
@@ -17,21 +18,33 @@ export function createSourceController({
   windowRef = globalThis.window,
   initialTrack,
   onFatal = () => {},
+  fetchSnapshot = null,
+  token = null,
+  visibility = null,
 }) {
   const owner = new AbortController();
   let mode = 'fixtures';
   let currentRender;
   let ageTimer;
+  let poller = null;
   let disposed = false;
   let generation = 0;
   let track = initialTrack;
 
   const isCurrent = (candidate) => !disposed && generation === candidate;
 
+  function stopPoller() {
+    if (poller) {
+      poller.stop();
+      poller = null;
+    }
+  }
+
   function clearAgeTimer() {
     if (ageTimer !== undefined) clearIntervalFn(ageTimer);
     ageTimer = undefined;
     sourceAge.textContent = '';
+    stopPoller();
   }
 
   function beginTransition() {
@@ -140,6 +153,52 @@ export function createSourceController({
     }
   }
 
+  async function goLive() {
+    if (disposed || mode === 'validating' || !fetchSnapshot || !token) return false;
+    const transition = ++generation;
+    beginTransition();
+    mode = 'live_polling';
+    sourceLabel.textContent = 'Live · auto-refresh';
+    sourceNotice.textContent = '';
+    poller = createLivePoller({
+      pollOnce: async () => {
+        const res = await fetchSnapshot();
+        if (!res || !res.ok) throw new Error('LIVE_FETCH_FAILED');
+        return normalizeImportedSnapshot(await res.json(), now());
+      },
+      onResult: (snapshot) => {
+        if (!isCurrent(transition)) return;
+        // Never throw out of the poller: a render error here must route through the
+        // same fatal path as start()/selectFile, not become an unhandled rejection.
+        try {
+          replaceView(snapshot);
+          updateAge(snapshot.observedAt);
+          sourceNotice.textContent = '';
+        } catch (error) {
+          if (isCurrent(transition)) onFatal(error);
+        }
+      },
+      onFailure: () => {
+        if (!isCurrent(transition)) return;
+        sourceNotice.textContent = 'Live update failed; retrying…';
+      },
+      onExhausted: () => {
+        if (!isCurrent(transition)) return;
+        stopPoller();
+        void commitFixtures('rejected_fixtures', true, transition).catch((error) => {
+          if (isCurrent(transition)) onFatal(error);
+        });
+      },
+      intervalMs: LIVE_CONSTANTS.LIVE_POLL_INTERVAL_MS,
+      maxFailures: LIVE_CONSTANTS.LIVE_MAX_CONSECUTIVE_FAILURES,
+      setIntervalFn,
+      clearIntervalFn,
+      visibility,
+    });
+    await poller.start();
+    return true;
+  }
+
   fileInput.addEventListener('change', () => {
     if (mode === 'validating') return;
     const [file] = fileInput.files ?? [];
@@ -152,6 +211,7 @@ export function createSourceController({
     start,
     selectFile,
     reset,
+    goLive,
     setTrack(nextTrack) {
       if (disposed) return;
       track = nextTrack;
