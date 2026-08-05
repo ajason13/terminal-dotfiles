@@ -237,8 +237,13 @@ test('update() re-sort keeps a pinned pit car pinned', () => {
     ],
   });
   const view = renderDashboard(build(t(10)), root, getTrack('ridge-pass'));
+  const idsAt = () => root.querySelector('#pit').children.map((el) => el.dataset.sessionId);
+  assert.deepEqual(idsAt(), ['b', 'a']);              // b newest at mount
+
   findCar(root, 'b').dispatchEvent(keydown('Enter')); // pin b
   view.update(build(t(30)));                          // a jumps ahead of b
+  assert.deepEqual(idsAt(), ['a', 'b']);               // re-sorted AND b's pin survives the move
+
   const pinned = root.querySelector('#pit').children.filter((el) => el.dataset.pinned === 'true');
   assert.equal(pinned.length, 1);
   assert.equal(pinned[0].dataset.sessionId, 'b');
