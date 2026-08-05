@@ -1091,6 +1091,16 @@ textarea {
   transform: translate(.25rem, -50%);
 }
 
+/* Service Bay is the pit lane's leftmost bay, hard against the screen's left
+   edge, so its tooltip must open rightward - the default opens left, which
+   clips off-screen here. (The mobile override below is bumped to `.pit-bay` so
+   it still wins over this higher-specificity selector at the mobile width.) */
+.pit-error .pit-vehicle .session-tooltip {
+  right: auto;
+  left: calc(100% + .55rem);
+  transform: translate(-.25rem, -50%);
+}
+
 .pit-vehicle:hover .session-tooltip,
 .pit-vehicle:focus-within .session-tooltip,
 .pit-vehicle[data-pinned="true"] .session-tooltip {
@@ -1392,15 +1402,17 @@ details[open] > .overflow-toggle::before {
     bottom: 3px;
   }
   .pit-mount { grid-template-columns: repeat(3, 52px); }
-  .pit-vehicle .session-tooltip {
+  /* `.pit-bay` prefix keeps this at/above the specificity of the desktop
+     `.pit-error .pit-vehicle` tooltip rule so mobile still wins here. */
+  .pit-bay .pit-vehicle .session-tooltip {
     right: auto;
     left: 50%;
     top: calc(100% + 9px);
     transform: translate(-50%, -.25rem);
   }
-  .pit-vehicle:hover .session-tooltip,
-  .pit-vehicle:focus-within .session-tooltip,
-  .pit-vehicle[data-pinned="true"] .session-tooltip {
+  .pit-bay .pit-vehicle:hover .session-tooltip,
+  .pit-bay .pit-vehicle:focus-within .session-tooltip,
+  .pit-bay .pit-vehicle[data-pinned="true"] .session-tooltip {
     transform: translate(-50%, 0);
   }
   .route-centerlines path { stroke-width: 6; }

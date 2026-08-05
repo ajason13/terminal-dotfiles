@@ -99,6 +99,24 @@ test('focusing a route car shows its tooltip and does not resize the stage; Esca
   await expect(page.locator('.vehicle-anchor[data-pinned="true"]')).toHaveCount(0);
 });
 
+test('pit tooltips stay within the viewport, including the leftmost bay', async ({ page }) => {
+  test.skip(page.viewportSize().width <= 759, 'desktop side-opening tooltips only');
+  const clipped = await page.evaluate(() => {
+    const vw = document.documentElement.clientWidth;
+    const bad = [];
+    for (const wrapper of document.querySelectorAll('.pit-vehicle')) {
+      wrapper.querySelector('.session-car').focus();
+      const r = wrapper.querySelector('.session-tooltip').getBoundingClientRect();
+      if (r.left < -0.5 || r.right > vw + 0.5) {
+        bad.push({ bay: wrapper.closest('.pit-bay')?.className, left: r.left, right: r.right });
+      }
+      wrapper.querySelector('.session-car').blur();
+    }
+    return bad;
+  });
+  expect(clipped, JSON.stringify(clipped)).toEqual([]);
+});
+
 test('the route-overflow notice keeps z-index 12 and the map heading names the course', async ({ page }) => {
   // auto mode picks the course by wall-clock workday window; select explicitly so this assertion is deterministic
   await page.locator('#track-select').selectOption('ridge-pass');
