@@ -1356,6 +1356,13 @@ details[open] > .overflow-toggle::before {
   .pit-vehicle[data-pinned="true"] .session-tooltip {
     transform: none;
   }
+
+  /* All pit tooltips dock to the same fixed rect above, so once one car is pinned,
+     focusing a different car would show two overlapping tooltips. Only the pinned
+     one may show; a later focus elsewhere is suppressed until the pin is cleared. */
+  .pit-lane:has(.pit-vehicle[data-pinned="true"]) .pit-vehicle:not([data-pinned="true"]) .session-tooltip {
+    visibility: hidden;
+  }
 }
 
 @media (max-width: 420px) {

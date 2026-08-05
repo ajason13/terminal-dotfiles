@@ -96,6 +96,22 @@ test('pit tooltips stay within the viewport', async ({ page }) => {
   expect(clipped, JSON.stringify(clipped)).toEqual([]);
 });
 
+test('mobile pit tooltips never overlap: pinning one suppresses others on focus', async ({ page }) => {
+  test.skip(page.viewportSize().width > 759, 'mobile docked-tooltip project only');
+  const cars = page.locator('#pit .pit-vehicle');
+  const pinned = cars.nth(0).locator('.session-car');
+  const other = cars.nth(1).locator('.session-car');
+
+  await pinned.press('Enter');
+  await expect(cars.nth(0)).toHaveAttribute('data-pinned', 'true');
+  await other.focus();
+
+  const visibleCount = await page.locator('#pit .session-tooltip').evaluateAll((els) => (
+    els.filter((el) => getComputedStyle(el).visibility === 'visible').length
+  ));
+  expect(visibleCount).toBe(1);
+});
+
 test('the route-overflow notice keeps z-index 12 and the map heading names the course', async ({ page }) => {
   // auto mode picks the course by wall-clock workday window; select explicitly so this assertion is deterministic
   await page.locator('#track-select').selectOption('ridge-pass');
