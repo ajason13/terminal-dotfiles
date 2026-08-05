@@ -471,7 +471,7 @@ Unclassified-hold overflow, and a visible distinct dashed `?` region, and that
 the fourth pit-lane bay (`.pit-hold`) becomes visible only for that live
 observation.
 
-Fold/unfold the legend and confirm the bottom readout strip tracks focus:
+Fold/unfold the legend and confirm the car tooltip tracks focus:
 
 ```sh
 playwright-cli -s=dashboard-live click ".legend-disclosure summary"
@@ -483,10 +483,10 @@ playwright-cli -s=dashboard-live click ".legend-disclosure summary"
 
 The seven legend entries must be hidden until the disclosure is opened and
 hidden again once it is closed; opening it must not reflow the rest of the
-bar. Focus a route car and confirm `#session-readout` in the bottom
-`footer.readout-strip` replaces its neutral instruction text with the
-identity/state/activity lines; blur it and confirm the readout returns to the
-neutral instruction line.
+bar. Focus a route car and confirm its `.session-tooltip` becomes visible with
+the identity/state/activity detail, and that `#map-stage` does not change
+height as the detail appears (there is no persistent readout strip to reflow
+the stage); blur it and confirm the tooltip hides.
 
 Keyboard/accessibility checks:
 
@@ -510,8 +510,8 @@ Geometry assertions at 1440x900:
   -> Valley Gate direction while cars remain centered over the roadway;
 - distinct session controls do not overlap at the canonical starting phases;
 - the full-bleed `#map-stage`, the bottom `#pit-lane` bays, the Unclassified
-  hold, tooltips, the corner `#overflow-notice` pill, and the bottom
-  `.readout-strip` all remain inside their intended bounds;
+  hold, tooltips, and the corner `#overflow-notice` pill all remain inside
+  their intended bounds;
 - the Unclassified hold bottom remains inside the viewport;
 - `#pit-lane` sits below `#map-stage` as a row of labeled bays, and the header
   bar's source controls remain secondary to the stage.
@@ -594,7 +594,7 @@ At 390x844 assert:
 - no car controls overlap;
 - route cars advance between samples while remaining centered over the scaled
   roadway and inside the map bounds;
-- `#map-stage` precedes `#pit-lane`, which precedes `.readout-strip`;
+- `#map-stage` precedes `#pit-lane`;
 - long synthetic names and overflow details wrap without clipping;
 - import label and reset button are at least 44px high;
 - the focused hidden file input produces the visible 3px label outline;

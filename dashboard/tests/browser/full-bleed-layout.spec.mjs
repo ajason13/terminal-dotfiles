@@ -81,12 +81,18 @@ test('the pit lane reflows to fill its width when the unknown bay is empty', asy
   expect(rightmostVisibleEdge).toBeGreaterThanOrEqual(laneContentRight - 3);
 });
 
-test('focusing a route car updates the bottom readout strip; Escape clears it', async ({ page }) => {
-  const readout = page.locator('.readout-strip #session-readout');
-  await expect(readout).toContainText('Focus or hover'); // neutral default
-  const button = page.locator('.vehicle-anchor .session-car').first();
+test('focusing a route car shows its tooltip and does not resize the stage; Escape clears the pin', async ({ page }) => {
+  await page.locator('#track-select').selectOption('ridge-pass');
+  const stage = page.locator('#map-stage');
+  const before = (await stage.boundingBox()).height;
+  const wrapper = page.locator('.vehicle-anchor').first();
+  const button = wrapper.locator('.session-car');
   await button.focus();
-  await expect(readout.locator('.readout-identity')).toBeVisible();
+  // The tooltip is the detail affordance (no persistent readout strip).
+  await expect(wrapper.locator('.session-tooltip')).toBeVisible();
+  // Regression: populating car detail must not reflow the stage (the hover-jitter loop).
+  const after = (await stage.boundingBox()).height;
+  expect(Math.abs(after - before)).toBeLessThanOrEqual(0.5);
   await button.press('Enter');            // pin
   await expect(page.locator('.vehicle-anchor[data-pinned="true"]')).toHaveCount(1);
   await page.keyboard.press('Escape');    // clear pin

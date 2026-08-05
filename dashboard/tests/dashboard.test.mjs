@@ -167,7 +167,6 @@ test('duplicate IDs fail while duplicate names receive stable unique codes', () 
 
 test('document removes the status rail and declares the exact ordered pit stack', () => {
   assert.doesNotMatch(INDEX, /status-rail|session-list|Text equivalent|Session status/);
-  assert.doesNotMatch(INDEX, /id="session-readout"[^>]*aria-live/);
   const orderedIds = ['on-track-summary', 'pit-error', 'pit-permission', 'pit-pitstop'];
   let previous = -1;
   for (const id of orderedIds) {
@@ -819,7 +818,7 @@ test('CSS and document preserve 44px targets and map-first responsive behavior',
 
   const rootLayout = STYLES.match(/\.dashboard-root\s*\{([^}]*)\}/s)?.[1] ?? '';
   assert.match(rootLayout, /display:\s*grid/);
-  assert.match(rootLayout, /grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\)\s+auto\s+auto/);
+  assert.match(rootLayout, /grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\)\s+auto\b/);
   const pitLaneRule = STYLES.match(/\.pit-lane\s*\{([^}]*)\}/s)?.[1] ?? '';
   assert.match(pitLaneRule, /display:\s*grid/);
   assert.match(pitLaneRule, /overflow:\s*visible/);
@@ -842,7 +841,6 @@ test('CSS and document preserve 44px targets and map-first responsive behavior',
   assert.ok(INDEX.indexOf('id="map-stage"') < INDEX.indexOf('id="pit-lane"'));
   assert.match(STYLES, /overflow-x:\s*hidden/);
   assert.match(STYLES, /\.pit-mount\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*52px\)/si);
-  assert.match(STYLES, /\.session-readout\s*\{[^}]*overflow-wrap:\s*anywhere/si);
   assert.doesNotMatch(STYLES, /status-rail|session-list|rail-item/);
 });
 

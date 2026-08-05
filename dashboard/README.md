@@ -167,8 +167,7 @@ rmdir "$DASHBOARD_BROWSER_FIXTURES"
 ## Layout
 
 The dashboard is a full-bleed track: a slim header bar, a full-bleed map stage,
-a bottom pit lane of labeled bays, and a persistent bottom readout strip. There
-is no side panel and no clock.
+and a bottom pit lane of labeled bays. There is no side panel and no clock.
 
 The header bar (`header.dashboard-bar`) holds the title, the mode pill, the
 Course selector, the live snapshot summary and on-track state counts, a folded
@@ -194,11 +193,10 @@ row when that bay is empty). Each bay is its own labeled region with a heading
 and its own overflow affordance, replacing the former `aside.pit-stack` side
 column.
 
-`footer.readout-strip` is a persistent single-line readout
-(`#session-readout`) at the very bottom of the viewport. It updates on hover,
-keyboard focus, or pin and returns to a neutral instruction line when nothing
-is focused; it is not a tooltip and does not require the pointer to stay over
-a car.
+Per-session detail (identity, state, location, and exact activity time) is
+shown by each car's own tooltip on hover, keyboard focus, or pin - there is no
+separate persistent readout strip. Keeping the detail anchored to the car
+avoids reflowing the stage as it populates.
 
 Below 760px, the bar wraps to multiple rows, the pit lane reflows to a 2x2
 grid of bays, route targets shrink to a true 44px hit region, and the stage

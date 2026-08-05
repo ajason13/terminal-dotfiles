@@ -2,7 +2,6 @@ import { STATE_PRESENTATION, buildAccessibleText } from './session-contract.mjs'
 import { allocateSessions } from './track-layout.mjs';
 import { getTrack } from './track-catalog.mjs';
 
-const NEUTRAL_READOUT = 'Focus or hover a car for exact activity time. Enter or Space pins; Escape clears.';
 const ROUTE_LAP_SECONDS = 64;
 const ROUTE_PHASE_SECONDS = ROUTE_LAP_SECONDS / 16;
 const PIT_SELECTORS = Object.freeze({
@@ -159,22 +158,6 @@ function makeCar(documentRef, session, placement, text, target) {
   return { wrapper, button };
 }
 
-function renderReadout(documentRef, readout, session, text) {
-  readout.replaceChildren();
-  if (!session || !text) {
-    readout.textContent = NEUTRAL_READOUT;
-    return;
-  }
-  const presentation = STATE_PRESENTATION[session.status];
-  readout.append(
-    element(documentRef, 'strong', 'readout-identity', `${session.mapCode} · ${session.displayName}`),
-    element(documentRef, 'span', 'readout-state', `${presentation.label} · ${text.location}`),
-  );
-  const activity = element(documentRef, 'span', 'readout-activity');
-  appendActivity(documentRef, activity, text.activity);
-  readout.append(activity);
-}
-
 function summaryText(snapshot) {
   const counts = new Map();
   for (const session of snapshot.sessions) {
@@ -232,7 +215,6 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
   const vehicleLayer = requiredMount(root, '#vehicle-layer');
   const tooltipLayer = requiredMount(root, '#tooltip-layer');
   const mapOverflow = requiredMount(root, '#overflow-notice');
-  const readout = requiredMount(root, '#session-readout');
   const onTrackSummary = requiredMount(root, '#on-track-summary');
   const mapStage = requiredMount(root, '#map-stage');
   const mapHeading = requiredMount(root, '#map-heading');
@@ -260,7 +242,6 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
     notice.replaceChildren();
     notice.hidden = true;
   }
-  renderReadout(documentRef, readout);
   renderOnTrackSummary(documentRef, onTrackSummary, snapshot.sessions);
   unknownHold.hidden = !snapshot.sessions.some((session) => session.status === 'unknown');
 
@@ -277,17 +258,6 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
   const overflows = new Map();
 
   let pinnedId = null;
-  let viewedId = null;
-
-  function show(id) {
-    renderReadout(documentRef, readout, sessionsById.get(id), textById.get(id));
-  }
-
-  function restore() {
-    if (pinnedId) show(pinnedId);
-    else if (viewedId) show(viewedId);
-    else renderReadout(documentRef, readout);
-  }
 
   function setPinned(nextId) {
     pinnedId = nextId;
@@ -297,31 +267,12 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
       else delete car.dataset.pinned;
       buttonsById.get(id).setAttribute('aria-pressed', String(selected));
     }
-    if (pinnedId) show(pinnedId);
-    else renderReadout(documentRef, readout);
   }
 
   // Hoisted so both the initial creation loop and update() can wire a freshly
   // created car's listeners without recreating elements that already have them.
   function attachCarInteractions(id) {
-    const car = carsById.get(id);
     const button = buttonsById.get(id);
-    car.addEventListener('pointerenter', () => {
-      viewedId = id;
-      show(id);
-    }, { signal });
-    car.addEventListener('pointerleave', () => {
-      if (viewedId === id) viewedId = null;
-      restore();
-    }, { signal });
-    button.addEventListener('focus', () => {
-      viewedId = id;
-      show(id);
-    }, { signal });
-    button.addEventListener('blur', () => {
-      if (viewedId === id) viewedId = null;
-      restore();
-    }, { signal });
     button.addEventListener('click', (event) => {
       if (event.detail !== 0) setPinned(pinnedId === id ? null : id);
     }, { signal });
@@ -432,7 +383,6 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
       }
       placements = nextPlacements;
       track = candidate;
-      restore();
     },
     update(nextSnapshot) {
       const nextPlacements = allocateSessions(nextSnapshot.sessions, track);
@@ -522,16 +472,13 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
       unknownHold.hidden = !nextSnapshot.sessions.some((session) => session.status === 'unknown');
 
       if (pinnedId && !carsById.has(pinnedId)) pinnedId = null;
-      if (viewedId && !carsById.has(viewedId)) viewedId = null;
       setPinned(pinnedId);
-      restore();
 
       snapshot = nextSnapshot;
       placements = nextPlacements;
     },
     clearInteraction: () => {
       setPinned(null);
-      viewedId = null;
       const active = documentRef.activeElement;
       if (active && root.contains?.(active) && typeof active.blur === 'function') active.blur();
     },
