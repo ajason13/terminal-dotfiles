@@ -27,8 +27,6 @@ import { generateBrowserFixtures } from './generate-browser-fixtures.mjs';
 import {
   PERMISSION_STATES, SESSION_STATUSES, normalizeSnapshot,
 } from '../src/session-contract.mjs';
-import { allocateSessions, UNKNOWN_HOLD_ANCHORS } from '../src/track-layout.mjs';
-
 const SOCKET = '/private/tmp/tmux-501/default';
 const OBSERVED = '2026-07-22T12:00:00.000Z';
 const NOW = Date.parse(OBSERVED);
@@ -1077,34 +1075,6 @@ test('goLive falls back to rejected fixtures after max consecutive failures', as
   assert.equal(controller.mode, 'rejected_fixtures');
   assert.equal(rendered.at(-1).sessions.length, 1);
   controller.destroy();
-});
-
-test('unknown hold has independent 0/1/3/4 capacity and canonical probing', () => {
-  assert.equal(UNKNOWN_HOLD_ANCHORS.length, 3);
-  for (const count of [0, 1, 3, 4]) {
-    const sessions = Array.from({ length: count }, (_, index) => ({
-      ...liveSession({
-        id: `tmux-${index.toString(16).padStart(32, '0')}`,
-        displayName: `Unknown ${index}`,
-        status: 'unknown',
-        confidence: 'none',
-        provenance: 'tmux_command_candidate',
-      }),
-      sourceKind: 'tmux_oneshot',
-      generatedAt: OBSERVED,
-      lastActivityAt: OBSERVED,
-      mapCode: `S${index + 1}`,
-    }));
-    const placements = allocateSessions(sessions);
-    assert.equal(placements.filter((item) => !item.overflow).length, Math.min(3, count));
-    assert.equal(placements.filter((item) => item.overflow).length, Math.max(0, count - 3));
-    assert.equal(placements.every((item) => item.pool === 'unknown'), true);
-    const reversed = allocateSessions([...sessions].reverse());
-    assert.deepEqual(
-      Object.fromEntries(placements.map((item) => [item.id, item.slotIndex])),
-      Object.fromEntries(reversed.map((item) => [item.id, item.slotIndex])),
-    );
-  }
 });
 
 test('browser sources omit unsafe APIs and contain exactly one interval call site', async () => {

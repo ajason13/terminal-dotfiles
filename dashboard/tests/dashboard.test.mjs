@@ -15,10 +15,9 @@ import {
   normalizeSnapshot,
 } from '../src/session-contract.mjs';
 import {
-  PARKED_ANCHORS,
+  PIT_CAPACITY,
   ROUTE_ANCHORS,
   SEGMENTS,
-  ZONES,
   allocateSessions,
   fnv1a32,
   preferredRouteIndex,
@@ -78,11 +77,11 @@ test('exports the exact status, permission, and six visual mappings', () => {
     .map(([key, value]) => [key, [value.label, value.glyph, value.pool]])), {
     active: ['Active', '›', 'route'],
     thinking: ['Thinking', '…', 'route'],
-    waiting_for_permission: ['Waiting for permission', '!', 'permission'],
-    idle: ['Idle', '‖', 'pitstop'],
-    error: ['Error', '×', 'error'],
-    complete: ['Complete', '✓', 'pitstop'],
-    unknown: ['Unknown', '?', 'unknown'],
+    waiting_for_permission: ['Waiting for permission', '!', 'pit'],
+    idle: ['Idle', '‖', 'pit'],
+    error: ['Error', '×', 'pit'],
+    complete: ['Complete', '✓', 'pit'],
+    unknown: ['Unknown', '?', 'pit'],
   });
 });
 
@@ -90,7 +89,7 @@ test('normalizes every state into its required pool and accessible text', () => 
   const statuses = SESSION_STATUSES.filter((status) => status !== 'unknown');
   const data = normalized(statuses.map((status, index) => session(`state-${index}`, status)));
   const placements = allocateSessions(data.sessions);
-  const expectedPools = ['route', 'route', 'permission', 'pitstop', 'error', 'pitstop'];
+  const expectedPools = ['route', 'route', 'pit', 'pit', 'pit', 'pit'];
   placements.forEach((placement, index) => {
     const item = data.sessions[index];
     const text = buildAccessibleText(item, placement, data.generatedAt);
@@ -167,16 +166,16 @@ test('duplicate IDs fail while duplicate names receive stable unique codes', () 
 
 test('document removes the status rail and declares the exact ordered pit stack', () => {
   assert.doesNotMatch(INDEX, /status-rail|session-list|Text equivalent|Session status/);
-  const orderedIds = ['on-track-summary', 'pit-error', 'pit-permission', 'pit-pitstop'];
+  const orderedIds = ['on-track-summary', 'map-stage', 'pit'];
   let previous = -1;
   for (const id of orderedIds) {
     const position = INDEX.indexOf(`id="${id}"`);
     assert.ok(position > previous, `${id} must follow the previous pit`);
     previous = position;
   }
-  assert.match(RENDERER, /placement\.pool === 'route' \? 'route' : placement\.pool/);
+  assert.match(RENDERER, /placement\.pool === 'route' \? 'route' : 'pit'/);
   assert.match(RENDERER, /vehicleLayer\.append\(car\.wrapper\)/);
-  assert.match(RENDERER, /pitMounts\.get\(target\)\.append\(car\.wrapper\)/);
+  assert.match(RENDERER, /pitMount\.append\(entry\.wrapper\)/);
   assert.match(RENDERER, /for \(const status of \['active', 'thinking'\]\)/);
   assert.match(RENDERER, /aria-label', `\$\{count\} \$\{presentation\.label\.toLowerCase\(\)\} sessions on track`/);
   const summarySource = RENDERER.slice(
@@ -184,7 +183,7 @@ test('document removes the status rail and declares the exact ordered pit stack'
     RENDERER.indexOf('const POOL_LABELS'),
   );
   assert.doesNotMatch(summarySource, /makeCar|session-car|createElement\('button'/);
-  assert.doesNotMatch(INDEX, /Summit Overlook|Scenic Turnout|pit-complete|pit-idle/);
+  assert.doesNotMatch(INDEX, /pit-error|pit-permission|pit-pitstop|unknown-hold|pit-complete|pit-idle/);
 });
 
 test('dashboard uses a compact header and preserves document scrolling on desktop', () => {
@@ -254,11 +253,7 @@ test('FNV-1a-32 matches known vectors and the downhill touge has exact capacitie
     'Long Arc', 'Long Arc', 'Long Arc',
     'Valley Gate', 'Valley Gate',
   ]);
-  assert.deepEqual(Object.keys(PARKED_ANCHORS).sort(), ['error', 'permission', 'pitstop']);
-  for (const anchors of Object.values(PARKED_ANCHORS)) assert.equal(anchors.length, 6);
-  assert.deepEqual(Object.values(ZONES), [
-    'Permission Checkpoint', 'Service Bay', 'Pit Stop', 'Unclassified hold',
-  ]);
+  assert.equal(PIT_CAPACITY, 18);
 });
 
 test('document keeps Ridge Pass as one original continuous six-part centerline', () => {
@@ -376,11 +371,11 @@ test('canonical 24-session fixture has exact distribution, unique anchors, and n
   assert.equal(placements.length, 24);
   assert.equal(placements.some((item) => item.overflow), false);
   assert.equal(new Set(placements.map((item) => `${item.pool}:${item.slotIndex}`)).size, 24);
-  assert.deepEqual(Object.fromEntries(['route', 'error', 'permission', 'pitstop'].map((pool) => [
+  assert.deepEqual(Object.fromEntries(['route', 'pit'].map((pool) => [
     pool, placements.filter((item) => item.pool === pool).length,
-  ])), { route: 12, error: 3, permission: 3, pitstop: 6 });
-  const pitStop = placements.filter((item) => item.pool === 'pitstop');
-  assert.equal(new Set(pitStop.map((item) => item.slotIndex)).size, 6);
+  ])), { route: 12, pit: 12 });
+  const pit = placements.filter((item) => item.pool === 'pit');
+  assert.equal(new Set(pit.map((item) => item.slotIndex)).size, 12);
   assert.match(RENDERER, /const car = makeCar\(documentRef, session, placement, text, target\)/);
 });
 
@@ -418,39 +413,50 @@ test('route session 17 overflows without reusing a slot and retains accessible d
   assert.match(text.details, /Last active/);
 });
 
-test('permission and error pool session 7 overflows and keeps full state text', () => {
-  for (const status of ['waiting_for_permission', 'error']) {
-    const data = normalized(poolSet(status, 7, `overflow-${status}`));
-    const placements = allocateSessions(data.sessions);
-    const overflowed = placements.filter((item) => item.overflow);
-    assert.equal(overflowed.length, 1, status);
-    assert.equal(new Set(placements.filter((item) => !item.overflow).map((item) => item.slotIndex)).size, 6);
-    const item = data.sessions.find((candidate) => candidate.id === overflowed[0].id);
-    const text = buildAccessibleText(item, overflowed[0], data.generatedAt);
-    assert.match(text.label, /Map capacity exceeded/);
-    assert.match(text.label, new RegExp(STATE_PRESENTATION[status].label));
-    assert.match(text.details, status === 'complete' ? /Last response/ : /Last active/);
-    if (status === 'error') assert.match(text.details, /Focused test failure/);
-  }
+test('pit orders newest lastActivityAt first regardless of input order', () => {
+  const mk = (id, at) => session(id, 'complete', { lastActivityAt: at });
+  const data = normalized([
+    mk('b', '2026-08-05T10:00:00Z'),
+    mk('a', '2026-08-05T10:05:00Z'),
+    mk('c', '2026-08-05T09:55:00Z'),
+  ]);
+  const order = allocateSessions(data.sessions)
+    .slice().sort((l, r) => l.slotIndex - r.slotIndex).map((p) => p.id);
+  assert.deepEqual(order, ['a', 'b', 'c']); // 10:05, 10:00, 09:55
 });
 
-test('combined idle and complete Pit Stop pool overflows after six canonical-ID allocations', () => {
-  const items = [
-    ...poolSet('idle', 4, 'stopped-idle'),
-    ...poolSet('complete', 3, 'stopped-complete'),
-  ];
+test('pit ties on identical lastActivityAt break by id ascending', () => {
+  const at = '2026-08-05T10:00:00Z';
+  const data = normalized([
+    session('zulu', 'idle', { lastActivityAt: at }),
+    session('alpha', 'error', { lastActivityAt: at, errorSummary: 'x' }),
+    session('mike', 'complete', { lastActivityAt: at }),
+  ]);
+  const order = allocateSessions(data.sessions)
+    .slice().sort((l, r) => l.slotIndex - r.slotIndex).map((p) => p.id);
+  assert.deepEqual(order, ['alpha', 'mike', 'zulu']);
+});
+
+test('pit caps at 18 and overflows the oldest, keeping newest onscreen', () => {
+  const items = Array.from({ length: 20 }, (_, i) => session(
+    `s-${String(i).padStart(2, '0')}`,
+    'complete',
+    // s-00 newest ... s-19 oldest
+    { lastActivityAt: `2026-08-05T10:${String(40 - i).padStart(2, '0')}:00Z` },
+  ));
   const data = normalized(items);
   const placements = allocateSessions(data.sessions);
-  const placed = placements.filter((item) => !item.overflow);
-  const overflowed = placements.filter((item) => item.overflow);
-  assert.equal(placed.length, 6);
-  assert.equal(overflowed.length, 1);
-  assert.equal(new Set(placed.map((item) => item.slotIndex)).size, 6);
-  assert.equal(placements.every((item) => item.pool === 'pitstop'), true);
-  const item = data.sessions.find((candidate) => candidate.id === overflowed[0].id);
+  const overflowed = placements.filter((p) => p.overflow);
+  assert.equal(overflowed.length, 2);
+  // the two OLDEST overflow
+  assert.deepEqual(overflowed.map((p) => p.id).sort(), ['s-18', 's-19']);
+  const shown = placements.filter((p) => !p.overflow);
+  assert.equal(new Set(shown.map((p) => p.slotIndex)).size, 18);
+  const newest = placements.find((p) => p.slotIndex === 0);
+  assert.equal(newest.id, 's-00');
+  const item = data.sessions.find((s) => s.id === overflowed[0].id);
   const text = buildAccessibleText(item, overflowed[0], data.generatedAt);
-  assert.match(text.label, /Map capacity exceeded for Pit Stop/);
-  assert.match(text.details, item.status === 'complete' ? /Last response/ : /Last active/);
+  assert.match(text.label, /Map capacity exceeded for Pit/);
 });
 
 test('long names remain complete in accessible labels', () => {
@@ -840,7 +846,7 @@ test('CSS and document preserve 44px targets and map-first responsive behavior',
   assert.match(mobile, /\.vehicle-anchor \.car-body\s*\{[^}]*width:\s*24px;[^}]*height:\s*36px/si);
   assert.ok(INDEX.indexOf('id="map-stage"') < INDEX.indexOf('id="pit-lane"'));
   assert.match(STYLES, /overflow-x:\s*hidden/);
-  assert.match(STYLES, /\.pit-mount\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*52px\)/si);
+  assert.match(STYLES, /\.pit-mount\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fill,\s*52px\)/si);
   assert.doesNotMatch(STYLES, /status-rail|session-list|rail-item/);
 });
 

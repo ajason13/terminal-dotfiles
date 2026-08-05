@@ -3,30 +3,8 @@ import { getTrack } from './track-catalog.mjs';
 
 const RIDGE_PASS = getTrack('ridge-pass');
 export const SEGMENTS = RIDGE_PASS.segments;
-export const ZONES = Object.freeze({
-  permission: 'Permission Checkpoint',
-  error: 'Service Bay',
-  pitstop: 'Pit Stop',
-  unknown: 'Unclassified hold',
-});
 
-const a = (id, poolLabel, x, y, angle = 0) => Object.freeze({ id, poolLabel, x, y, angle });
 export const ROUTE_ANCHORS = RIDGE_PASS.routeAnchors;
-
-const bays = (prefix, poolLabel, left, right, rows) => Object.freeze(rows.flatMap((y, row) => [
-  a(`${prefix}${row * 2 + 1}`, poolLabel, left, y),
-  a(`${prefix}${row * 2 + 2}`, poolLabel, right, y),
-]));
-export const PARKED_ANCHORS = Object.freeze({
-  error: bays('E', ZONES.error, 812, 937, [90, 152, 214]),
-  permission: bays('P', ZONES.permission, 63, 190, [546, 608, 670]),
-  pitstop: bays('T', ZONES.pitstop, 812, 937, [546, 608, 670]),
-});
-export const UNKNOWN_HOLD_ANCHORS = Object.freeze([
-  a('U1', ZONES.unknown, 0, 0),
-  a('U2', ZONES.unknown, 0, 0),
-  a('U3', ZONES.unknown, 0, 0),
-]);
 
 export function fnv1a32(value) {
   let hash = 0x811c9dc5;
@@ -42,53 +20,66 @@ export function preferredRouteIndex(session) {
     : Math.min(15, Math.floor(session.progress * 16));
 }
 
-const poolOf = (session) => STATE_PRESENTATION[session.status].pool;
-const anchorsOf = (pool, track) => {
-  if (pool === 'route') return track.routeAnchors;
-  if (pool === 'unknown') return UNKNOWN_HOLD_ANCHORS;
-  return PARKED_ANCHORS[pool];
-};
-const labelOf = (pool) => pool === 'route' ? 'Shared Route' : ZONES[pool];
+export const PIT_CAPACITY = 18;
 
-function placement(session, pool, anchor, slotIndex) {
+const poolOf = (session) => STATE_PRESENTATION[session.status].pool;
+
+function routePlacement(session, anchor, slotIndex) {
   return Object.freeze({
-    id: session.id, mapCode: session.mapCode, pool, poolLabel: labelOf(pool),
-    locationLabel: pool === 'route'
-      ? `${anchor.poolLabel}, Route Slot ${slotIndex + 1}`
-      : `${anchor.poolLabel}, Bay ${slotIndex + 1}`,
+    id: session.id, mapCode: session.mapCode, pool: 'route', poolLabel: 'Shared Route',
+    locationLabel: `${anchor.poolLabel}, Route Slot ${slotIndex + 1}`,
     x: anchor.x, y: anchor.y, angle: anchor.angle, slotIndex, overflow: false,
   });
 }
 
-const overflow = (session, pool) => Object.freeze({
-  id: session.id, mapCode: session.mapCode, pool, poolLabel: labelOf(pool),
-  locationLabel: `Map capacity exceeded for ${labelOf(pool)}`,
+function pitPlacement(session, slotIndex) {
+  return Object.freeze({
+    id: session.id, mapCode: session.mapCode, pool: 'pit', poolLabel: 'Pit',
+    locationLabel: `Pit position ${slotIndex + 1}`,
+    x: null, y: null, angle: null, slotIndex, overflow: false,
+  });
+}
+
+const overflowPlacement = (session, pool, poolLabel) => Object.freeze({
+  id: session.id, mapCode: session.mapCode, pool, poolLabel,
+  locationLabel: pool === 'route' ? 'Map capacity exceeded for Shared Route' : 'Pit is at capacity',
   x: null, y: null, angle: null, slotIndex: null, overflow: true,
 });
 
 export function allocateSessions(sessions, track = RIDGE_PASS) {
-  const pools = new Map();
+  const routeMembers = [];
+  const pitMembers = [];
   for (const session of sessions) {
-    const pool = poolOf(session);
-    if (!pools.has(pool)) pools.set(pool, []);
-    pools.get(pool).push(session);
+    (poolOf(session) === 'route' ? routeMembers : pitMembers).push(session);
   }
   const byId = new Map();
-  for (const [pool, members] of pools) {
-    const anchors = anchorsOf(pool, track);
-    const used = new Set();
-    for (const session of [...members].sort((l, r) => l.id.localeCompare(r.id))) {
-      if (used.size === anchors.length) {
-        byId.set(session.id, overflow(session, pool));
-        continue;
-      }
-      let index = pool === 'route'
-        ? preferredRouteIndex(session)
-        : fnv1a32(session.id) % anchors.length;
-      while (used.has(index)) index = (index + 1) % anchors.length;
-      used.add(index);
-      byId.set(session.id, placement(session, pool, anchors[index], index));
+
+  // Route: progress/hash slotting into the track anchors. Order-independent.
+  const routeAnchors = track.routeAnchors;
+  const usedRoute = new Set();
+  for (const session of [...routeMembers].sort((l, r) => l.id.localeCompare(r.id))) {
+    if (usedRoute.size === routeAnchors.length) {
+      byId.set(session.id, overflowPlacement(session, 'route', 'Shared Route'));
+      continue;
     }
+    let index = preferredRouteIndex(session);
+    while (usedRoute.has(index)) index = (index + 1) % routeAnchors.length;
+    usedRoute.add(index);
+    byId.set(session.id, routePlacement(session, routeAnchors[index], index));
   }
+
+  // Pit: one pool, newest-first by lastActivityAt, id tie-break, capacity PIT_CAPACITY.
+  // Sort is order-independent (timestamp desc, then id asc), so input order never
+  // changes the result - preserves the suite's stable-allocation guarantee.
+  const orderedPit = [...pitMembers].sort((l, r) => {
+    const delta = Date.parse(r.lastActivityAt) - Date.parse(l.lastActivityAt);
+    return delta !== 0 ? delta : l.id.localeCompare(r.id);
+  });
+  orderedPit.forEach((session, rank) => {
+    byId.set(session.id, rank < PIT_CAPACITY
+      ? pitPlacement(session, rank)
+      : overflowPlacement(session, 'pit', 'Pit'));
+  });
+
   return Object.freeze(sessions.map((session) => byId.get(session.id)));
 }

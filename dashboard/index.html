@@ -251,27 +251,10 @@
       </main>
 
       <section id="pit-lane" class="pit-lane" aria-label="Pit lane" tabindex="-1">
-        <section class="pit-bay pit-error" aria-labelledby="pit-error-heading">
-          <header><span aria-hidden="true">×</span><h2 id="pit-error-heading">Service Bay</h2></header>
-          <div id="pit-error" class="pit-mount" aria-label="Error sessions"></div>
-          <div id="pit-error-overflow" class="pit-overflow" hidden></div>
-        </section>
-        <section class="pit-bay pit-permission" aria-labelledby="pit-permission-heading">
-          <header><span aria-hidden="true">!</span><h2 id="pit-permission-heading">Permission Checkpoint</h2></header>
-          <div id="pit-permission" class="pit-mount" aria-label="Sessions waiting for permission"></div>
-          <div id="pit-permission-overflow" class="pit-overflow" hidden></div>
-        </section>
-        <section class="pit-bay pit-stop" aria-labelledby="pit-stop-heading">
-          <header><span aria-hidden="true">‖</span><h2 id="pit-stop-heading">Pit Stop</h2></header>
-          <div id="pit-pitstop" class="pit-mount" aria-label="Idle and complete sessions"></div>
-          <div id="pit-pitstop-overflow" class="pit-overflow" hidden></div>
-        </section>
-        <section class="pit-bay pit-hold" aria-labelledby="unknown-hold-heading">
-          <div id="unknown-hold" class="unknown-hold" hidden>
-            <header><span aria-hidden="true">?</span><h2 id="unknown-hold-heading">Unclassified hold</h2></header>
-            <div id="pit-unknown" class="unknown-mount" aria-label="Unclassified sessions"></div>
-            <div id="pit-unknown-overflow" class="pit-overflow" hidden></div>
-          </div>
+        <section class="pit" aria-labelledby="pit-heading">
+          <header><span aria-hidden="true">&#9670;</span><h2 id="pit-heading">Pit</h2></header>
+          <div id="pit" class="pit-mount" aria-label="Parked sessions, newest first"></div>
+          <div id="pit-overflow" class="pit-overflow" hidden></div>
         </section>
       </section>
     </div>

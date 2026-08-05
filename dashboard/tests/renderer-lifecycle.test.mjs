@@ -77,13 +77,13 @@ const overflowingSnapshot = (count) => normalizeSnapshot({
 
 test('overflow renders a calm collapsed parked summary, not the error boilerplate', () => {
   const { root } = dashboardRoot();
-  renderDashboard(overflowingSnapshot(16), root, getTrack('ridge-pass'));
+  renderDashboard(overflowingSnapshot(20), root, getTrack('ridge-pass'));
 
-  const notice = root.querySelector('#pit-pitstop-overflow');
+  const notice = root.querySelector('#pit-overflow');
   assert.equal(notice.hidden, false);
   const toggle = notice.querySelector('.overflow-toggle');
   assert.ok(toggle, 'collapsed summary toggle is present');
-  assert.match(toggle.textContent, /^\d+ parked · over Pit Stop capacity \(\d+ slots?\)$/);
+  assert.match(toggle.textContent, /^\d+ parked · over pit capacity \(\d+ slots?\)$/);
 
   const items = notice.querySelectorAll('.overflow-item');
   const parkedCount = Number(toggle.textContent.match(/^(\d+) parked/)[1]);
@@ -169,11 +169,11 @@ test('update() reflects a status change in place without recreating the element'
 test('update() still renders the overflow notice for the current snapshot', () => {
   const { root } = dashboardRoot();
   const controller = renderDashboard(routeSnapshot([routeSession('alpha')]), root, getTrack('ridge-pass'));
-  assert.equal(root.querySelector('#pit-pitstop-overflow').hidden, true);
+  assert.equal(root.querySelector('#pit-overflow').hidden, true);
 
-  controller.update(overflowingSnapshot(16));
+  controller.update(overflowingSnapshot(20));
 
-  const notice = root.querySelector('#pit-pitstop-overflow');
+  const notice = root.querySelector('#pit-overflow');
   assert.equal(notice.hidden, false);
   assert.ok(notice.querySelector('.overflow-toggle'), 'overflow toggle renders after update()');
   controller.destroy();
