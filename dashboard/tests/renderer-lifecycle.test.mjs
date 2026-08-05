@@ -77,13 +77,13 @@ const overflowingSnapshot = (count) => normalizeSnapshot({
 
 test('overflow renders a calm collapsed parked summary, not the error boilerplate', () => {
   const { root } = dashboardRoot();
-  renderDashboard(overflowingSnapshot(16), root, getTrack('ridge-pass'));
+  renderDashboard(overflowingSnapshot(20), root, getTrack('ridge-pass'));
 
-  const notice = root.querySelector('#pit-pitstop-overflow');
+  const notice = root.querySelector('#pit-overflow');
   assert.equal(notice.hidden, false);
   const toggle = notice.querySelector('.overflow-toggle');
   assert.ok(toggle, 'collapsed summary toggle is present');
-  assert.match(toggle.textContent, /^\d+ parked · over Pit Stop capacity \(\d+ slots?\)$/);
+  assert.match(toggle.textContent, /^\d+ parked · over pit capacity \(\d+ slots?\)$/);
 
   const items = notice.querySelectorAll('.overflow-item');
   const parkedCount = Number(toggle.textContent.match(/^(\d+) parked/)[1]);
@@ -169,11 +169,11 @@ test('update() reflects a status change in place without recreating the element'
 test('update() still renders the overflow notice for the current snapshot', () => {
   const { root } = dashboardRoot();
   const controller = renderDashboard(routeSnapshot([routeSession('alpha')]), root, getTrack('ridge-pass'));
-  assert.equal(root.querySelector('#pit-pitstop-overflow').hidden, true);
+  assert.equal(root.querySelector('#pit-overflow').hidden, true);
 
-  controller.update(overflowingSnapshot(16));
+  controller.update(overflowingSnapshot(20));
 
-  const notice = root.querySelector('#pit-pitstop-overflow');
+  const notice = root.querySelector('#pit-overflow');
   assert.equal(notice.hidden, false);
   assert.ok(notice.querySelector('.overflow-toggle'), 'overflow toggle renders after update()');
   controller.destroy();
@@ -203,6 +203,50 @@ test('update() keeps a pinned car pinned when it persists across the update', ()
   assert.equal(alphaAfter.getAttribute('aria-pressed'), 'true');
   assert.equal(alphaAfter.parentElement.dataset.pinned, 'true');
   controller.destroy();
+});
+
+test('update() re-sorts the pit so a freshly active session moves to the front', () => {
+  const { root } = dashboardRoot();
+  const t = (m) => `2026-08-05T10:${String(m).padStart(2, '0')}:00Z`;
+  const build = (oldAt) => normalizeSnapshot({
+    schemaVersion: 1,
+    generatedAt: '2026-08-05T11:00:00Z',
+    sessions: [
+      { id: 'old', displayName: 'Old', status: 'complete', lastActivityAt: oldAt, permissionState: 'not_required' },
+      { id: 'mid', displayName: 'Mid', status: 'idle', lastActivityAt: t(20), permissionState: 'not_required' },
+      { id: 'run', displayName: 'Run', status: 'complete', lastActivityAt: t(30), permissionState: 'not_required' },
+    ],
+  });
+  const view = renderDashboard(build(t(10)), root, getTrack('ridge-pass'));
+  const idsAt = () => root.querySelector('#pit').children.map((el) => el.dataset.sessionId);
+  assert.deepEqual(idsAt(), ['run', 'mid', 'old']); // newest-first at mount
+
+  view.update(build(t(45))); // 'old' fires a fresh response and jumps to newest
+  assert.deepEqual(idsAt(), ['old', 'run', 'mid']);
+});
+
+test('update() re-sort keeps a pinned pit car pinned', () => {
+  const { root } = dashboardRoot();
+  const t = (m) => `2026-08-05T10:${String(m).padStart(2, '0')}:00Z`;
+  const build = (aAt) => normalizeSnapshot({
+    schemaVersion: 1,
+    generatedAt: '2026-08-05T11:00:00Z',
+    sessions: [
+      { id: 'a', displayName: 'A', status: 'complete', lastActivityAt: aAt, permissionState: 'not_required' },
+      { id: 'b', displayName: 'B', status: 'idle', lastActivityAt: t(20), permissionState: 'not_required' },
+    ],
+  });
+  const view = renderDashboard(build(t(10)), root, getTrack('ridge-pass'));
+  const idsAt = () => root.querySelector('#pit').children.map((el) => el.dataset.sessionId);
+  assert.deepEqual(idsAt(), ['b', 'a']);              // b newest at mount
+
+  findCar(root, 'b').dispatchEvent(keydown('Enter')); // pin b
+  view.update(build(t(30)));                          // a jumps ahead of b
+  assert.deepEqual(idsAt(), ['a', 'b']);               // re-sorted AND b's pin survives the move
+
+  const pinned = root.querySelector('#pit').children.filter((el) => el.dataset.pinned === 'true');
+  assert.equal(pinned.length, 1);
+  assert.equal(pinned[0].dataset.sessionId, 'b');
 });
 
 test('renderer setTrack preserves identity, focus, pin, parked placement, and updates accessibility', () => {

@@ -72,6 +72,10 @@ export class FakeElement extends EventTarget {
   append(...items) {
     for (const item of items) {
       if (item instanceof FakeElement) {
+        if (item.parentElement) {
+          const existing = item.parentElement.children.indexOf(item);
+          if (existing !== -1) item.parentElement.children.splice(existing, 1);
+        }
         item.parentElement = this;
         this.children.push(item);
       } else {
@@ -158,9 +162,7 @@ export function dashboardRoot(documentRef = new FakeDocument()) {
   for (const id of [
     'snapshot-summary', 'vehicle-layer', 'tooltip-layer', 'overflow-notice',
     'on-track-summary', 'map-stage', 'map-heading',
-    'unknown-hold', 'pit-error', 'pit-permission', 'pit-pitstop', 'pit-unknown',
-    'pit-error-overflow', 'pit-permission-overflow', 'pit-pitstop-overflow',
-    'pit-unknown-overflow', 'go-live',
+    'pit', 'pit-overflow', 'go-live',
   ]) {
     const node = documentRef.createElement('div');
     node.id = id;

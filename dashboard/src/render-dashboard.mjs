@@ -4,12 +4,6 @@ import { getTrack } from './track-catalog.mjs';
 
 const ROUTE_LAP_SECONDS = 64;
 const ROUTE_PHASE_SECONDS = ROUTE_LAP_SECONDS / 16;
-const PIT_SELECTORS = Object.freeze({
-  error: '#pit-error',
-  permission: '#pit-permission',
-  pitstop: '#pit-pitstop',
-  unknown: '#pit-unknown',
-});
 
 function element(documentRef, tagName, className, text) {
   const node = documentRef.createElement(tagName);
@@ -123,11 +117,6 @@ function makeCar(documentRef, session, placement, text, target) {
     if (placement.x <= 210) wrapper.classList.add('edge-left');
     if (placement.x >= 790) wrapper.classList.add('edge-right');
   }
-  if (target === 'unknown') {
-    wrapper.style.gridColumn = String(placement.slotIndex + 1);
-    wrapper.style.gridRow = '1';
-  }
-
   const atmosphere = element(documentRef, 'span', 'car-atmosphere', '');
   atmosphere.setAttribute('aria-hidden', 'true');
 
@@ -179,13 +168,7 @@ function renderOnTrackSummary(documentRef, mount, sessions) {
   }
 }
 
-const POOL_LABELS = Object.freeze({
-  route: 'route',
-  error: 'error hold',
-  permission: 'permission hold',
-  pitstop: 'Pit Stop',
-  unknown: 'unclassified hold',
-});
+const POOL_LABELS = Object.freeze({ route: 'route', pit: 'pit' });
 
 // Overflow is expected when live sessions outnumber a pool's slots. Render it as
 // a calm, collapsed "parked" summary (code + name only) rather than repeating the
@@ -215,32 +198,17 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
   const onTrackSummary = requiredMount(root, '#on-track-summary');
   const mapStage = requiredMount(root, '#map-stage');
   const mapHeading = requiredMount(root, '#map-heading');
-  const unknownHold = requiredMount(root, '#unknown-hold');
-  const pitMounts = new Map(Object.entries(PIT_SELECTORS)
-    .map(([pool, selector]) => [pool, requiredMount(root, selector)]));
-  const pitOverflows = new Map([...pitMounts.keys()].map((pool) => [
-    pool,
-    requiredMount(root, `#pit-${pool}-overflow`),
-  ]));
+  const pitMount = requiredMount(root, '#pit');
+  const pitOverflow = requiredMount(root, '#pit-overflow');
 
   vehicleLayer.replaceChildren();
   tooltipLayer.replaceChildren();
   mapOverflow.replaceChildren();
   mapOverflow.hidden = true;
-  for (const mount of pitMounts.values()) mount.replaceChildren();
-  for (let index = 0; index < 3; index += 1) {
-    const anchor = element(documentRef, 'span', 'unknown-anchor', '?');
-    anchor.setAttribute('aria-hidden', 'true');
-    anchor.style.gridColumn = String(index + 1);
-    anchor.style.gridRow = '1';
-    pitMounts.get('unknown').append(anchor);
-  }
-  for (const notice of pitOverflows.values()) {
-    notice.replaceChildren();
-    notice.hidden = true;
-  }
+  pitMount.replaceChildren();
+  pitOverflow.replaceChildren();
+  pitOverflow.hidden = true;
   renderOnTrackSummary(documentRef, onTrackSummary, snapshot.sessions);
-  unknownHold.hidden = !snapshot.sessions.some((session) => session.status === 'unknown');
 
   let track = getTrack(initialTrack.id);
   root.dataset.trackId = track.id;
@@ -312,6 +280,7 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
     replaceTooltip(documentRef, tooltip, session, text);
   }
 
+  const pitEntries = [];
   for (const session of snapshot.sessions) {
     const placement = placementsById.get(session.id);
     const text = buildAccessibleText(session, placement, snapshot.generatedAt);
@@ -321,19 +290,22 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
       overflows.get(placement.pool).push({ code: session.mapCode, name: session.displayName });
       continue;
     }
-    const target = placement.pool === 'route' ? 'route' : placement.pool;
+    const target = placement.pool === 'route' ? 'route' : 'pit';
     const car = makeCar(documentRef, session, placement, text, target);
-    if (target === 'route') vehicleLayer.append(car.wrapper);
-    else pitMounts.get(target).append(car.wrapper);
     carsById.set(session.id, car.wrapper);
     buttonsById.set(session.id, car.button);
     tooltipsById.set(session.id, car.wrapper.querySelector('.session-tooltip'));
     attachCarInteractions(session.id);
+    if (target === 'route') vehicleLayer.append(car.wrapper);
+    else pitEntries.push({ wrapper: car.wrapper, slotIndex: placement.slotIndex });
+  }
+  for (const entry of pitEntries.sort((a, b) => a.slotIndex - b.slotIndex)) {
+    pitMount.append(entry.wrapper);
   }
 
   summary.textContent = summaryText(snapshot);
   for (const [pool, entries] of overflows) {
-    const notice = pool === 'route' ? mapOverflow : pitOverflows.get(pool);
+    const notice = pool === 'route' ? mapOverflow : pitOverflow;
     const capacity = placements.filter((item) => item.pool === pool && !item.overflow).length;
     renderOverflowNotice(documentRef, notice, entries, POOL_LABELS[pool] ?? pool, capacity);
     notice.hidden = false;
@@ -419,7 +391,7 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
           continue;
         }
 
-        const target = placement.pool === 'route' ? 'route' : placement.pool;
+        const target = placement.pool === 'route' ? 'route' : 'pit';
         const existingWrapper = carsById.get(session.id);
 
         if (existingWrapper) {
@@ -435,7 +407,7 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
         } else {
           const car = makeCar(documentRef, session, placement, text, target);
           if (target === 'route') vehicleLayer.append(car.wrapper);
-          else pitMounts.get(target).append(car.wrapper);
+          else pitMount.append(car.wrapper);
           carsById.set(session.id, car.wrapper);
           buttonsById.set(session.id, car.button);
           tooltipsById.set(session.id, car.wrapper.querySelector('.session-tooltip'));
@@ -451,14 +423,27 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
         placementsById.delete(id);
       }
 
+      // Re-append surviving pit cars in recency (slotIndex) order so the newest
+      // stays first across the live refresh. append() MOVES an existing node
+      // without recreating it, so element identity, listeners, and pinned state
+      // survive. Route cars are absolutely positioned, so their order is irrelevant.
+      const pitOrder = [];
+      for (const [id, wrapper] of carsById) {
+        const placement = nextPlacementsById.get(id);
+        if (placement && !placement.overflow && placement.pool === 'pit') {
+          pitOrder.push({ wrapper, slotIndex: placement.slotIndex });
+        }
+      }
+      for (const entry of pitOrder.sort((a, b) => a.slotIndex - b.slotIndex)) {
+        pitMount.append(entry.wrapper);
+      }
+
       mapOverflow.replaceChildren();
       mapOverflow.hidden = true;
-      for (const notice of pitOverflows.values()) {
-        notice.replaceChildren();
-        notice.hidden = true;
-      }
+      pitOverflow.replaceChildren();
+      pitOverflow.hidden = true;
       for (const [pool, entries] of nextOverflows) {
-        const notice = pool === 'route' ? mapOverflow : pitOverflows.get(pool);
+        const notice = pool === 'route' ? mapOverflow : pitOverflow;
         const capacity = nextPlacements.filter((item) => item.pool === pool && !item.overflow).length;
         renderOverflowNotice(documentRef, notice, entries, POOL_LABELS[pool] ?? pool, capacity);
         notice.hidden = false;
@@ -466,7 +451,6 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
 
       summary.textContent = summaryText(nextSnapshot);
       renderOnTrackSummary(documentRef, onTrackSummary, nextSnapshot.sessions);
-      unknownHold.hidden = !nextSnapshot.sessions.some((session) => session.status === 'unknown');
 
       if (pinnedId && !carsById.has(pinnedId)) pinnedId = null;
       setPinned(pinnedId);

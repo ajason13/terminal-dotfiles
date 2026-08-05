@@ -424,12 +424,13 @@ test('fresh synthetic live mode preserves all three course identities and contro
     buffer: Buffer.from(`${JSON.stringify(payload)}\n`),
   });
   await expect(page.locator('#source-label')).toHaveText('Live · one-shot tmux observation');
-  await expect(page.locator('.session-car')).toHaveCount(5);
+  // 1 active (route) + 5 non-active (pit, well under the 18-car pit capacity so none overflow).
+  await expect(page.locator('.session-car')).toHaveCount(6);
   for (const trackId of ['ridge-pass', 'cypress-run', 'lantern-coil']) {
     await page.locator('#track-select').selectOption(trackId);
     await expect(page.locator('#dashboard-root')).toHaveAttribute('data-track-id', trackId);
     await expect(page.locator('#source-label')).toHaveText('Live · one-shot tmux observation');
-    await expect(page.locator('.session-car')).toHaveCount(5);
+    await expect(page.locator('.session-car')).toHaveCount(6);
   }
 });
 

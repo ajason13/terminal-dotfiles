@@ -9,11 +9,11 @@ export const PERMISSION_STATES = Object.freeze([
 export const STATE_PRESENTATION = Object.freeze({
   active: Object.freeze({ label: 'Active', glyph: '›', pool: 'route' }),
   thinking: Object.freeze({ label: 'Thinking', glyph: '…', pool: 'route' }),
-  waiting_for_permission: Object.freeze({ label: 'Waiting for permission', glyph: '!', pool: 'permission' }),
-  idle: Object.freeze({ label: 'Idle', glyph: '‖', pool: 'pitstop' }),
-  error: Object.freeze({ label: 'Error', glyph: '×', pool: 'error' }),
-  complete: Object.freeze({ label: 'Complete', glyph: '✓', pool: 'pitstop' }),
-  unknown: Object.freeze({ label: 'Unknown', glyph: '?', pool: 'unknown' }),
+  waiting_for_permission: Object.freeze({ label: 'Waiting for permission', glyph: '!', pool: 'pit' }),
+  idle: Object.freeze({ label: 'Idle', glyph: '‖', pool: 'pit' }),
+  error: Object.freeze({ label: 'Error', glyph: '×', pool: 'pit' }),
+  complete: Object.freeze({ label: 'Complete', glyph: '✓', pool: 'pit' }),
+  unknown: Object.freeze({ label: 'Unknown', glyph: '?', pool: 'pit' }),
 });
 
 const WAITING_PERMISSIONS = new Set(['requested', 'denied']);
