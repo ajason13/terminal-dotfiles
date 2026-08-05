@@ -205,6 +205,45 @@ test('update() keeps a pinned car pinned when it persists across the update', ()
   controller.destroy();
 });
 
+test('update() re-sorts the pit so a freshly active session moves to the front', () => {
+  const { root } = dashboardRoot();
+  const t = (m) => `2026-08-05T10:${String(m).padStart(2, '0')}:00Z`;
+  const build = (oldAt) => normalizeSnapshot({
+    schemaVersion: 1,
+    generatedAt: '2026-08-05T11:00:00Z',
+    sessions: [
+      { id: 'old', displayName: 'Old', status: 'complete', lastActivityAt: oldAt, permissionState: 'not_required' },
+      { id: 'mid', displayName: 'Mid', status: 'idle', lastActivityAt: t(20), permissionState: 'not_required' },
+      { id: 'run', displayName: 'Run', status: 'complete', lastActivityAt: t(30), permissionState: 'not_required' },
+    ],
+  });
+  const view = renderDashboard(build(t(10)), root, getTrack('ridge-pass'));
+  const idsAt = () => root.querySelector('#pit').children.map((el) => el.dataset.sessionId);
+  assert.deepEqual(idsAt(), ['run', 'mid', 'old']); // newest-first at mount
+
+  view.update(build(t(45))); // 'old' fires a fresh response and jumps to newest
+  assert.deepEqual(idsAt(), ['old', 'run', 'mid']);
+});
+
+test('update() re-sort keeps a pinned pit car pinned', () => {
+  const { root } = dashboardRoot();
+  const t = (m) => `2026-08-05T10:${String(m).padStart(2, '0')}:00Z`;
+  const build = (aAt) => normalizeSnapshot({
+    schemaVersion: 1,
+    generatedAt: '2026-08-05T11:00:00Z',
+    sessions: [
+      { id: 'a', displayName: 'A', status: 'complete', lastActivityAt: aAt, permissionState: 'not_required' },
+      { id: 'b', displayName: 'B', status: 'idle', lastActivityAt: t(20), permissionState: 'not_required' },
+    ],
+  });
+  const view = renderDashboard(build(t(10)), root, getTrack('ridge-pass'));
+  findCar(root, 'b').dispatchEvent(keydown('Enter')); // pin b
+  view.update(build(t(30)));                          // a jumps ahead of b
+  const pinned = root.querySelector('#pit').children.filter((el) => el.dataset.pinned === 'true');
+  assert.equal(pinned.length, 1);
+  assert.equal(pinned[0].dataset.sessionId, 'b');
+});
+
 test('renderer setTrack preserves identity, focus, pin, parked placement, and updates accessibility', () => {
   const { documentRef, root } = dashboardRoot();
   const controller = renderDashboard(snapshot(), root, getTrack('ridge-pass'));

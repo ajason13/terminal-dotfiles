@@ -72,6 +72,10 @@ export class FakeElement extends EventTarget {
   append(...items) {
     for (const item of items) {
       if (item instanceof FakeElement) {
+        if (item.parentElement) {
+          const existing = item.parentElement.children.indexOf(item);
+          if (existing !== -1) item.parentElement.children.splice(existing, 1);
+        }
         item.parentElement = this;
         this.children.push(item);
       } else {

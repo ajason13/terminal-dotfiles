@@ -423,6 +423,21 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
         placementsById.delete(id);
       }
 
+      // Re-append surviving pit cars in recency (slotIndex) order so the newest
+      // stays first across the live refresh. append() MOVES an existing node
+      // without recreating it, so element identity, listeners, and pinned state
+      // survive. Route cars are absolutely positioned, so their order is irrelevant.
+      const pitOrder = [];
+      for (const [id, wrapper] of carsById) {
+        const placement = nextPlacementsById.get(id);
+        if (placement && !placement.overflow && placement.pool === 'pit') {
+          pitOrder.push({ wrapper, slotIndex: placement.slotIndex });
+        }
+      }
+      for (const entry of pitOrder.sort((a, b) => a.slotIndex - b.slotIndex)) {
+        pitMount.append(entry.wrapper);
+      }
+
       mapOverflow.replaceChildren();
       mapOverflow.hidden = true;
       pitOverflow.replaceChildren();
