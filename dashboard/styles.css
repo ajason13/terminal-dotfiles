@@ -78,63 +78,95 @@ textarea {
 }
 
 .dashboard-root {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto; /* bar, stage, pit lane */
   min-height: 100vh;
   min-height: 100dvh;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
 }
 
-.dashboard-header {
-  display: grid;
-  grid-template-columns: minmax(15rem, 1fr) auto;
+.dashboard-bar {
+  display: flex;
   align-items: center;
-  gap: .35rem 1rem;
+  gap: 12px;
+  flex-wrap: nowrap;
   min-width: 0;
-  padding: .45rem clamp(.8rem, 1.5vw, 1.5rem);
+  padding: 6px 14px;
   border-bottom: 1px solid color-mix(in srgb, var(--color-boundary) 48%, transparent);
   background: color-mix(in srgb, var(--color-surface-panel) 94%, transparent);
   box-shadow: 0 10px 30px rgb(0 0 0 / .22);
 }
 
-.dashboard-title-group,
-.dashboard-title-group h1,
-.dashboard-header p,
-.panel-heading h2,
-.panel-heading p,
-.pit-zone h2,
-.pit-zone p {
-  min-width: 0;
+.dashboard-bar h1,
+.brand,
+.mode-pill,
+.on-track-summary {
   margin: 0;
 }
 
-.eyebrow,
-.panel-kicker {
-  color: var(--color-text-muted);
-  font-size: .62rem;
-  font-weight: 800;
-  letter-spacing: .16em;
-  text-transform: uppercase;
+.dashboard-bar h1 {
+  font-size: .95rem;
+  line-height: 1.1;
+  letter-spacing: .01em;
 }
 
-.dashboard-title-group h1 {
-  margin-top: .08rem;
-  font-size: clamp(1.08rem, 1.7vw, 1.4rem);
-  line-height: 1.1;
-  letter-spacing: -.025em;
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: .5rem;
+}
+
+.mode-pill {
+  font-size: .7rem;
+  padding: 1px 8px;
+  border: 1px solid var(--color-boundary);
+  border-radius: 999px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.bar-course {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: .3rem .4rem;
+  min-width: 0;
+}
+
+.bar-course label {
+  color: var(--color-text-primary);
+  font-weight: 700;
+  font-size: .68rem;
+  white-space: nowrap;
+}
+
+.bar-course select {
+  min-height: 44px;
+  padding: .3rem .5rem;
+  border: 1px solid var(--color-boundary);
+  border-radius: .45rem;
+  color: var(--color-text-primary);
+  background: var(--color-surface-raised);
+  font: inherit;
 }
 
 .snapshot-summary {
+  margin: 0;
+  overflow: hidden;
+  min-width: 0;
+  max-width: 22vw;
   color: var(--color-text-muted);
-  font-size: .72rem;
+  font-size: .75rem;
   text-align: right;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .source-controls {
   display: flex;
-  grid-column: 1;
+  margin-left: auto;
   align-items: center;
-  flex-wrap: wrap;
-  gap: .55rem;
+  flex-wrap: nowrap;
+  gap: 8px;
   min-width: 0;
   color: var(--color-text-muted);
   font-size: .68rem;
@@ -188,7 +220,6 @@ textarea {
 
 .state-legend {
   display: flex;
-  grid-column: 2;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: .35rem .7rem;
@@ -197,6 +228,47 @@ textarea {
   list-style: none;
   font-size: .68rem;
   color: var(--color-text-muted);
+}
+
+.legend-disclosure:not([open]) > .state-legend {
+  display: none;
+}
+
+.legend-disclosure {
+  position: relative;
+}
+
+.legend-disclosure > summary {
+  list-style: none;
+  cursor: pointer;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--color-boundary);
+  color: var(--color-text-muted);
+  font-size: .68rem;
+}
+
+.legend-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.legend-disclosure[open] > .state-legend {
+  position: absolute;
+  z-index: 30;
+  top: 26px;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-boundary);
+  justify-content: flex-start;
 }
 
 .state-legend li {
@@ -224,67 +296,11 @@ textarea {
 .legend-complete { color: var(--color-complete-ink); }
 .legend-unknown { color: var(--color-unknown-ink); }
 
-.dashboard-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(13.5rem, 15rem);
-  gap: .8rem;
-  min-width: 0;
-  min-height: 0;
-  padding: .8rem;
-}
-
-.map-panel,
-.pit-zone {
-  min-width: 0;
-  border: 1px solid color-mix(in srgb, var(--color-boundary) 50%, transparent);
-  border-radius: 1rem;
-  background: var(--color-surface-panel);
-  box-shadow: 0 18px 48px rgb(0 0 0 / .28);
-}
-
-.map-panel {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  min-height: 0;
-  overflow: hidden;
-}
-
-.panel-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: .8rem 1rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--color-boundary) 34%, transparent);
-}
-
-.panel-heading h2 {
-  margin-top: .15rem;
-  font-size: 1rem;
-  line-height: 1.2;
-}
-
-.track-controls {
-  display: grid;
-  grid-template-columns: auto minmax(10rem, 1fr);
-  align-items: center;
-  gap: .2rem .45rem;
-  min-width: min(21rem, 32vw);
-  font-size: .68rem;
-  color: var(--color-text-muted);
-}
-
-.track-controls label { color: var(--color-text-primary); font-weight: 700; }
-.track-controls select {
-  min-height: 44px;
-  padding: .45rem .65rem;
-  border: 1px solid var(--color-boundary);
-  border-radius: .5rem;
-  color: var(--color-text-primary);
-  background: var(--color-surface-raised);
-  font: inherit;
-}
-.track-status { grid-column: 1 / -1; line-height: 1.3; }
+/* The active course is already shown by the selector and the #map-heading stage
+   label, so this status line is visually redundant. Hidden, but kept in the DOM:
+   the track-selection controller writes to it and tests read its text; course-change
+   announcements go through the separate #track-live-region aria-live region. */
+.track-status { display: none; }
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -297,47 +313,37 @@ textarea {
   border: 0;
 }
 
-.session-readout {
-  display: grid;
-  gap: .1rem;
-  width: min(30rem, 52vw);
-  min-width: 0;
-  padding: .42rem .6rem;
-  border: 1px solid var(--color-boundary);
-  border-radius: .5rem;
-  color: var(--color-text-muted);
-  background: var(--color-surface-raised);
-  font-size: .68rem;
-  line-height: 1.3;
-  overflow-wrap: anywhere;
-}
-
-.readout-identity,
-.readout-state,
-.readout-activity {
-  display: block;
-}
-
-.readout-identity { color: var(--color-text-primary); }
-.readout-activity { color: var(--color-text-muted); }
 .activity-time { color: var(--color-text-primary); }
 
 .map-stage {
   position: relative;
-  min-width: 0;
-  min-height: 610px;
+  min-height: 0; /* allow the grid row to bound it */
+  width: 100%;
   isolation: isolate;
   overflow: hidden;
   background: var(--color-surface-night);
 }
 
-.route-map,
-.vehicle-layer,
-.tooltip-layer {
+.map-stage .route-map,
+.map-stage .vehicle-layer,
+.map-stage .tooltip-layer {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
+}
+
+.map-heading {
+  position: absolute;
+  z-index: 4;
+  top: 8px;
+  left: 12px;
+  margin: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  opacity: 0.7;
+  pointer-events: none;
 }
 
 .route-map {
@@ -913,12 +919,12 @@ textarea {
 .overflow-notice {
   position: absolute;
   z-index: 12;
-  right: 1rem;
-  bottom: 1rem;
-  max-width: min(24rem, calc(100% - 2rem));
+  top: 8px;
+  right: 12px;
+  max-width: 40%;
   padding: .65rem .8rem;
   border: 1px solid var(--color-boundary);
-  border-radius: .65rem;
+  border-radius: 999px;
   color: var(--color-idle-ink);
   background: var(--color-idle-bg);
   font-size: .75rem;
@@ -926,57 +932,58 @@ textarea {
   box-shadow: 0 10px 24px rgb(0 0 0 / .5);
 }
 
-.pit-stack {
+.pit-lane {
   display: grid;
-  grid-template-rows:
-    repeat(3, minmax(7rem, .75fr))
-    minmax(20rem, 2fr);
-  gap: .55rem;
+  grid-template-columns: 1fr 1fr 1fr 0.8fr;
+  gap: 10px;
+  padding: 8px 14px;
   min-width: 0;
-  min-height: 0;
   overflow: visible;
+  border-top: 2px dashed var(--color-boundary);
 }
 
-.pit-stack:focus-visible {
+/* reflow to three even tracks so the collapsed unknown bay leaves no trailing gap */
+#pit-lane:has(.pit-hold .unknown-hold[hidden]) {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.pit-bay {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--color-boundary);
+  border-radius: 8px;
+  background: var(--color-surface-panel);
+}
+
+.pit-bay > header h2,
+.unknown-hold > header h2 {
+  margin: 0;
+  font-size: .72rem;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.pit-bay > header,
+.unknown-hold > header {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  margin-bottom: .3rem;
+}
+
+.pit-lane:focus-visible {
   outline: 3px solid var(--color-focus);
   outline-offset: 2px;
 }
 
-.pit-zone {
-  --state-ink: var(--color-text-muted);
-  min-width: 0;
-  min-height: 9.2rem;
-  padding: .55rem;
-  overflow: visible;
+/* the unknown bay only earns its border/background when it actually holds sessions */
+.pit-bay:has(> .unknown-hold[hidden]) {
+  display: none;
 }
 
-.pit-zone > header {
-  display: flex;
-  align-items: center;
-  gap: .4rem;
-  margin-bottom: .45rem;
-  color: var(--state-ink);
-}
-
-.pit-zone > header > span {
-  display: grid;
-  width: 1.3rem;
-  height: 1.3rem;
-  flex: 0 0 auto;
-  place-items: center;
-  border: 1px solid currentColor;
-  border-radius: .3rem;
-  font-weight: 900;
-}
-
-.pit-zone h2 {
-  font-size: .72rem;
-  line-height: 1.2;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-}
-
-.zone-on-track { --state-ink: var(--color-active-ink); }
 .pit-error { --state-ink: var(--color-error-ink); }
 .pit-permission { --state-ink: var(--color-waiting-ink); }
 .pit-stop { --state-ink: var(--color-idle-ink); }
@@ -990,28 +997,11 @@ textarea {
   background: color-mix(in srgb, var(--color-unknown-bg) 72%, transparent);
 }
 
-.unknown-hold h3 {
-  margin: 0 0 .45rem;
-  font-size: .68rem;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-}
-
-.unknown-hold h3 span {
-  display: inline-grid;
-  width: 1.25rem;
-  height: 1.25rem;
-  margin-right: .3rem;
-  place-items: center;
-  border: 1px dashed currentColor;
-  border-radius: 50%;
-}
-
 .unknown-mount {
   display: grid;
-  grid-template-columns: repeat(3, 52px);
+  grid-template-columns: repeat(3, 1fr);
   grid-template-rows: 52px;
-  justify-content: center;
+  justify-items: center;
   gap: .45rem .55rem;
 }
 
@@ -1034,20 +1024,17 @@ textarea {
 }
 
 .on-track-summary {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: .55rem;
+  display: flex;
   align-items: center;
-  min-height: 52px;
+  gap: 8px;
 }
 
 .on-track-count {
-  display: grid;
-  grid-template-columns: auto 1fr;
+  display: flex;
   align-items: center;
-  gap: .35rem;
+  gap: .3rem;
   min-width: 0;
-  padding: .48rem .4rem;
+  padding: .2rem .4rem;
   border: 2px solid var(--state-ink);
   border-radius: .55rem;
   color: var(--state-ink);
@@ -1055,16 +1042,17 @@ textarea {
   font-size: .66rem;
   font-weight: 850;
   line-height: 1.15;
+  white-space: nowrap;
 }
 
 .on-track-glyph {
   display: grid;
-  width: 1.4rem;
-  height: 1.4rem;
+  width: 1.1rem;
+  height: 1.1rem;
   place-items: center;
   border: 1px solid currentColor;
   border-radius: .3rem;
-  font-size: .95rem;
+  font-size: .8rem;
 }
 
 .on-track-count.state-active .on-track-glyph {
@@ -1080,9 +1068,9 @@ textarea {
 
 .pit-mount {
   display: grid;
-  grid-template-columns: repeat(3, 52px);
+  grid-template-columns: repeat(3, 1fr);
   grid-auto-rows: 52px;
-  justify-content: center;
+  justify-items: center;
   gap: .45rem .55rem;
   min-height: 52px;
 }
@@ -1103,6 +1091,16 @@ textarea {
   transform: translate(.25rem, -50%);
 }
 
+/* Service Bay is the pit lane's leftmost bay, hard against the screen's left
+   edge, so its tooltip must open rightward - the default opens left, which
+   clips off-screen here. (The mobile override below is bumped to `.pit-bay` so
+   it still wins over this higher-specificity selector at the mobile width.) */
+.pit-error .pit-vehicle .session-tooltip {
+  right: auto;
+  left: calc(100% + .55rem);
+  transform: translate(-.25rem, -50%);
+}
+
 .pit-vehicle:hover .session-tooltip,
 .pit-vehicle:focus-within .session-tooltip,
 .pit-vehicle[data-pinned="true"] .session-tooltip {
@@ -1110,7 +1108,7 @@ textarea {
 }
 
 .pit-overflow {
-  margin-top: .45rem;
+  margin-top: 2px;
   padding: .4rem;
   border: 1px solid var(--color-boundary);
   border-radius: .4rem;
@@ -1125,6 +1123,11 @@ textarea {
   cursor: pointer;
   font-weight: 600;
   list-style: none;
+}
+
+/* fit the shared collapsed-overflow disclosure inside a narrow pit bay */
+.pit-overflow .overflow-toggle {
+  font-size: .68rem;
 }
 
 .overflow-toggle::-webkit-details-marker {
@@ -1251,22 +1254,63 @@ details[open] > .overflow-toggle::before {
 }
 
 @media (max-width: 959px) {
-  .dashboard-header {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
   .state-legend {
-    grid-column: 1 / -1;
     justify-content: flex-start;
   }
 
   .source-controls {
-    grid-column: 1 / -1;
     flex-wrap: wrap;
   }
 }
 
 @media (max-width: 759px) {
+  .map-stage {
+    min-height: 580px;
+  }
+
+  .dashboard-bar {
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    padding: 4px 10px;
+  }
+
+  .snapshot-summary,
+  .on-track-summary {
+    flex-basis: 100%;
+  }
+
+  .bar-course {
+    gap: 0 .4rem;
+  }
+
+  .bar-course select {
+    min-height: 32px;
+    padding: .2rem .4rem;
+  }
+
+  .on-track-summary {
+    min-height: 0;
+    gap: .3rem;
+  }
+
+  .on-track-count {
+    padding: .2rem .3rem;
+    font-size: .6rem;
+  }
+
+  /* re-declare the #pit-lane:has() base selector so its higher specificity does not keep the desktop 3-track override at the mobile width */
+  .pit-lane,
+  #pit-lane:has(.pit-hold .unknown-hold[hidden]) {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 6px 10px;
+  }
+
+  .pit-bay > header,
+  .unknown-hold > header {
+    margin-bottom: .15rem;
+  }
+
   .dashboard-root[data-track-id="cypress-run"] #cypress-run-art {
     transform-box: view-box;
     transform-origin: 500px 380px;
@@ -1282,36 +1326,21 @@ details[open] > .overflow-toggle::before {
     transform: translate(-50%, -50%) scale(1.0638297872340425);
   }
 
-  .dashboard-root {
-    display: block;
-  }
-
-  .dashboard-header {
-    grid-template-columns: minmax(0, 1fr);
-    gap: .35rem .6rem;
-    padding: .5rem .75rem;
-  }
-
   .snapshot-summary {
-    font-size: .66rem;
-    line-height: 1.25;
+    font-size: .62rem;
+    line-height: 1.15;
     text-align: left;
   }
-  .source-controls { align-items: flex-start; }
+  .source-controls {
+    margin-left: 0;
+    align-items: flex-start;
+  }
   .state-legend {
     display: grid;
     grid-template-columns: repeat(4, max-content);
     gap: .25rem .5rem;
   }
 
-  .dashboard-layout {
-    display: flex;
-    flex-direction: column;
-    padding: .55rem;
-  }
-
-  .map-panel { flex: 0 0 auto; }
-  .map-stage { min-height: 580px; height: 580px; }
   .vehicle-anchor,
   .vehicle-anchor .session-car {
     width: 44px;
@@ -1372,31 +1401,18 @@ details[open] > .overflow-toggle::before {
     left: 1px;
     bottom: 3px;
   }
-  .panel-heading {
-    align-items: flex-start;
-    flex-direction: column;
-    padding: .7rem .8rem;
-  }
-  .track-controls { width: 100%; min-width: 0; }
-  .session-readout { width: 100%; }
-
-  .pit-stack {
-    display: grid;
-    grid-template-rows: none;
-    overflow: visible;
-  }
-
-  .pit-zone { min-height: 8.2rem; }
   .pit-mount { grid-template-columns: repeat(3, 52px); }
-  .pit-vehicle .session-tooltip {
+  /* `.pit-bay` prefix keeps this at/above the specificity of the desktop
+     `.pit-error .pit-vehicle` tooltip rule so mobile still wins here. */
+  .pit-bay .pit-vehicle .session-tooltip {
     right: auto;
     left: 50%;
     top: calc(100% + 9px);
     transform: translate(-50%, -.25rem);
   }
-  .pit-vehicle:hover .session-tooltip,
-  .pit-vehicle:focus-within .session-tooltip,
-  .pit-vehicle[data-pinned="true"] .session-tooltip {
+  .pit-bay .pit-vehicle:hover .session-tooltip,
+  .pit-bay .pit-vehicle:focus-within .session-tooltip,
+  .pit-bay .pit-vehicle[data-pinned="true"] .session-tooltip {
     transform: translate(-50%, 0);
   }
   .route-centerlines path { stroke-width: 6; }

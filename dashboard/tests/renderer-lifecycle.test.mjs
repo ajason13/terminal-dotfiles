@@ -202,7 +202,6 @@ test('update() keeps a pinned car pinned when it persists across the update', ()
   assert.ok(Object.is(alphaButton, alphaAfter));
   assert.equal(alphaAfter.getAttribute('aria-pressed'), 'true');
   assert.equal(alphaAfter.parentElement.dataset.pinned, 'true');
-  assert.match(root.querySelector('#session-readout').textContent, /Route alpha/);
   controller.destroy();
 });
 
@@ -232,7 +231,6 @@ test('renderer setTrack preserves identity, focus, pin, parked placement, and up
   assert.equal(routeWrapper.dataset.pinned, 'true');
   assert.notEqual(routeWrapper.style.getPropertyValue('--vehicle-x'), ridgeX);
   assert.match(routeButton.getAttribute('aria-label'), /Launch Line/);
-  assert.match(root.querySelector('#session-readout').textContent, /Launch Line/);
   assert.match(routeWrapper.querySelector('.session-tooltip').textContent, /Launch Line/);
   assert.deepEqual(parkedWrapper.style.values, parkedStyle);
   assert.equal(root.dataset.trackId, 'cypress-run');

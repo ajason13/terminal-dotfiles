@@ -157,7 +157,7 @@ export function dashboardRoot(documentRef = new FakeDocument()) {
   documentRef.body.append(root);
   for (const id of [
     'snapshot-summary', 'vehicle-layer', 'tooltip-layer', 'overflow-notice',
-    'session-readout', 'on-track-summary', 'map-stage', 'map-heading',
+    'on-track-summary', 'map-stage', 'map-heading',
     'unknown-hold', 'pit-error', 'pit-permission', 'pit-pitstop', 'pit-unknown',
     'pit-error-overflow', 'pit-permission-overflow', 'pit-pitstop-overflow',
     'pit-unknown-overflow', 'go-live',
