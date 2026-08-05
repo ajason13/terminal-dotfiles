@@ -158,14 +158,11 @@ function makeCar(documentRef, session, placement, text, target) {
   return { wrapper, button };
 }
 
+// Just the total; the per-status breakdown is redundant with the on-track glyph
+// counts (#on-track-summary), so keep the bar summary to one short chunk.
 function summaryText(snapshot) {
-  const counts = new Map();
-  for (const session of snapshot.sessions) {
-    counts.set(session.status, (counts.get(session.status) ?? 0) + 1);
-  }
-  return `${snapshot.sessions.length} sessions · ${[...counts]
-    .map(([status, count]) => `${count} ${STATE_PRESENTATION[status].label.toLowerCase()}`)
-    .join(' · ')}`;
+  const total = snapshot.sessions.length;
+  return `${total} ${total === 1 ? 'session' : 'sessions'}`;
 }
 
 function renderOnTrackSummary(documentRef, mount, sessions) {

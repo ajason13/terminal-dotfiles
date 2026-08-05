@@ -296,14 +296,11 @@ textarea {
 .legend-complete { color: var(--color-complete-ink); }
 .legend-unknown { color: var(--color-unknown-ink); }
 
-.track-status {
-  overflow: hidden;
-  min-width: 0;
-  max-width: 20vw;
-  line-height: 1.3;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
+/* The active course is already shown by the selector and the #map-heading stage
+   label, so this status line is visually redundant. Hidden, but kept in the DOM:
+   the track-selection controller writes to it and tests read its text; course-change
+   announcements go through the separate #track-live-region aria-live region. */
+.track-status { display: none; }
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -1279,11 +1276,6 @@ details[open] > .overflow-toggle::before {
   .bar-course select {
     min-height: 32px;
     padding: .2rem .4rem;
-  }
-
-  .track-status {
-    font-size: .62rem;
-    line-height: 1.15;
   }
 
   .on-track-summary {
