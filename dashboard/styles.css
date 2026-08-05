@@ -1337,6 +1337,25 @@ details[open] > .overflow-toggle::before {
   .pit-mount { grid-template-columns: repeat(auto-fill, 52px); }
   .route-centerlines path { stroke-width: 6; }
   .segment-labels text { font-size: 13px; }
+
+  /* The pit grid runs edge-to-edge on mobile, so a per-car left-aligned bubble
+     overflows the viewport for every column past the first couple. Dock the
+     tooltip to the viewport instead of the individual car so it can never clip. */
+  .pit-vehicle .session-tooltip {
+    position: fixed;
+    top: 4rem;
+    bottom: auto;
+    left: 1rem;
+    right: 1rem;
+    width: auto;
+    transform: none;
+  }
+
+  .pit-vehicle:hover .session-tooltip,
+  .pit-vehicle:focus-within .session-tooltip,
+  .pit-vehicle[data-pinned="true"] .session-tooltip {
+    transform: none;
+  }
 }
 
 @media (max-width: 420px) {
