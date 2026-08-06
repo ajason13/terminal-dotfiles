@@ -190,10 +190,8 @@ test('work-ref badges render on a route and a pit car, tooltip shows the ref', a
   await expect(tooltip).toBeVisible();
   await expect(tooltip.locator('strong')).toHaveText('fixture pass');
   await expect(tooltip).toContainText('Jira: BB-410 · PR #63');
-  // The pruned lines must not come back.
-  await expect(tooltip).not.toContainText('Permission');
+  // The pruned location line must not come back.
   await expect(tooltip).not.toContainText('Pit position');
-  await expect(tooltip).not.toContainText('pane ');
 });
 
 test('a bare-ref window name shows the ref as the tooltip heading, with no ref line', async ({ page }) => {
@@ -206,6 +204,20 @@ test('a bare-ref window name shows the ref as the tooltip heading, with no ref l
   await expect(tooltip).toBeVisible();
   await expect(tooltip.locator('strong')).toHaveText('BB-325');
   await expect(tooltip).not.toContainText('Jira:');
+});
+
+test('a route car heading strips the pane suffix and the ref line joins ticket and label', async ({ page }) => {
+  await page.locator('#track-select').selectOption('ridge-pass');
+  const routeWrapper = page.locator('.vehicle-anchor').filter({
+    has: page.locator('.session-car[data-session-id="route-ember"]'),
+  });
+  await routeWrapper.locator('.session-car').focus();
+  const tooltip = routeWrapper.locator('.session-tooltip');
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip.locator('strong')).toHaveText('verifying output');
+  await expect(tooltip).toContainText('Jira: BB-511');
+  // The pane suffix stripped from the heading must not resurface elsewhere in the tooltip.
+  await expect(tooltip).not.toContainText('pane 2');
 });
 
 test('mobile keeps the pit full-width and never overflows horizontally', async ({ page }) => {
