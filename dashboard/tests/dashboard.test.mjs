@@ -314,6 +314,70 @@ test('buildAccessibleText work-ref is null when the name has no tokens', () => {
   assert.deepEqual(text.workRef, { ticketKey: null, prNumber: null, label: 'Aoba' });
 });
 
+test('buildAccessibleText omits permission text for every permission state', () => {
+  for (const permissionState of ['requested', 'denied', 'granted', 'unknown', 'not_required']) {
+    const status = permissionState === 'requested' || permissionState === 'denied'
+      ? 'waiting_for_permission'
+      : 'active';
+    const data = normalized([session(`perm-${permissionState}`, status, { permissionState })]);
+    const placement = allocateSessions(data.sessions)[0];
+    const text = buildAccessibleText(data.sessions[0], placement, data.generatedAt);
+    assert.doesNotMatch(text.details, /Permission/i, `${permissionState} leaked permission text`);
+  }
+});
+
+test('buildAccessibleText labels an observed activity "Seen" and shortens sub-minute ages', () => {
+  // `observed` is unreachable through normalizeSnapshot (fixtures are always
+  // last_activity/last_response), so build the live-shaped session directly.
+  const observed = {
+    id: 'live',
+    displayName: 'BB-325 · pane 1',
+    mapCode: 'S01',
+    status: 'active',
+    permissionState: 'unknown',
+    lastActivityAt: '2026-07-19T20:29:52Z',
+    activity: { kind: 'observed', at: '2026-07-19T20:29:52Z' },
+  };
+  const placement = allocateSessions([observed])[0];
+  const text = buildAccessibleText(observed, placement, GENERATED_AT);
+  assert.equal(text.activity.label, 'Seen');
+  assert.equal(text.activity.relative, '8 seconds ago');
+  assert.equal(text.activity.short, 'just now');
+  assert.equal(text.activity.datetime, '2026-07-19T20:29:52Z');
+});
+
+test('activity.short falls back to the precise wording at and beyond one minute', () => {
+  const at = (lastActivityAt) => {
+    const data = normalized([session('short-band', 'active', { lastActivityAt })]);
+    const placement = allocateSessions(data.sessions)[0];
+    return buildAccessibleText(data.sessions[0], placement, data.generatedAt).activity;
+  };
+  assert.equal(at('2026-07-19T20:29:01Z').short, 'just now');
+  assert.equal(at('2026-07-19T20:29:00Z').short, '1 minute ago');
+  assert.equal(at('2026-07-19T20:29:00Z').relative, '1 minute ago');
+});
+
+test('buildAccessibleText exposes overflow as a boolean and keeps the aria-label intact', () => {
+  const data = normalized(poolSet('active', 17, 'ov'));
+  const placements = allocateSessions(data.sessions);
+  const overflowed = placements.find((item) => item.overflow);
+  const placed = placements.find((item) => !item.overflow);
+  const pick = (placement) => data.sessions.find((item) => item.id === placement.id);
+
+  const overflowText = buildAccessibleText(pick(overflowed), overflowed, data.generatedAt);
+  assert.equal(overflowText.overflow, true);
+  assert.match(overflowText.label, /Map capacity exceeded for Shared Route/);
+
+  const placedText = buildAccessibleText(pick(placed), placed, data.generatedAt);
+  assert.equal(placedText.overflow, false);
+  // The aria-label keeps the map code, the full displayName, and the location.
+  const item = pick(placed);
+  assert.equal(
+    placedText.label,
+    `${item.mapCode}, ${item.displayName}, Active, ${placed.locationLabel}`,
+  );
+});
+
 test('FNV-1a-32 matches known vectors and the downhill touge has exact capacities', () => {
   assert.equal(fnv1a32(''), 0x811c9dc5);
   assert.equal(fnv1a32('hello'), 0x4f9f2cab);

@@ -193,29 +193,23 @@ export function parseWorkRef(name) {
   return { ticketKey, prNumber, label };
 }
 
-function permissionText(state) {
-  return {
-    requested: 'Permission requested', denied: 'Permission denied',
-    granted: 'Permission granted', unknown: 'Permission state unknown',
-  }[state];
-}
-
 export function buildAccessibleText(session, placement, generatedAt, timestampOptions = {}) {
   const state = STATE_PRESENTATION[session.status];
   const location = placement.overflow
     ? `Map capacity exceeded for ${placement.poolLabel}`
     : placement.locationLabel;
   const details = [];
-  const permission = permissionText(session.permissionState);
-  if (permission) details.push(permission);
   if (session.phase) details.push(`Phase: ${session.phase}`);
   if (session.progress !== undefined) details.push(`Progress: ${Math.round(session.progress * 100)} percent`);
+  const relative = formatActivityAge(session.lastActivityAt, generatedAt);
   const activity = Object.freeze({
     label: session.activity?.kind === 'observed'
-      ? 'Observed'
+      ? 'Seen'
       : session.status === 'complete' ? 'Last response' : 'Last active',
     exact: formatActivityTimestamp(session.lastActivityAt, timestampOptions),
-    relative: formatActivityAge(session.lastActivityAt, generatedAt),
+    relative,
+    // Tooltip-only wording; `relative` keeps the precise form for the a11y string.
+    short: /^\d+ seconds? ago$/.test(relative) ? 'just now' : relative,
     datetime: session.lastActivityAt,
   });
   details.push(`${activity.label}: ${activity.exact} (${activity.relative})`);
@@ -225,6 +219,7 @@ export function buildAccessibleText(session, placement, generatedAt, timestampOp
     label: `${session.mapCode}, ${session.displayName}, ${state.label}, ${location}`,
     details: details.join('. '),
     location,
+    overflow: placement.overflow === true,
     activity,
     workRef: Object.freeze(workRef),
   });
