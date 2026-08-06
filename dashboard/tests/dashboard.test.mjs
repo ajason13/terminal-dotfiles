@@ -1069,3 +1069,9 @@ test('fixtures cover every badge/tooltip work-ref state', () => {
   const pitRef = s.find((x) => x.id === 'idle-pine');
   assert.ok(parseWorkRef(pitRef.displayName).prNumber !== null, 'a pit-pool fixture carries a ref');
 });
+
+test('README documents the work-ref naming convention and auto-rename requirement', () => {
+  assert.match(README, /automatic-rename off/);
+  assert.match(README, /PR#\d+|PR#42/);
+  assert.match(README, /BB-\d+|[A-Z]{2,}-\d+/);
+});
