@@ -120,9 +120,8 @@ function badgeLabel(workRef) {
   return null;
 }
 
-// Idempotent badge lifecycle for both car types: create on first ref, update
-// text, or remove when the ref is gone. Child of the wrapper (not the rotating
-// car), so it stays upright; aria-hidden since the ref is already in the tooltip.
+// Child of the wrapper (not the rotating car), so it stays upright; aria-hidden
+// since the ref is already in the tooltip.
 function applyBadge(documentRef, wrapper, workRef) {
   const label = badgeLabel(workRef);
   let badge = wrapper.querySelector('.car-badge');
