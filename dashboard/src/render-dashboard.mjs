@@ -76,9 +76,15 @@ function makeTooltip(documentRef, session, presentation, text, tooltipId) {
   tooltip.id = tooltipId;
   tooltip.setAttribute('role', 'tooltip');
   tooltip.append(
-    element(documentRef, 'strong', '', `${session.mapCode} · ${session.displayName}`),
+    element(documentRef, 'strong', '', `${session.mapCode} · ${text.workRef.label}`),
     element(documentRef, 'span', '', `${presentation.label} · ${text.location}`),
   );
+  if (text.workRef.ticketKey) {
+    tooltip.append(element(documentRef, 'span', '', `Jira: ${text.workRef.ticketKey}`));
+  }
+  if (text.workRef.prNumber !== null) {
+    tooltip.append(element(documentRef, 'span', '', `PR #${text.workRef.prNumber}`));
+  }
   const details = element(documentRef, 'span', 'tooltip-details');
   const nonActivity = text.details.split(`. ${text.activity.label}:`)[0];
   if (nonActivity && nonActivity !== text.details) details.append(`${nonActivity}. `);

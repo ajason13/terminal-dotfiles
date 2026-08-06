@@ -75,6 +75,42 @@ const overflowingSnapshot = (count) => normalizeSnapshot({
   })),
 });
 
+test('tooltip shows the stripped bold label and Jira/PR lines for a route car', () => {
+  const { root } = dashboardRoot();
+  renderDashboard(routeSnapshot([
+    routeSession('ref', { displayName: 'BB-228 PR#42 route tooltip' }),
+  ]), root, getTrack('ridge-pass'));
+  const wrapper = findCar(root, 'ref').parentElement;
+  const tooltip = wrapper.querySelector('.session-tooltip');
+  assert.match(tooltip.children[0].textContent, /^S\d+ · route tooltip$/);
+  assert.match(tooltip.textContent, /Jira: BB-228/);
+  assert.match(tooltip.textContent, /PR #42/);
+});
+
+test('tooltip omits ref lines when the name has no tokens', () => {
+  const { root } = dashboardRoot();
+  renderDashboard(routeSnapshot([
+    routeSession('plain', { displayName: 'Aoba' }),
+  ]), root, getTrack('ridge-pass'));
+  const tooltip = findCar(root, 'plain').parentElement.querySelector('.session-tooltip');
+  assert.match(tooltip.children[0].textContent, /^S\d+ · Aoba$/);
+  assert.doesNotMatch(tooltip.textContent, /Jira:|PR #/);
+});
+
+test('replaceTooltip renders new ref lines on a live update()', () => {
+  const { root } = dashboardRoot();
+  const controller = renderDashboard(routeSnapshot([
+    routeSession('ref', { displayName: 'Aoba' }),
+  ]), root, getTrack('ridge-pass'));
+  controller.update(routeSnapshot([
+    routeSession('ref', { displayName: 'BB-305 PR#9 renamed' }),
+  ], '2026-07-26T17:00:05Z'));
+  const tooltip = findCar(root, 'ref').parentElement.querySelector('.session-tooltip');
+  assert.match(tooltip.textContent, /Jira: BB-305/);
+  assert.match(tooltip.textContent, /PR #9/);
+  controller.destroy();
+});
+
 test('overflow renders a calm collapsed parked summary, not the error boilerplate', () => {
   const { root } = dashboardRoot();
   renderDashboard(overflowingSnapshot(20), root, getTrack('ridge-pass'));
