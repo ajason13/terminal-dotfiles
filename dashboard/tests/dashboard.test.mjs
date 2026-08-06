@@ -14,6 +14,7 @@ import {
   formatActivityAge,
   formatActivityTimestamp,
   normalizeSnapshot,
+  parseWorkRef,
 } from '../src/session-contract.mjs';
 import {
   PIT_CAPACITY,
@@ -229,6 +230,49 @@ test('exact timestamps are deterministic under fixed UTC and use state-specific 
   );
   assert.match(completeText.details, /Last response: Jul 19, 2026, 8:29:00 PM UTC \(1 minute ago\)/);
   assert.equal(completeText.activity.datetime, '2026-07-19T20:29:00Z');
+});
+
+test('parseWorkRef extracts a ticket-only name', () => {
+  assert.deepEqual(parseWorkRef('BB-228 route tooltip'), {
+    ticketKey: 'BB-228', prNumber: null, label: 'route tooltip',
+  });
+});
+
+test('parseWorkRef extracts a PR-only name and leaves ticketKey null', () => {
+  assert.deepEqual(parseWorkRef('PR#57 live adapter'), {
+    ticketKey: null, prNumber: 57, label: 'live adapter',
+  });
+});
+
+test('parseWorkRef extracts both a ticket and a PR', () => {
+  assert.deepEqual(parseWorkRef('BB-228 PR#42 route tooltip'), {
+    ticketKey: 'BB-228', prNumber: 42, label: 'route tooltip',
+  });
+});
+
+test('parseWorkRef returns nulls and the full name when neither token is present', () => {
+  assert.deepEqual(parseWorkRef('Aoba'), {
+    ticketKey: null, prNumber: null, label: 'Aoba',
+  });
+});
+
+test('parseWorkRef tolerates PR spacing variants', () => {
+  assert.equal(parseWorkRef('feature PR 42').prNumber, 42);
+  assert.equal(parseWorkRef('feature PR #42').prNumber, 42);
+  assert.equal(parseWorkRef('feature pr42').prNumber, 42);
+  assert.equal(parseWorkRef('feature PR#42').prNumber, 42);
+});
+
+test('parseWorkRef finds tokens mid-name and preserves the pane suffix in label', () => {
+  assert.deepEqual(parseWorkRef('verifying BB-511 output · pane 2'), {
+    ticketKey: 'BB-511', prNumber: null, label: 'verifying output · pane 2',
+  });
+});
+
+test('parseWorkRef falls back to the full name when the name is only tokens', () => {
+  assert.deepEqual(parseWorkRef('BB-228 PR#42'), {
+    ticketKey: 'BB-228', prNumber: 42, label: 'BB-228 PR#42',
+  });
 });
 
 test('FNV-1a-32 matches known vectors and the downhill touge has exact capacities', () => {

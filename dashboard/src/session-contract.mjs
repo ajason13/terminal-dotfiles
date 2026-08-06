@@ -166,6 +166,27 @@ export function formatActivityTimestamp(value, options = {}) {
   }).format(new Date(value));
 }
 
+const TICKET_RE = /[A-Z][A-Z0-9]+-\d+/;
+const PR_RE = /\bPR\s*#?\s*(\d+)/i;
+
+// Parse the Jira key and/or PR number out of a session displayName (the tmux
+// window name). Total: any string in, nulls + a tidied label out. PR and ticket
+// are matched independently; a PR token cannot false-match the ticket regex
+// (that shape needs a `-\d+`), so a bare PR yields ticketKey: null.
+export function parseWorkRef(name) {
+  const source = typeof name === 'string' ? name : '';
+  const ticketMatch = source.match(TICKET_RE);
+  const prMatch = source.match(PR_RE);
+  const ticketKey = ticketMatch ? ticketMatch[0] : null;
+  const prNumber = prMatch ? Number(prMatch[1]) : null;
+  let label = source;
+  if (ticketMatch) label = label.replace(TICKET_RE, ' ');
+  if (prMatch) label = label.replace(PR_RE, ' ');
+  label = label.replace(/\s+/g, ' ').trim();
+  if (label === '') label = source.trim();
+  return { ticketKey, prNumber, label };
+}
+
 function permissionText(state) {
   return {
     requested: 'Permission requested', denied: 'Permission denied',
