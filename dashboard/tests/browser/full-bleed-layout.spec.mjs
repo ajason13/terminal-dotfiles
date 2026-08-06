@@ -115,6 +115,8 @@ test('route tooltips stay within the viewport at any point along the lap', async
     for (const w of anchors) {
       const tooltip = w.querySelector('.session-tooltip');
       w.querySelector('.session-car').focus();
+      // getAnimations() must run synchronously right after focus() to flush style and
+      // register the transform transition; do not reorder this away from the focus call.
       await Promise.all(tooltip.getAnimations().map((a) => a.finished.catch(() => {})));
       const r = tooltip.getBoundingClientRect();
       if (r.left < -0.5 || r.right > vw + 0.5) {
@@ -125,9 +127,9 @@ test('route tooltips stay within the viewport at any point along the lap', async
     return bad;
   }, phaseMs);
 
-  // Quarter-lap phases spread the 16 cars across the whole track, incl. the
-  // left/right extremes where a centered tooltip would otherwise overhang.
-  for (const phase of [0, 16000, 32000, 48000]) {
+  // Phase 0 samples the slot positions (which span the whole lap); the sub-slot
+  // offsets (not multiples of the 4s delay) sample intermediate points, exercising extremes between slots too.
+  for (const phase of [0, 1000, 2000, 3000]) {
     const bad = await sweepAtPhase(phase);
     expect(bad, JSON.stringify(bad)).toEqual([]);
   }
