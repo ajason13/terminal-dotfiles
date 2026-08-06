@@ -65,26 +65,41 @@ function stateClass(status) {
 }
 
 function appendActivity(documentRef, parent, activity) {
-  parent.append(`${activity.label}: `);
-  const time = element(documentRef, 'time', 'activity-time', activity.exact);
+  parent.append(`${activity.label} `);
+  const time = element(documentRef, 'time', 'activity-time', activity.short);
   time.dateTime = activity.datetime;
-  parent.append(time, ` (${activity.relative})`);
+  // The precise timestamp stays reachable on hover without spending a line.
+  time.setAttribute('title', activity.exact);
+  parent.append(time);
+}
+
+function refLine(workRef) {
+  const parts = [];
+  if (workRef.ticketKey) parts.push(`Jira: ${workRef.ticketKey}`);
+  if (workRef.prNumber !== null) parts.push(`PR #${workRef.prNumber}`);
+  return parts.join(' · ');
+}
+
+// `badgeLabel` gives PR-over-ticket precedence; reused so the heading and the
+// on-map badge never disagree about which ref identifies a session.
+function headingText(session, workRef) {
+  return workRef.label || badgeLabel(workRef) || session.displayName;
 }
 
 function makeTooltip(documentRef, session, presentation, text, tooltipId) {
   const tooltip = element(documentRef, 'span', 'session-tooltip');
   tooltip.id = tooltipId;
   tooltip.setAttribute('role', 'tooltip');
+  // Location is map decoration for a placed car; on overflow it is the only
+  // explanation of why the car is not on the map.
+  const status = text.overflow ? `${presentation.label} · ${text.location}` : presentation.label;
   tooltip.append(
-    element(documentRef, 'strong', '', `${session.mapCode} · ${text.workRef.label}`),
-    element(documentRef, 'span', '', `${presentation.label} · ${text.location}`),
+    element(documentRef, 'strong', '', headingText(session, text.workRef)),
+    element(documentRef, 'span', '', status),
   );
-  if (text.workRef.ticketKey) {
-    tooltip.append(element(documentRef, 'span', '', `Jira: ${text.workRef.ticketKey}`));
-  }
-  if (text.workRef.prNumber !== null) {
-    tooltip.append(element(documentRef, 'span', '', `PR #${text.workRef.prNumber}`));
-  }
+  // Skipped when the ref is already the heading, so a token never appears twice.
+  const refs = text.workRef.label ? refLine(text.workRef) : '';
+  if (refs) tooltip.append(element(documentRef, 'span', '', refs));
   const details = element(documentRef, 'span', 'tooltip-details');
   const nonActivity = text.details.split(`. ${text.activity.label}:`)[0];
   if (nonActivity && nonActivity !== text.details) details.append(`${nonActivity}. `);
