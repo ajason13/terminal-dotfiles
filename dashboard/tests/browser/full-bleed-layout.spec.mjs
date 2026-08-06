@@ -188,8 +188,24 @@ test('work-ref badges render on a route and a pit car, tooltip shows the ref', a
   await pitWrapper.locator('.session-car').focus();
   const tooltip = pitWrapper.locator('.session-tooltip');
   await expect(tooltip).toBeVisible();
-  await expect(tooltip).toContainText('Jira: BB-410');
-  await expect(tooltip).toContainText('PR #63');
+  await expect(tooltip.locator('strong')).toHaveText('fixture pass');
+  await expect(tooltip).toContainText('Jira: BB-410 · PR #63');
+  // The pruned lines must not come back.
+  await expect(tooltip).not.toContainText('Permission');
+  await expect(tooltip).not.toContainText('Pit position');
+  await expect(tooltip).not.toContainText('pane ');
+});
+
+test('a bare-ref window name shows the ref as the tooltip heading, with no ref line', async ({ page }) => {
+  await page.locator('#track-select').selectOption('ridge-pass');
+  const wrapper = page.locator('#pit .pit-vehicle').filter({
+    has: page.locator('.session-car[data-session-id="idle-quartz"]'),
+  });
+  await wrapper.locator('.session-car').focus();
+  const tooltip = wrapper.locator('.session-tooltip');
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip.locator('strong')).toHaveText('BB-325');
+  await expect(tooltip).not.toContainText('Jira:');
 });
 
 test('mobile keeps the pit full-width and never overflows horizontally', async ({ page }) => {

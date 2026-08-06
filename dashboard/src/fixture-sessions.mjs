@@ -18,7 +18,7 @@ export const FIXTURE_SNAPSHOT = Object.freeze({
     { id: 'wait-nightjar', displayName: 'Nightjar', status: 'waiting_for_permission', lastActivityAt: '2026-07-19T20:18:20Z', permissionState: 'denied', phase: 'Approval declined' },
     { id: 'wait-orchid', displayName: 'Orchid', status: 'waiting_for_permission', lastActivityAt: '2026-07-19T20:27:06Z', permissionState: 'requested', phase: 'Needs browser access' },
     { id: 'idle-pine', displayName: 'BB-410 PR#63 fixture pass', status: 'idle', lastActivityAt: '2026-07-19T20:02:00Z', permissionState: 'not_required', phase: 'Ready for work' },
-    { id: 'idle-quartz', displayName: 'Quartz', status: 'idle', lastActivityAt: '2026-07-19T19:44:12Z', permissionState: 'unknown' },
+    { id: 'idle-quartz', displayName: 'BB-325', status: 'idle', lastActivityAt: '2026-07-19T19:44:12Z', permissionState: 'unknown' },
     { id: 'idle-rowan', displayName: 'A very long local session name that must wrap without clipping or abbreviation', status: 'idle', lastActivityAt: '2026-07-19T19:20:00Z', permissionState: 'not_required', phase: 'Waiting at the turnout' },
     { id: 'error-sable', displayName: 'Sable', status: 'error', lastActivityAt: '2026-07-19T20:17:54Z', permissionState: 'not_required', errorSummary: 'Type check stopped on an incompatible fixture shape' },
     { id: 'error-thrush', displayName: 'Thrush', status: 'error', lastActivityAt: '2026-07-19T20:12:31Z', permissionState: 'unknown', errorSummary: 'Browser verification could not locate a required landmark' },
