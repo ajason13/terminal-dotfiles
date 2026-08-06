@@ -1058,3 +1058,14 @@ test('pit grid reserves row room so a below-car badge clears the next row', () =
   assert.match(BASE_STYLES, /\.pit-mount \{[^}]*gap:\s*1\.15rem \.55rem;/s);
   assert.match(BASE_STYLES, /\.pit-mount \{[^}]*padding-bottom:\s*16px;/s);
 });
+
+test('fixtures cover every badge/tooltip work-ref state', () => {
+  const refs = FIXTURE_SNAPSHOT.sessions.map((s) => parseWorkRef(s.displayName));
+  assert.ok(refs.some((r) => r.ticketKey && r.prNumber === null), 'a ticket-only fixture');
+  assert.ok(refs.some((r) => r.ticketKey === null && r.prNumber !== null), 'a PR-only fixture');
+  assert.ok(refs.some((r) => r.ticketKey && r.prNumber !== null), 'a ticket+PR fixture');
+  assert.ok(refs.some((r) => r.ticketKey === null && r.prNumber === null), 'a no-ref fixture');
+  const s = FIXTURE_SNAPSHOT.sessions;
+  const pitRef = s.find((x) => x.id === 'idle-pine');
+  assert.ok(parseWorkRef(pitRef.displayName).prNumber !== null, 'a pit-pool fixture carries a ref');
+});
