@@ -214,10 +214,12 @@ export function buildAccessibleText(session, placement, generatedAt, timestampOp
   });
   details.push(`${activity.label}: ${activity.exact} (${activity.relative})`);
   if (session.errorSummary) details.push(`Error: ${session.errorSummary}`);
+  const workRef = parseWorkRef(session.displayName);
   return Object.freeze({
     label: `${session.mapCode}, ${session.displayName}, ${state.label}, ${location}`,
     details: details.join('. '),
     location,
     activity,
+    workRef: Object.freeze(workRef),
   });
 }

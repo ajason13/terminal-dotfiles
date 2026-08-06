@@ -275,6 +275,20 @@ test('parseWorkRef falls back to the full name when the name is only tokens', ()
   });
 });
 
+test('buildAccessibleText exposes the parsed work-ref for the renderer', () => {
+  const data = normalized([session('ref', 'active', { displayName: 'BB-228 PR#42 route tooltip' })]);
+  const placement = allocateSessions(data.sessions)[0];
+  const text = buildAccessibleText(data.sessions[0], placement, data.generatedAt);
+  assert.deepEqual(text.workRef, { ticketKey: 'BB-228', prNumber: 42, label: 'route tooltip' });
+});
+
+test('buildAccessibleText work-ref is null when the name has no tokens', () => {
+  const data = normalized([session('plain', 'active', { displayName: 'Aoba' })]);
+  const placement = allocateSessions(data.sessions)[0];
+  const text = buildAccessibleText(data.sessions[0], placement, data.generatedAt);
+  assert.deepEqual(text.workRef, { ticketKey: null, prNumber: null, label: 'Aoba' });
+});
+
 test('FNV-1a-32 matches known vectors and the downhill touge has exact capacities', () => {
   assert.equal(fnv1a32(''), 0x811c9dc5);
   assert.equal(fnv1a32('hello'), 0x4f9f2cab);
