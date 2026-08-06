@@ -44,18 +44,36 @@ timeouts, stderr, malformed or oversized output, or any validation error. A
 failure writes one closed error code to stderr, exits nonzero, and writes
 nothing to stdout.
 
-## Show a session's Jira ticket / PR
+## Name your tmux windows so the dashboard can read them
 
 The dashboard reads the ticket and PR a session is working on from the tmux
-window name - no git, GitHub, or `gh` involved. Follow one window per ticket/PR
-(ideally one agent pane per window) and name the window with:
+window name - no git, GitHub, or `gh` involved. The window name is also the
+tooltip's heading, so the name is worth choosing deliberately.
+
+Name the window with:
 
 - a Jira key matching `[A-Z][A-Z0-9]+-\d+`, e.g. `BB-228`;
 - a `PR#<n>` token when a PR opens, e.g. `BB-228 PR#42 route tooltip` (the key may
-  be kept or replaced).
+  be kept or replaced);
+- a short phrase saying what you are doing. This is what you actually read in the
+  tooltip, so `BB-228 route tooltip` beats a bare `BB-228`.
 
-The car shows a small badge (`PR#42` if a PR is open, else the ticket key) and its
-tooltip lists `Jira: BB-228` and `PR #42`. Cars with neither token show no badge.
+What each name produces:
+
+| Window name | Tooltip heading | Ref line |
+|---|---|---|
+| `BB-228 PR#42 route tooltip` | `route tooltip` | `Jira: BB-228 · PR #42` |
+| `BB-228 route tooltip` | `route tooltip` | `Jira: BB-228` |
+| `BB-325` | `BB-325` | none - the ref is the heading |
+| `scratch` | `scratch` | none |
+
+The car also wears a small badge (`PR#42` if a PR is open, else the ticket key);
+cars with neither token show no badge.
+
+**Run one agent pane per window.** The tooltip does not show the pane index, so
+two agent panes in the same window produce two identical tooltips. You can still
+tell the cars apart by the code on the car body (`S08`), but the tooltip cannot
+help you.
 
 This needs stable window names. tmux auto-rename overwrites a manual name with the
 running command, so set `set -g automatic-rename off` (or have tooling set the
