@@ -6,7 +6,26 @@
 
 **Architecture:** Render already computes each route car's horizontal viewport fraction as `placement.x / 10`. Expose it as a unitless CSS custom property `--vehicle-vw`; a pure-CSS `--tt-shift` derived from it nudges the centered tooltip only as far as needed to keep both edges inside the stage (`overflow: hidden`, full-bleed = viewport width). The old `edge-left`/`edge-right` class mechanism is deleted. Pit tooltips and vertical `tooltip-up` placement are untouched.
 
-**Tech Stack:** Vanilla ES modules, CSS custom properties + `min()`/`max()`/`clamp()` math, Node's built-in test runner, Playwright (two projects).
+**Tech Stack:** Vanilla ES modules, CSS custom properties, Node's built-in test runner, Playwright (two projects).
+
+> **REVISION (mid-implementation): approach changed to JS measure-on-show.**
+> Reproduction proved route cars traverse the full track via
+> `@keyframes ridge-pass-traverse-desktop` (animated `left`/`top`), so a
+> CSS-static clamp derived from `placement.x` only holds at the
+> reduced-motion/slot position and cannot satisfy "every horizontal position".
+> Tooltips only show on hover/focus/pin, which already pause the animation, so
+> the fix is: an exported pure `computeTooltipShift({carCenter, tooltipWidth,
+> viewportWidth, gutter})` plus a delegated `pointerover`/`focusin` handler on
+> `vehicleLayer` that measures the car's real (paused) `.vehicle-anchor` rect
+> and sets `--tt-shift` in px. Retained from the original plan: deleting the
+> `edge-left`/`edge-right` classes and the CSS
+> `transform: translate(calc(-50% + var(--tt-shift)))` hook (now defaulting
+> `--tt-shift: 0px`). Dropped: the `--vehicle-vw` prop and the CSS-derived
+> `--tt-shift` formula. Tasks 2-3 below are superseded by
+> `.superpowers/sdd/.../task-1-2b-pivot-brief.md`, which carries the exact code;
+> the regression test became an animated phase-sweep (pins each car's animation
+> `currentTime`, no `reducedMotion`) and Task 3's unit coverage is now a direct
+> test of `computeTooltipShift`.
 
 ## Global Constraints
 

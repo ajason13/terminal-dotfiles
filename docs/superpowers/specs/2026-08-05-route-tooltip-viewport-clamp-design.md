@@ -5,6 +5,23 @@ route/track bug: an on-track car's tooltip, centered above/below the car, can
 extend past the left or right viewport edge and get cut off by the stage's
 `overflow: hidden`.
 
+> **REVISION (2026-08-05, mid-implementation):** the original mechanism below
+> (a CSS-static clamp derived from `--vehicle-vw = placement.x/10`) was found
+> insufficient during reproduction. Route cars TRAVERSE the full track via
+> `@keyframes ridge-pass-traverse-desktop` (route-motion.css), which animates
+> the `.vehicle-anchor`'s `left`/`top` over a 64s lap - so `placement.x` is only
+> the reduced-motion/animation-start position, not where the car is mid-lap. A
+> static CSS value cannot track a moving car, so it cannot satisfy the DoD
+> "every horizontal position". **Approach changed to JS measure-on-show
+> (originally option c):** tooltips only appear on hover/focus/pin, which
+> already PAUSE the animation, so on show a delegated JS handler reads the car's
+> real (frozen) rect and sets `--tt-shift` in px via the pure function
+> `computeTooltipShift(...)`. The CSS `translate(calc(-50% + var(--tt-shift)))`
+> hook and the deletion of the `edge-left`/`edge-right` classes are retained;
+> the CSS-derived `--tt-shift` formula and the `--vehicle-vw` prop are dropped.
+> The sections below are kept for history; the JS design is authoritative in the
+> implementation plan.
+
 ## Decisions you need from me
 
 All four settled during brainstorming; listed for the record, none open:
