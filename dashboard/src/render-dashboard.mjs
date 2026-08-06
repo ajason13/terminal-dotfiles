@@ -114,6 +114,30 @@ export function computeTooltipShift({ carCenter, tooltipWidth, viewportWidth, gu
   return Math.max(leftPush, Math.min(0, rightPush));
 }
 
+function badgeLabel(workRef) {
+  if (workRef.prNumber !== null) return `PR#${workRef.prNumber}`;
+  if (workRef.ticketKey) return workRef.ticketKey;
+  return null;
+}
+
+// Idempotent badge lifecycle for both car types: create on first ref, update
+// text, or remove when the ref is gone. Child of the wrapper (not the rotating
+// car), so it stays upright; aria-hidden since the ref is already in the tooltip.
+function applyBadge(documentRef, wrapper, workRef) {
+  const label = badgeLabel(workRef);
+  let badge = wrapper.querySelector('.car-badge');
+  if (!label) {
+    if (badge) badge.remove();
+    return;
+  }
+  if (!badge) {
+    badge = element(documentRef, 'span', 'car-badge');
+    badge.setAttribute('aria-hidden', 'true');
+    wrapper.append(badge);
+  }
+  badge.textContent = label;
+}
+
 function makeCar(documentRef, session, placement, text, target) {
   const presentation = STATE_PRESENTATION[session.status];
   const wrapper = element(
@@ -156,6 +180,7 @@ function makeCar(documentRef, session, placement, text, target) {
     button,
     makeTooltip(documentRef, session, presentation, text, tooltipId),
   );
+  applyBadge(documentRef, wrapper, text.workRef);
   return { wrapper, button };
 }
 
@@ -319,6 +344,7 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
     swapStateClass(wrapper, session.status);
     button.setAttribute('aria-label', text.label);
     replaceTooltip(documentRef, tooltip, session, text);
+    applyBadge(documentRef, wrapper, text.workRef);
   }
 
   const pitEntries = [];
@@ -444,6 +470,7 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
             button.setAttribute('aria-label', text.label);
             replaceTooltip(documentRef, tooltip, session, text);
             swapStateClass(existingWrapper, session.status);
+            applyBadge(documentRef, existingWrapper, text.workRef);
           }
         } else {
           const car = makeCar(documentRef, session, placement, text, target);
