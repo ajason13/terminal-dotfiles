@@ -168,22 +168,28 @@ export function formatActivityTimestamp(value, options = {}) {
 
 const TICKET_RE = /[A-Z][A-Z0-9]+-\d+/;
 const PR_RE = /\bPR\s*#?\s*(\d+)/i;
+// The ` · pane <N>` suffix sanitizeDisplayName appends; stripped so the tooltip
+// heading is the window name the operator actually chose.
+const PANE_SUFFIX_RE = /\s*·\s*pane\s+\d+\s*$/i;
 
 // Parse the Jira key and/or PR number out of a session displayName (the tmux
-// window name). Total: any string in, nulls + a tidied label out. PR and ticket
-// are matched independently; a PR token cannot false-match the ticket regex
-// (that shape needs a `-\d+`), so a bare PR yields ticketKey: null.
+// window name). Strips both tokens and the ` · pane <N>` suffix; `label` is '' when
+// nothing survives, and callers fall back to the ref.
 export function parseWorkRef(name) {
   const source = typeof name === 'string' ? name : '';
   const ticketMatch = source.match(TICKET_RE);
   const prMatch = source.match(PR_RE);
   const ticketKey = ticketMatch ? ticketMatch[0] : null;
   const prNumber = prMatch ? Number(prMatch[1]) : null;
-  let label = source;
+  let label = source.replace(PANE_SUFFIX_RE, '');
   if (ticketMatch) label = label.replace(TICKET_RE, ' ');
   if (prMatch) label = label.replace(PR_RE, ' ');
-  label = label.replace(/\s+/g, ' ').trim();
-  if (label === '') label = source.trim();
+  // Token removal orphans separators (`BB-325` alone reduces to `·`). An empty
+  // label is a valid result - the renderer falls back to the ref itself.
+  label = label
+    .replace(/\s+/g, ' ')
+    .replace(/(?:·\s*)+/g, '· ')
+    .replace(/^[\s·]+|[\s·]+$/g, '');
   return { ticketKey, prNumber, label };
 }
 

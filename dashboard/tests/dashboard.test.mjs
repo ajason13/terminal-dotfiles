@@ -263,16 +263,41 @@ test('parseWorkRef tolerates PR spacing variants', () => {
   assert.equal(parseWorkRef('feature PR#42').prNumber, 42);
 });
 
-test('parseWorkRef finds tokens mid-name and preserves the pane suffix in label', () => {
+test('parseWorkRef strips the pane suffix from the label', () => {
   assert.deepEqual(parseWorkRef('verifying BB-511 output · pane 2'), {
-    ticketKey: 'BB-511', prNumber: null, label: 'verifying output · pane 2',
+    ticketKey: 'BB-511', prNumber: null, label: 'verifying output',
   });
 });
 
-test('parseWorkRef falls back to the full name when the name is only tokens', () => {
+test('parseWorkRef yields an empty label when the name is only tokens', () => {
   assert.deepEqual(parseWorkRef('BB-228 PR#42'), {
-    ticketKey: 'BB-228', prNumber: 42, label: 'BB-228 PR#42',
+    ticketKey: 'BB-228', prNumber: 42, label: '',
   });
+});
+
+test('parseWorkRef yields an empty label for a bare ref with a pane suffix', () => {
+  assert.deepEqual(parseWorkRef('BB-325 · pane 1'), {
+    ticketKey: 'BB-325', prNumber: null, label: '',
+  });
+});
+
+test('parseWorkRef strips the pane suffix from a name with no tokens', () => {
+  assert.deepEqual(parseWorkRef('Synthetic active · pane 1'), {
+    ticketKey: null, prNumber: null, label: 'Synthetic active',
+  });
+});
+
+test('parseWorkRef keeps the no-separator "Pane <N>" fallback name intact', () => {
+  // sanitizeDisplayName emits `Pane 3` (no separator) for an empty window name.
+  assert.deepEqual(parseWorkRef('Pane 3'), {
+    ticketKey: null, prNumber: null, label: 'Pane 3',
+  });
+});
+
+test('parseWorkRef drops separators orphaned by token removal', () => {
+  assert.equal(parseWorkRef('BB-228 · route tooltip').label, 'route tooltip');
+  assert.equal(parseWorkRef('route tooltip · BB-228').label, 'route tooltip');
+  assert.equal(parseWorkRef('left · BB-228 · right').label, 'left · right');
 });
 
 test('buildAccessibleText exposes the parsed work-ref for the renderer', () => {
