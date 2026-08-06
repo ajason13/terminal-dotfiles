@@ -19,9 +19,21 @@ local function file_exists(path)
   return false
 end
 
+-- dofile, unlike require, does not add the loaded file to the config reload
+-- watch list, so edits to a module silently no-op until something touches the
+-- entry point. Register every file we load so automatically_reload_config sees it.
+local function load_watched(path)
+  wezterm.add_to_config_reload_watch_list(path)
+  return dofile(path)
+end
+
+-- This file is itself reached by a dofile from the entry point, so it needs the
+-- same treatment as the modules it loads.
+wezterm.add_to_config_reload_watch_list(config_dir .. '/wezterm.lua')
+
 local local_config_path = config_dir .. '/local.lua'
 if file_exists(local_config_path) then
-  local local_config = dofile(local_config_path)
+  local local_config = load_watched(local_config_path)
   if type(local_config) == 'table' then
     env.local_config = local_config
   elseif type(local_config) == 'function' then
@@ -31,11 +43,11 @@ if file_exists(local_config_path) then
   end
 end
 
-dofile(modules_dir .. '/links.lua').apply(config, wezterm, env)
-dofile(modules_dir .. '/general.lua').apply(config, wezterm, env)
-dofile(modules_dir .. '/appearance.lua').apply(config, wezterm, env)
-dofile(modules_dir .. '/backgrounds.lua').apply(config, wezterm, env)
-dofile(modules_dir .. '/macos.lua').apply(config, wezterm, env)
+load_watched(modules_dir .. '/links.lua').apply(config, wezterm, env)
+load_watched(modules_dir .. '/general.lua').apply(config, wezterm, env)
+load_watched(modules_dir .. '/appearance.lua').apply(config, wezterm, env)
+load_watched(modules_dir .. '/backgrounds.lua').apply(config, wezterm, env)
+load_watched(modules_dir .. '/macos.lua').apply(config, wezterm, env)
 
 if env.local_config and type(env.local_config.apply) == 'function' then
   env.local_config.apply(config, wezterm, env)
