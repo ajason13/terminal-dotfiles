@@ -369,13 +369,27 @@ function M.apply(config, wezterm)
     return false
   end)
 
-  config.mouse_bindings = {
-    {
+  -- Cmd+click opens the link under the cursor. A binding is matched only in the
+  -- mouse-reporting state it declares, and mouse_reporting defaults to false, so
+  -- both states have to be bound: tmux runs with `mouse on`, which keeps mouse
+  -- tracking enabled for the whole session, and WezTerm hands mouse events
+  -- straight to the application in that state. Nop the Down event so the click
+  -- is swallowed here instead of also landing in the app under the cursor.
+  config.mouse_bindings = {}
+  for _, reporting in ipairs({ false, true }) do
+    table.insert(config.mouse_bindings, {
       event = { Up = { streak = 1, button = 'Left' } },
       mods = 'CMD',
+      mouse_reporting = reporting,
       action = wezterm.action.OpenLinkAtMouseCursor,
-    },
-  }
+    })
+    table.insert(config.mouse_bindings, {
+      event = { Down = { streak = 1, button = 'Left' } },
+      mods = 'CMD',
+      mouse_reporting = reporting,
+      action = wezterm.action.Nop,
+    })
+  end
 
   config.keys = {
     {
