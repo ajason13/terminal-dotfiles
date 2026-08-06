@@ -219,7 +219,6 @@ export function buildAccessibleText(session, placement, generatedAt, timestampOp
     label: `${session.mapCode}, ${session.displayName}, ${state.label}, ${location}`,
     details: details.join('. '),
     location,
-    overflow: placement.overflow === true,
     activity,
     workRef: Object.freeze(workRef),
   });

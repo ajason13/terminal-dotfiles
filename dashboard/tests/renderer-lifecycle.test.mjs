@@ -155,9 +155,6 @@ test('replaceTooltip renders the new heading and ref line on a live update()', (
 test('a placed car in an overflowing pit shows the status alone, with no location suffix', () => {
   const { root } = dashboardRoot();
   const controller = renderDashboard(overflowingSnapshot(20), root, getTrack('ridge-pass'));
-  // Overflowed sessions never get a car (render-dashboard.mjs skips them into the
-  // notice list instead), so `text.overflow` can't be exercised through this
-  // integration path - the every() below documents that gap rather than hiding it.
   const tooltips = root.querySelectorAll('.session-tooltip')
     .map((tooltip) => tooltip.children[1].textContent);
   assert.ok(tooltips.length > 0, 'the pit is not empty');

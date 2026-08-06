@@ -90,12 +90,9 @@ function makeTooltip(documentRef, session, presentation, text, tooltipId) {
   const tooltip = element(documentRef, 'span', 'session-tooltip');
   tooltip.id = tooltipId;
   tooltip.setAttribute('role', 'tooltip');
-  // Location is map decoration for a placed car; on overflow it is the only
-  // explanation of why the car is not on the map.
-  const status = text.overflow ? `${presentation.label} · ${text.location}` : presentation.label;
   tooltip.append(
     element(documentRef, 'strong', '', headingText(session, text.workRef)),
-    element(documentRef, 'span', '', status),
+    element(documentRef, 'span', '', presentation.label),
   );
   // Skipped when the ref is already the heading, so a token never appears twice.
   const refs = text.workRef.label ? refLine(text.workRef) : '';

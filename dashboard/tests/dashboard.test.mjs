@@ -357,7 +357,7 @@ test('activity.short falls back to the precise wording at and beyond one minute'
   assert.equal(at('2026-07-19T20:29:00Z').relative, '1 minute ago');
 });
 
-test('buildAccessibleText exposes overflow as a boolean and keeps the aria-label intact', () => {
+test('buildAccessibleText keeps the aria-label intact for both overflowed and placed sessions', () => {
   const data = normalized(poolSet('active', 17, 'ov'));
   const placements = allocateSessions(data.sessions);
   const overflowed = placements.find((item) => item.overflow);
@@ -365,11 +365,9 @@ test('buildAccessibleText exposes overflow as a boolean and keeps the aria-label
   const pick = (placement) => data.sessions.find((item) => item.id === placement.id);
 
   const overflowText = buildAccessibleText(pick(overflowed), overflowed, data.generatedAt);
-  assert.equal(overflowText.overflow, true);
   assert.match(overflowText.label, /Map capacity exceeded for Shared Route/);
 
   const placedText = buildAccessibleText(pick(placed), placed, data.generatedAt);
-  assert.equal(placedText.overflow, false);
   // The aria-label keeps the map code, the full displayName, and the location.
   const item = pick(placed);
   assert.equal(
