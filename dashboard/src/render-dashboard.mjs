@@ -122,7 +122,6 @@ function makeCar(documentRef, session, placement, text, target) {
     wrapper.style.setProperty('--vehicle-y', `${placement.y / 7.6}%`);
     wrapper.style.setProperty('--route-phase', `${-placement.slotIndex * ROUTE_PHASE_SECONDS}s`);
     wrapper.dataset.routeSlot = String(placement.slotIndex);
-    if (placement.y >= 560) wrapper.classList.add('tooltip-up');
   }
   const atmosphere = element(documentRef, 'span', 'car-atmosphere', '');
   atmosphere.setAttribute('aria-hidden', 'true');
@@ -219,17 +218,28 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
 
   // Route cars drive around the track (animated left/top); the tooltip only
   // shows on hover/focus/pin, which pauses the car, so measure the frozen
-  // position on show and shift the tooltip to keep it on-screen at any width.
+  // position on show and keep the tooltip on-screen on both axes. A static
+  // slot-derived position/direction goes stale once the car animates away.
   function clampRouteTooltip(wrapper) {
     const tooltip = wrapper.querySelector('.session-tooltip');
     if (!tooltip) return;
     const rect = wrapper.getBoundingClientRect();
-    const shift = computeTooltipShift({
+    tooltip.style.setProperty('--tt-shift', `${computeTooltipShift({
       carCenter: rect.left + rect.width / 2,
       tooltipWidth: tooltip.offsetWidth,
       viewportWidth: documentRef.documentElement.clientWidth,
-    });
-    tooltip.style.setProperty('--tt-shift', `${shift}px`);
+    })}px`);
+    // Open downward by default; flip up only when there is not room below within
+    // the stage (its overflow-hidden box is the vertical clip context).
+    const stage = mapStage.getBoundingClientRect();
+    const needed = tooltip.offsetHeight + 9;
+    const roomBelow = stage.bottom - rect.bottom;
+    const roomAbove = rect.top - stage.top;
+    let openUp;
+    if (roomBelow >= needed) openUp = false;
+    else if (roomAbove >= needed) openUp = true;
+    else openUp = roomAbove > roomBelow;
+    wrapper.classList.toggle('tooltip-up', openUp);
   }
   const clampFromEvent = (event) => {
     const wrapper = event.target.closest?.('.vehicle-anchor');
@@ -300,7 +310,6 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
     wrapper.style.setProperty('--vehicle-y', `${placement.y / 7.6}%`);
     wrapper.style.setProperty('--route-phase', `${-placement.slotIndex * ROUTE_PHASE_SECONDS}s`);
     wrapper.dataset.routeSlot = String(placement.slotIndex);
-    wrapper.classList.toggle('tooltip-up', placement.y >= 560);
     swapStateClass(wrapper, session.status);
     button.setAttribute('aria-label', text.label);
     replaceTooltip(documentRef, tooltip, session, text);
