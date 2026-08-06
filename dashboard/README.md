@@ -44,6 +44,23 @@ timeouts, stderr, malformed or oversized output, or any validation error. A
 failure writes one closed error code to stderr, exits nonzero, and writes
 nothing to stdout.
 
+## Show a session's Jira ticket / PR
+
+The dashboard reads the ticket and PR a session is working on from the tmux
+window name - no git, GitHub, or `gh` involved. Follow one window per ticket/PR
+(ideally one agent pane per window) and name the window with:
+
+- a Jira key matching `[A-Z][A-Z0-9]+-\d+`, e.g. `BB-228`;
+- a `PR#<n>` token when a PR opens, e.g. `BB-228 PR#42 route tooltip` (the key may
+  be kept or replaced).
+
+The car shows a small badge (`PR#42` if a PR is open, else the ticket key) and its
+tooltip lists `Jira: BB-228` and `PR #42`. Cars with neither token show no badge.
+
+This needs stable window names. tmux auto-rename overwrites a manual name with the
+running command, so set `set -g automatic-rename off` (or have tooling set the
+names); otherwise the ref disappears when the command changes.
+
 ## Live auto-refresh (opt-in)
 
 `node serve-live.mjs` starts a server bound to 127.0.0.1 that serves the

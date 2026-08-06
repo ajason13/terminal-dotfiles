@@ -14,6 +14,7 @@ import {
   formatActivityAge,
   formatActivityTimestamp,
   normalizeSnapshot,
+  parseWorkRef,
 } from '../src/session-contract.mjs';
 import {
   PIT_CAPACITY,
@@ -229,6 +230,63 @@ test('exact timestamps are deterministic under fixed UTC and use state-specific 
   );
   assert.match(completeText.details, /Last response: Jul 19, 2026, 8:29:00 PM UTC \(1 minute ago\)/);
   assert.equal(completeText.activity.datetime, '2026-07-19T20:29:00Z');
+});
+
+test('parseWorkRef extracts a ticket-only name', () => {
+  assert.deepEqual(parseWorkRef('BB-228 route tooltip'), {
+    ticketKey: 'BB-228', prNumber: null, label: 'route tooltip',
+  });
+});
+
+test('parseWorkRef extracts a PR-only name and leaves ticketKey null', () => {
+  assert.deepEqual(parseWorkRef('PR#57 live adapter'), {
+    ticketKey: null, prNumber: 57, label: 'live adapter',
+  });
+});
+
+test('parseWorkRef extracts both a ticket and a PR', () => {
+  assert.deepEqual(parseWorkRef('BB-228 PR#42 route tooltip'), {
+    ticketKey: 'BB-228', prNumber: 42, label: 'route tooltip',
+  });
+});
+
+test('parseWorkRef returns nulls and the full name when neither token is present', () => {
+  assert.deepEqual(parseWorkRef('Aoba'), {
+    ticketKey: null, prNumber: null, label: 'Aoba',
+  });
+});
+
+test('parseWorkRef tolerates PR spacing variants', () => {
+  assert.equal(parseWorkRef('feature PR 42').prNumber, 42);
+  assert.equal(parseWorkRef('feature PR #42').prNumber, 42);
+  assert.equal(parseWorkRef('feature pr42').prNumber, 42);
+  assert.equal(parseWorkRef('feature PR#42').prNumber, 42);
+});
+
+test('parseWorkRef finds tokens mid-name and preserves the pane suffix in label', () => {
+  assert.deepEqual(parseWorkRef('verifying BB-511 output · pane 2'), {
+    ticketKey: 'BB-511', prNumber: null, label: 'verifying output · pane 2',
+  });
+});
+
+test('parseWorkRef falls back to the full name when the name is only tokens', () => {
+  assert.deepEqual(parseWorkRef('BB-228 PR#42'), {
+    ticketKey: 'BB-228', prNumber: 42, label: 'BB-228 PR#42',
+  });
+});
+
+test('buildAccessibleText exposes the parsed work-ref for the renderer', () => {
+  const data = normalized([session('ref', 'active', { displayName: 'BB-228 PR#42 route tooltip' })]);
+  const placement = allocateSessions(data.sessions)[0];
+  const text = buildAccessibleText(data.sessions[0], placement, data.generatedAt);
+  assert.deepEqual(text.workRef, { ticketKey: 'BB-228', prNumber: 42, label: 'route tooltip' });
+});
+
+test('buildAccessibleText work-ref is null when the name has no tokens', () => {
+  const data = normalized([session('plain', 'active', { displayName: 'Aoba' })]);
+  const placement = allocateSessions(data.sessions)[0];
+  const text = buildAccessibleText(data.sessions[0], placement, data.generatedAt);
+  assert.deepEqual(text.workRef, { ticketKey: null, prNumber: null, label: 'Aoba' });
 });
 
 test('FNV-1a-32 matches known vectors and the downhill touge has exact capacities', () => {
@@ -980,4 +1038,40 @@ test('session-tooltip CSS defaults --tt-shift to 0 and has no edge-class remnant
   assert.doesNotMatch(RENDERER, /--vehicle-vw/);
   assert.doesNotMatch(RENDERER, /edge-left|edge-right/);
   assert.match(RENDERER, /export function computeTooltipShift/);
+});
+
+test('car-badge is a small, muted, upright, non-interactive pill below the car', () => {
+  assert.match(BASE_STYLES, /\.car-badge \{[^}]*position:\s*absolute;[^}]*pointer-events:\s*none;/s);
+  assert.match(BASE_STYLES, /\.car-badge \{[^}]*top:\s*calc\(100% - 3px\);/s);
+  assert.match(BASE_STYLES, /\.car-badge \{[^}]*transform:\s*translateX\(-50%\);/s);
+  // below the tooltip's z-index: 20 so an open tooltip stacks over it
+  const z = BASE_STYLES.match(/\.car-badge \{[^}]*z-index:\s*(\d+);/s);
+  assert.ok(z && Number(z[1]) < 20, 'badge sits below the tooltip z-index');
+});
+
+test('car-badge fades out while its tooltip is open, for both car types', () => {
+  assert.match(BASE_STYLES, /\.vehicle-anchor:hover \.car-badge[\s\S]*?opacity:\s*0/s);
+  assert.match(BASE_STYLES, /\.pit-vehicle\[data-pinned="true"\] \.car-badge[\s\S]*?opacity:\s*0/s);
+});
+
+test('pit grid reserves row room so a below-car badge clears the next row', () => {
+  assert.match(BASE_STYLES, /\.pit-mount \{[^}]*gap:\s*1\.15rem \.55rem;/s);
+  assert.match(BASE_STYLES, /\.pit-mount \{[^}]*padding-bottom:\s*16px;/s);
+});
+
+test('fixtures cover every badge/tooltip work-ref state', () => {
+  const refs = FIXTURE_SNAPSHOT.sessions.map((s) => parseWorkRef(s.displayName));
+  assert.ok(refs.some((r) => r.ticketKey && r.prNumber === null), 'a ticket-only fixture');
+  assert.ok(refs.some((r) => r.ticketKey === null && r.prNumber !== null), 'a PR-only fixture');
+  assert.ok(refs.some((r) => r.ticketKey && r.prNumber !== null), 'a ticket+PR fixture');
+  assert.ok(refs.some((r) => r.ticketKey === null && r.prNumber === null), 'a no-ref fixture');
+  const s = FIXTURE_SNAPSHOT.sessions;
+  const pitRef = s.find((x) => x.id === 'idle-pine');
+  assert.ok(parseWorkRef(pitRef.displayName).prNumber !== null, 'a pit-pool fixture carries a ref');
+});
+
+test('README documents the work-ref naming convention and auto-rename requirement', () => {
+  assert.match(README, /automatic-rename off/);
+  assert.match(README, /PR#\d+|PR#42/);
+  assert.match(README, /BB-\d+|[A-Z]{2,}-\d+/);
 });

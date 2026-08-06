@@ -170,6 +170,28 @@ test('the route-overflow notice keeps z-index 12 and the map heading names the c
   expect(z).toBe('12');
 });
 
+test('work-ref badges render on a route and a pit car, tooltip shows the ref', async ({ page }) => {
+  await page.locator('#track-select').selectOption('ridge-pass');
+
+  const routeWrapper = page.locator('.vehicle-anchor').filter({
+    has: page.locator('.session-car[data-session-id="route-bracken"]'),
+  });
+  await expect(routeWrapper.locator('.car-badge')).toHaveText('PR#42');
+  await expect(routeWrapper.locator('.car-badge')).toHaveAttribute('aria-hidden', 'true');
+
+  const pitWrapper = page.locator('#pit .pit-vehicle').filter({
+    has: page.locator('.session-car[data-session-id="idle-pine"]'),
+  });
+  await expect(pitWrapper.locator('.car-badge')).toHaveText('PR#63');
+
+  // Focus the pit car (stationary; no animation to freeze) and read its tooltip.
+  await pitWrapper.locator('.session-car').focus();
+  const tooltip = pitWrapper.locator('.session-tooltip');
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toContainText('Jira: BB-410');
+  await expect(tooltip).toContainText('PR #63');
+});
+
 test('mobile keeps the pit full-width and never overflows horizontally', async ({ page }) => {
   test.skip(page.viewportSize().width > 759, 'mobile project only');
   const overflow = await page.evaluate(() => (

@@ -63,6 +63,16 @@ function findCar(root, id) {
   return root.querySelectorAll('.session-car').find((button) => button.dataset.sessionId === id);
 }
 
+const pitSession = (id, status, overrides = {}) => ({
+  id,
+  displayName: `Pit ${id}`,
+  status,
+  lastActivityAt: '2026-07-26T16:59:00Z',
+  permissionState: status === 'waiting_for_permission' ? 'requested' : 'not_required',
+  ...(status === 'error' ? { errorSummary: 'x' } : {}),
+  ...overrides,
+});
+
 const overflowingSnapshot = (count) => normalizeSnapshot({
   schemaVersion: 1,
   generatedAt: '2026-07-26T17:00:00Z',
@@ -73,6 +83,100 @@ const overflowingSnapshot = (count) => normalizeSnapshot({
     lastActivityAt: '2026-07-26T16:59:00Z',
     permissionState: 'not_required',
   })),
+});
+
+test('tooltip shows the stripped bold label and Jira/PR lines for a route car', () => {
+  const { root } = dashboardRoot();
+  renderDashboard(routeSnapshot([
+    routeSession('ref', { displayName: 'BB-228 PR#42 route tooltip' }),
+  ]), root, getTrack('ridge-pass'));
+  const wrapper = findCar(root, 'ref').parentElement;
+  const tooltip = wrapper.querySelector('.session-tooltip');
+  assert.match(tooltip.children[0].textContent, /^S\d+ · route tooltip$/);
+  assert.match(tooltip.textContent, /Jira: BB-228/);
+  assert.match(tooltip.textContent, /PR #42/);
+});
+
+test('tooltip omits ref lines when the name has no tokens', () => {
+  const { root } = dashboardRoot();
+  renderDashboard(routeSnapshot([
+    routeSession('plain', { displayName: 'Aoba' }),
+  ]), root, getTrack('ridge-pass'));
+  const tooltip = findCar(root, 'plain').parentElement.querySelector('.session-tooltip');
+  assert.match(tooltip.children[0].textContent, /^S\d+ · Aoba$/);
+  assert.doesNotMatch(tooltip.textContent, /Jira:|PR #/);
+});
+
+test('replaceTooltip renders new ref lines on a live update()', () => {
+  const { root } = dashboardRoot();
+  const controller = renderDashboard(routeSnapshot([
+    routeSession('ref', { displayName: 'Aoba' }),
+  ]), root, getTrack('ridge-pass'));
+  controller.update(routeSnapshot([
+    routeSession('ref', { displayName: 'BB-305 PR#9 renamed' }),
+  ], '2026-07-26T17:00:05Z'));
+  const tooltip = findCar(root, 'ref').parentElement.querySelector('.session-tooltip');
+  assert.match(tooltip.textContent, /Jira: BB-305/);
+  assert.match(tooltip.textContent, /PR #9/);
+  controller.destroy();
+});
+
+test('a route car with a PR shows a PR#-precedence badge, aria-hidden', () => {
+  const { root } = dashboardRoot();
+  renderDashboard(routeSnapshot([
+    routeSession('ref', { displayName: 'BB-228 PR#42 route tooltip' }),
+  ]), root, getTrack('ridge-pass'));
+  const wrapper = findCar(root, 'ref').parentElement;
+  const badge = wrapper.querySelector('.car-badge');
+  assert.ok(badge, 'badge exists');
+  assert.equal(badge.textContent, 'PR#42');
+  assert.equal(badge.getAttribute('aria-hidden'), 'true');
+});
+
+test('a route car with only a ticket shows the ticket badge', () => {
+  const { root } = dashboardRoot();
+  renderDashboard(routeSnapshot([
+    routeSession('t', { displayName: 'BB-305 combined pit' }),
+  ]), root, getTrack('ridge-pass'));
+  const badge = findCar(root, 't').parentElement.querySelector('.car-badge');
+  assert.equal(badge.textContent, 'BB-305');
+});
+
+test('a car with no ref has no badge element', () => {
+  const { root } = dashboardRoot();
+  renderDashboard(routeSnapshot([
+    routeSession('plain', { displayName: 'Aoba' }),
+  ]), root, getTrack('ridge-pass'));
+  assert.equal(findCar(root, 'plain').parentElement.querySelector('.car-badge'), null);
+});
+
+test('a pit car also gets a badge on its .pit-vehicle wrapper', () => {
+  const { root } = dashboardRoot();
+  renderDashboard(routeSnapshot([
+    pitSession('parked', 'idle', { displayName: 'BB-410 PR#63 fixture pass' }),
+  ]), root, getTrack('ridge-pass'));
+  const wrapper = findCar(root, 'parked').parentElement;
+  assert.ok(wrapper.classList.contains('pit-vehicle'), 'session parked in the pit');
+  assert.equal(wrapper.querySelector('.car-badge').textContent, 'PR#63');
+});
+
+test('update() adds a badge when a ref appears and removes it when it disappears', () => {
+  const { root } = dashboardRoot();
+  const controller = renderDashboard(routeSnapshot([
+    routeSession('ref', { displayName: 'Aoba' }),
+  ]), root, getTrack('ridge-pass'));
+  assert.equal(findCar(root, 'ref').parentElement.querySelector('.car-badge'), null);
+
+  controller.update(routeSnapshot([
+    routeSession('ref', { displayName: 'BB-9 PR#1 named now' }),
+  ], '2026-07-26T17:00:05Z'));
+  assert.equal(findCar(root, 'ref').parentElement.querySelector('.car-badge').textContent, 'PR#1');
+
+  controller.update(routeSnapshot([
+    routeSession('ref', { displayName: 'name gone' }),
+  ], '2026-07-26T17:00:10Z'));
+  assert.equal(findCar(root, 'ref').parentElement.querySelector('.car-badge'), null);
+  controller.destroy();
 });
 
 test('overflow renders a calm collapsed parked summary, not the error boilerplate', () => {

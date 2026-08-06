@@ -76,9 +76,15 @@ function makeTooltip(documentRef, session, presentation, text, tooltipId) {
   tooltip.id = tooltipId;
   tooltip.setAttribute('role', 'tooltip');
   tooltip.append(
-    element(documentRef, 'strong', '', `${session.mapCode} · ${session.displayName}`),
+    element(documentRef, 'strong', '', `${session.mapCode} · ${text.workRef.label}`),
     element(documentRef, 'span', '', `${presentation.label} · ${text.location}`),
   );
+  if (text.workRef.ticketKey) {
+    tooltip.append(element(documentRef, 'span', '', `Jira: ${text.workRef.ticketKey}`));
+  }
+  if (text.workRef.prNumber !== null) {
+    tooltip.append(element(documentRef, 'span', '', `PR #${text.workRef.prNumber}`));
+  }
   const details = element(documentRef, 'span', 'tooltip-details');
   const nonActivity = text.details.split(`. ${text.activity.label}:`)[0];
   if (nonActivity && nonActivity !== text.details) details.append(`${nonActivity}. `);
@@ -106,6 +112,29 @@ export function computeTooltipShift({ carCenter, tooltipWidth, viewportWidth, gu
   const leftPush = gutter - (carCenter - half);
   const rightPush = (viewportWidth - gutter) - (carCenter + half);
   return Math.max(leftPush, Math.min(0, rightPush));
+}
+
+function badgeLabel(workRef) {
+  if (workRef.prNumber !== null) return `PR#${workRef.prNumber}`;
+  if (workRef.ticketKey) return workRef.ticketKey;
+  return null;
+}
+
+// Child of the wrapper (not the rotating car), so it stays upright; aria-hidden
+// since the ref is already in the tooltip.
+function applyBadge(documentRef, wrapper, workRef) {
+  const label = badgeLabel(workRef);
+  let badge = wrapper.querySelector('.car-badge');
+  if (!label) {
+    if (badge) badge.remove();
+    return;
+  }
+  if (!badge) {
+    badge = element(documentRef, 'span', 'car-badge');
+    badge.setAttribute('aria-hidden', 'true');
+    wrapper.append(badge);
+  }
+  badge.textContent = label;
 }
 
 function makeCar(documentRef, session, placement, text, target) {
@@ -150,6 +179,7 @@ function makeCar(documentRef, session, placement, text, target) {
     button,
     makeTooltip(documentRef, session, presentation, text, tooltipId),
   );
+  applyBadge(documentRef, wrapper, text.workRef);
   return { wrapper, button };
 }
 
@@ -313,6 +343,7 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
     swapStateClass(wrapper, session.status);
     button.setAttribute('aria-label', text.label);
     replaceTooltip(documentRef, tooltip, session, text);
+    applyBadge(documentRef, wrapper, text.workRef);
   }
 
   const pitEntries = [];
@@ -438,6 +469,7 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
             button.setAttribute('aria-label', text.label);
             replaceTooltip(documentRef, tooltip, session, text);
             swapStateClass(existingWrapper, session.status);
+            applyBadge(documentRef, existingWrapper, text.workRef);
           }
         } else {
           const car = makeCar(documentRef, session, placement, text, target);
