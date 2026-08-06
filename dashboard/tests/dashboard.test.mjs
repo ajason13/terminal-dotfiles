@@ -1039,3 +1039,22 @@ test('session-tooltip CSS defaults --tt-shift to 0 and has no edge-class remnant
   assert.doesNotMatch(RENDERER, /edge-left|edge-right/);
   assert.match(RENDERER, /export function computeTooltipShift/);
 });
+
+test('car-badge is a small, muted, upright, non-interactive pill below the car', () => {
+  assert.match(BASE_STYLES, /\.car-badge \{[^}]*position:\s*absolute;[^}]*pointer-events:\s*none;/s);
+  assert.match(BASE_STYLES, /\.car-badge \{[^}]*top:\s*calc\(100% - 3px\);/s);
+  assert.match(BASE_STYLES, /\.car-badge \{[^}]*transform:\s*translateX\(-50%\);/s);
+  // below the tooltip's z-index: 20 so an open tooltip stacks over it
+  const z = BASE_STYLES.match(/\.car-badge \{[^}]*z-index:\s*(\d+);/s);
+  assert.ok(z && Number(z[1]) < 20, 'badge sits below the tooltip z-index');
+});
+
+test('car-badge fades out while its tooltip is open, for both car types', () => {
+  assert.match(BASE_STYLES, /\.vehicle-anchor:hover \.car-badge[\s\S]*?opacity:\s*0/s);
+  assert.match(BASE_STYLES, /\.pit-vehicle\[data-pinned="true"\] \.car-badge[\s\S]*?opacity:\s*0/s);
+});
+
+test('pit grid reserves row room so a below-car badge clears the next row', () => {
+  assert.match(BASE_STYLES, /\.pit-mount \{[^}]*gap:\s*1\.15rem \.55rem;/s);
+  assert.match(BASE_STYLES, /\.pit-mount \{[^}]*padding-bottom:\s*16px;/s);
+});

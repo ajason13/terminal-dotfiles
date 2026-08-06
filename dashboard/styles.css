@@ -748,6 +748,38 @@ textarea {
   ));
 }
 
+.car-badge {
+  position: absolute;
+  z-index: 4;
+  top: calc(100% - 3px);
+  left: 50%;
+  max-width: 66px;
+  padding: 1px 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  color: var(--color-text-muted);
+  background: color-mix(in srgb, var(--color-surface-raised) 82%, transparent);
+  font-size: .5rem;
+  font-weight: 800;
+  letter-spacing: -.01em;
+  line-height: 1.35;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 2px var(--color-surface-night);
+  transform: translateX(-50%);
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.vehicle-anchor:hover .car-badge,
+.vehicle-anchor:focus-within .car-badge,
+.vehicle-anchor[data-pinned="true"] .car-badge,
+.pit-vehicle:hover .car-badge,
+.pit-vehicle:focus-within .car-badge,
+.pit-vehicle[data-pinned="true"] .car-badge {
+  opacity: 0;
+}
+
 .state-active { --state-bg: var(--color-active-bg); --state-ink: var(--color-active-ink); }
 .state-thinking { --state-bg: var(--color-thinking-bg); --state-ink: var(--color-thinking-ink); }
 .state-waiting-for-permission { --state-bg: var(--color-waiting-bg); --state-ink: var(--color-waiting-ink); }
@@ -1007,7 +1039,8 @@ textarea {
   grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
   grid-auto-rows: 52px;
   justify-items: center;
-  gap: .45rem .55rem;
+  gap: 1.15rem .55rem;
+  padding-bottom: 16px;
   min-height: 52px;
 }
 
