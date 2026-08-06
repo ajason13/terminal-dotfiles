@@ -99,6 +99,15 @@ function replaceTooltip(documentRef, tooltip, session, text) {
   tooltip.replaceChildren(...replacement.childNodes);
 }
 
+// Horizontal px shift that keeps a car's centered tooltip inside the viewport:
+// push right if it would overhang the left edge, pull left if the right, else 0.
+export function computeTooltipShift({ carCenter, tooltipWidth, viewportWidth, gutter = 8 }) {
+  const half = tooltipWidth / 2;
+  const leftPush = gutter - (carCenter - half);
+  const rightPush = (viewportWidth - gutter) - (carCenter + half);
+  return Math.max(leftPush, Math.min(0, rightPush));
+}
+
 function makeCar(documentRef, session, placement, text, target) {
   const presentation = STATE_PRESENTATION[session.status];
   const wrapper = element(
@@ -113,9 +122,6 @@ function makeCar(documentRef, session, placement, text, target) {
     wrapper.style.setProperty('--vehicle-y', `${placement.y / 7.6}%`);
     wrapper.style.setProperty('--route-phase', `${-placement.slotIndex * ROUTE_PHASE_SECONDS}s`);
     wrapper.dataset.routeSlot = String(placement.slotIndex);
-    if (placement.y >= 560) wrapper.classList.add('tooltip-up');
-    if (placement.x <= 210) wrapper.classList.add('edge-left');
-    if (placement.x >= 790) wrapper.classList.add('edge-right');
   }
   const atmosphere = element(documentRef, 'span', 'car-atmosphere', '');
   atmosphere.setAttribute('aria-hidden', 'true');
@@ -210,6 +216,38 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
   pitOverflow.hidden = true;
   renderOnTrackSummary(documentRef, onTrackSummary, snapshot.sessions);
 
+  // Route cars drive around the track (animated left/top); the tooltip only
+  // shows on hover/focus/pin, which pauses the car, so measure the frozen
+  // position on show and keep the tooltip on-screen on both axes. A static
+  // slot-derived position/direction goes stale once the car animates away.
+  function clampRouteTooltip(wrapper) {
+    const tooltip = wrapper.querySelector('.session-tooltip');
+    if (!tooltip) return;
+    const rect = wrapper.getBoundingClientRect();
+    tooltip.style.setProperty('--tt-shift', `${computeTooltipShift({
+      carCenter: rect.left + rect.width / 2,
+      tooltipWidth: tooltip.offsetWidth,
+      viewportWidth: documentRef.documentElement.clientWidth,
+    })}px`);
+    // Open downward by default; flip up only when there is not room below within
+    // the stage (its overflow-hidden box is the vertical clip context).
+    const stage = mapStage.getBoundingClientRect();
+    const needed = tooltip.offsetHeight + 9;
+    const roomBelow = stage.bottom - rect.bottom;
+    const roomAbove = rect.top - stage.top;
+    let openUp;
+    if (roomBelow >= needed) openUp = false;
+    else if (roomAbove >= needed) openUp = true;
+    else openUp = roomAbove > roomBelow;
+    wrapper.classList.toggle('tooltip-up', openUp);
+  }
+  const clampFromEvent = (event) => {
+    const wrapper = event.target.closest?.('.vehicle-anchor');
+    if (wrapper) clampRouteTooltip(wrapper);
+  };
+  vehicleLayer.addEventListener('pointerover', clampFromEvent, { signal });
+  vehicleLayer.addEventListener('focusin', clampFromEvent, { signal });
+
   let track = getTrack(initialTrack.id);
   root.dataset.trackId = track.id;
   mapHeading.textContent = track.title;
@@ -272,9 +310,6 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
     wrapper.style.setProperty('--vehicle-y', `${placement.y / 7.6}%`);
     wrapper.style.setProperty('--route-phase', `${-placement.slotIndex * ROUTE_PHASE_SECONDS}s`);
     wrapper.dataset.routeSlot = String(placement.slotIndex);
-    wrapper.classList.toggle('tooltip-up', placement.y >= 560);
-    wrapper.classList.toggle('edge-left', placement.x <= 210);
-    wrapper.classList.toggle('edge-right', placement.x >= 790);
     swapStateClass(wrapper, session.status);
     button.setAttribute('aria-label', text.label);
     replaceTooltip(documentRef, tooltip, session, text);

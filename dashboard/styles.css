@@ -881,7 +881,10 @@ textarea {
   overflow-wrap: anywhere;
   opacity: 0;
   visibility: hidden;
-  transform: translate(-50%, -.25rem);
+  /* Default 0; a delegated JS handler sets this per-show from the car's real
+     (paused) position, since route cars animate across the viewport. */
+  --tt-shift: 0px;
+  transform: translate(calc(-50% + var(--tt-shift)), -.25rem);
   transition: opacity 120ms ease, transform 120ms ease, visibility 120ms linear;
   pointer-events: none;
 }
@@ -893,8 +896,6 @@ textarea {
 
 .session-tooltip span { margin-top: .18rem; color: var(--color-text-muted); }
 .tooltip-up .session-tooltip { top: auto; bottom: calc(100% + 9px); }
-.edge-left .session-tooltip { left: 0; transform: translate(0, -.25rem); }
-.edge-right .session-tooltip { right: 0; left: auto; transform: translate(0, -.25rem); }
 
 .vehicle-anchor:hover .session-tooltip,
 .vehicle-anchor:focus-within .session-tooltip,
@@ -904,16 +905,7 @@ textarea {
 .pit-vehicle[data-pinned="true"] .session-tooltip {
   opacity: 1;
   visibility: visible;
-  transform: translate(-50%, 0);
-}
-
-.edge-left:hover .session-tooltip,
-.edge-left:focus-within .session-tooltip,
-.edge-left[data-pinned="true"] .session-tooltip,
-.edge-right:hover .session-tooltip,
-.edge-right:focus-within .session-tooltip,
-.edge-right[data-pinned="true"] .session-tooltip {
-  transform: translate(0, 0);
+  transform: translate(calc(-50% + var(--tt-shift)), 0);
 }
 
 .overflow-notice {

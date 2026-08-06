@@ -96,6 +96,56 @@ test('pit tooltips stay within the viewport', async ({ page }) => {
   expect(clipped, JSON.stringify(clipped)).toEqual([]);
 });
 
+test('route tooltips stay fully on-screen (both axes) at any point along the lap', async ({ page }) => {
+  await page.locator('#track-select').selectOption('ridge-pass');
+  await expect(page.locator('.vehicle-anchor').first()).toBeVisible();
+
+  // Freeze every car at a deterministic lap phase, then focus each (which fires
+  // the clamp handler and pauses the car) and check its tooltip stays on-screen.
+  // The tooltip's own `transition: transform 120ms ease` means the shift the
+  // clamp handler just set is still mid-animation on the very next frame, so
+  // wait for that transition to settle before reading the rect.
+  const sweepAtPhase = (phaseMs) => page.evaluate(async (T) => {
+    const vw = document.documentElement.clientWidth;
+    // The stage clips (overflow: hidden) both axes; it spans the viewport width
+    // but only part of its height, so vertical bounds come from the stage rect.
+    const stage = document.querySelector('#map-stage').getBoundingClientRect();
+    const anchors = [...document.querySelectorAll('.vehicle-anchor')];
+    for (const w of anchors) {
+      for (const a of w.getAnimations()) { a.currentTime = T; a.pause(); }
+    }
+    const bad = [];
+    for (const w of anchors) {
+      const tooltip = w.querySelector('.session-tooltip');
+      w.querySelector('.session-car').focus();
+      // getAnimations() must run synchronously right after focus() to flush style and
+      // register the transform transition; do not reorder this away from the focus call.
+      await Promise.all(tooltip.getAnimations().map((a) => a.finished.catch(() => {})));
+      const r = tooltip.getBoundingClientRect();
+      if (r.left < -0.5 || r.right > vw + 0.5 || r.top < stage.top - 0.5 || r.bottom > stage.bottom + 0.5) {
+        bad.push({
+          id: w.dataset.sessionId, phase: T, vw,
+          left: Math.round(r.left), right: Math.round(r.right),
+          top: Math.round(r.top), bottom: Math.round(r.bottom),
+          stageTop: Math.round(stage.top), stageBottom: Math.round(stage.bottom),
+        });
+      }
+      w.querySelector('.session-car').blur();
+    }
+    return bad;
+  }, phaseMs);
+
+  // Two kinds of phase matter. Sub-slot offsets (2000/6000, not multiples of the
+  // 4s per-slot delay) place cars at intermediate points along the path. Half/quarter
+  // lap offsets (16000/32000/48000) move each car FAR from its slot, so a car whose
+  // up/down direction is chosen from its real position must be re-evaluated there -
+  // the case a static slot-derived direction gets wrong (opens up while near the top).
+  for (const phase of [0, 2000, 6000, 16000, 32000, 48000]) {
+    const bad = await sweepAtPhase(phase);
+    expect(bad, JSON.stringify(bad)).toEqual([]);
+  }
+});
+
 test('mobile pit tooltips never overlap: pinning one suppresses others on focus', async ({ page }) => {
   test.skip(page.viewportSize().width > 759, 'mobile docked-tooltip project only');
   const cars = page.locator('#pit .pit-vehicle');
