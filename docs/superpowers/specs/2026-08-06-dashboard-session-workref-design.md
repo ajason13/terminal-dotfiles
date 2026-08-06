@@ -21,6 +21,13 @@ Both settled in brainstorming; listed for the record, none open:
    continuously-animating car, so a clamp would need per-frame `rAF`; not worth it
    for a tiny decorative label, and the stage's `overflow: hidden` clips cleanly.
    Cost of getting it wrong: needless per-frame JS for a rare, cosmetic case.
+3. **Pit cars get the badge too** (added per user request, 2026-08-06). Pit cars
+   carry the same ticket/PR work as route cars, so hiding their ref on the map is
+   an inconsistency. Consequence: pit cars sit in a compact `.pit-mount` grid
+   (`grid-auto-rows: 52px`, ~7px row gap); a below-car badge (~14px) would collide
+   with the next row, so the pit grid's **row gap grows** to clear the badge, and
+   the lane's bottom padding leaves room for a last-row badge. Cost of getting it
+   wrong: badges overlap the pit car in the row below.
 
 ## Assumptions I have not verified
 
@@ -56,7 +63,8 @@ snapshot-validation, or live-server-security changes. A present PR token means
   present; both lines when both are present.
 - **On-map badge:** one small label near the car - `PR#42` if a PR token is
   present, else the ticket key `BB-228`, else nothing (no ref → no badge; keeps
-  the map clean). PR takes precedence over ticket for the single badge.
+  the map clean). PR takes precedence over ticket for the single badge. Applies to
+  **both route and pit cars** (see decision 3).
 
 ## Components and boundaries
 
@@ -102,29 +110,40 @@ ref for assistive tech.
   anchors). `replaceTooltip` renders them on live `update()` (it already rebuilds
   the tooltip via `makeTooltip`, so this is automatic once `makeTooltip` changes).
 
-### 4. `makeCar(...)` route branch + `applyRouteCar(...)` - `src/render-dashboard.mjs`
+### 4. Badge in `makeCar(...)` + live-update paths - `src/render-dashboard.mjs`
 
-- Append a badge element as a **direct child of `.vehicle-anchor`** (NOT inside the
-  rotating `.car-angle`/`.car-motion`), so it stays upright while the car rotates.
+- A shared helper `applyBadge(wrapper, workRef)` owns the badge lifecycle for both
+  car types: create the badge lazily when a ref first appears, update its text when
+  the ref changes, and remove it when the ref disappears - so element identity and
+  the car's running CSS animation survive live `update()`.
+- The badge is a **direct child of the wrapper** (`.vehicle-anchor` for route,
+  `.pit-vehicle` for pit), NOT inside the rotating `.car-angle`/`.car-motion`, so
+  it stays upright and never inherits the car's rotation.
 - Badge text per precedence: `PR#<n>` else `<ticketKey>` else render nothing.
 - `aria-hidden="true"` (redundant with the tooltip/accessible text).
-- Route branch only; pit cars are stationary in a labeled lane and out of scope
-  for the on-map badge (the ref is still in their tooltip + accessible text).
-- `applyRouteCar(...)` updates the badge text on live `update()` (create the badge
-  lazily if a ref appears, remove it if the ref disappears, so element identity and
-  the running CSS animation survive).
+- Wiring: `makeCar(...)` calls `applyBadge` for both `target === 'route'` and pit.
+  `applyRouteCar(...)` calls it on route live-update; the pit branch of `update()`
+  (which today does `replaceTooltip` + `swapStateClass`) also calls it. Both branches
+  read the ref once via `parseWorkRef(session.displayName)`.
 
 ### 5. `styles.css` - badge styling
 
 - Small, muted pill: subtle background for legibility over the varied track,
-  low-contrast text, `font-size` near the `.car-code` scale.
+  low-contrast text, `font-size` near the `.car-code` scale. Single class shared by
+  both car types (e.g. `.car-badge`), positioned relative to the wrapper.
 - Positioned centered just below the car body, upright (does NOT inherit the car's
   rotation - it is outside `.car-angle`).
 - `pointer-events: none` (must not steal the car button's clicks / 44px hit target
   / pin / hover).
 - `max-width` cap so a long-ish ref stays small; accept clean edge clip.
 - Fades out (opacity 0) when its car is `:hover` / `:focus-within` /
-  `[data-pinned="true"]`, yielding to the tooltip.
+  `[data-pinned="true"]`, yielding to the tooltip - for both `.vehicle-anchor` and
+  `.pit-vehicle`.
+- **Pit grid room:** grow `.pit-mount`'s row gap (and, if needed, `.pit-lane`'s
+  bottom padding) so a below-car badge clears the next grid row and the last row.
+  The badge stays absolutely positioned, so it does not reflow the grid; the gap
+  bump only reserves visual room. Verify at the mobile pit grid too (the mobile
+  block re-declares `.pit-mount` columns but inherits the base row gap).
 - Honor the existing reduced-motion / mobile blocks where relevant.
 
 ### 6. `src/fixture-sessions.mjs` - fixtures
@@ -133,6 +152,8 @@ Give several fixtures convention-following `displayName`s so all states render i
 fixtures: at least one ticket-only (`BB-228 route tooltip`), one with a PR
 (`BB-228 PR#42 combined pit`), one PR-only (`PR#57 live adapter`), and leave
 several with no ref (badge absent). Include a ` · pane <N>` suffix on at least one.
+Ensure at least one **pit-pool** session (idle/error/complete/waiting status) has
+a ref, so the pit badge is visible in fixtures, not just route badges.
 
 ## Data flow
 
@@ -157,7 +178,8 @@ fallback). No throw path. A name with no recognizable tokens yields
   route-artifact change expected; assert it).
 - **Browser** (`npm --prefix dashboard run test:browser`, ~3 min, ONE foreground
   Bash call, `timeout: 600000`, never backgrounded): assert the new tooltip
-  line(s) and the badge in fixtures; verify the route-tooltip clamp still holds -
+  line(s) and the badge in fixtures - for both a route car and a pit car; verify
+  the route-tooltip clamp still holds -
   the extra tooltip line makes tooltips taller and it re-measures `offsetHeight` on
   show, so confirm edge cars still do not clip on desktop (1440×900) and mobile
   (390×844).
@@ -166,7 +188,6 @@ fallback). No throw path. A name with no recognizable tokens yields
 
 - Collector, `TMUX_FIELDS`, snapshot import validation, live-server security model.
 - Git/branch reading, GitHub/`gh` calls, true PR review-state.
-- On-map badge for pit cars (ref still in their tooltip + accessible text).
 - Any hyperlinking - all refs are plain text everywhere.
 
 ## Operational note (docs, not code)
