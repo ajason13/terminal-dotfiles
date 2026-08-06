@@ -96,6 +96,43 @@ test('pit tooltips stay within the viewport', async ({ page }) => {
   expect(clipped, JSON.stringify(clipped)).toEqual([]);
 });
 
+test('route tooltips stay within the viewport at any point along the lap', async ({ page }) => {
+  await page.locator('#track-select').selectOption('ridge-pass');
+  await expect(page.locator('.vehicle-anchor').first()).toBeVisible();
+
+  // Freeze every car at a deterministic lap phase, then focus each (which fires
+  // the clamp handler and pauses the car) and check its tooltip stays on-screen.
+  // The tooltip's own `transition: transform 120ms ease` means the shift the
+  // clamp handler just set is still mid-animation on the very next frame, so
+  // wait for that transition to settle before reading the rect.
+  const sweepAtPhase = (phaseMs) => page.evaluate(async (T) => {
+    const vw = document.documentElement.clientWidth;
+    const anchors = [...document.querySelectorAll('.vehicle-anchor')];
+    for (const w of anchors) {
+      for (const a of w.getAnimations()) { a.currentTime = T; a.pause(); }
+    }
+    const bad = [];
+    for (const w of anchors) {
+      const tooltip = w.querySelector('.session-tooltip');
+      w.querySelector('.session-car').focus();
+      await Promise.all(tooltip.getAnimations().map((a) => a.finished.catch(() => {})));
+      const r = tooltip.getBoundingClientRect();
+      if (r.left < -0.5 || r.right > vw + 0.5) {
+        bad.push({ id: w.dataset.sessionId, left: Math.round(r.left), right: Math.round(r.right), phase: T, vw });
+      }
+      w.querySelector('.session-car').blur();
+    }
+    return bad;
+  }, phaseMs);
+
+  // Quarter-lap phases spread the 16 cars across the whole track, incl. the
+  // left/right extremes where a centered tooltip would otherwise overhang.
+  for (const phase of [0, 16000, 32000, 48000]) {
+    const bad = await sweepAtPhase(phase);
+    expect(bad, JSON.stringify(bad)).toEqual([]);
+  }
+});
+
 test('mobile pit tooltips never overlap: pinning one suppresses others on focus', async ({ page }) => {
   test.skip(page.viewportSize().width > 759, 'mobile docked-tooltip project only');
   const cars = page.locator('#pit .pit-vehicle');

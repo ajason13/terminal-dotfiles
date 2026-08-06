@@ -4,6 +4,7 @@ import test from 'node:test';
 
 import { FixtureSessionAdapter } from '../src/fixture-adapter.mjs';
 import { FIXTURE_SNAPSHOT } from '../src/fixture-sessions.mjs';
+import { computeTooltipShift } from '../src/render-dashboard.mjs';
 import {
   PERMISSION_STATES,
   SESSION_STATUSES,
@@ -957,4 +958,26 @@ test('registered-angle capability attempts all four properties and caches fail-s
   }, undefined));
   assert.doesNotMatch(STYLES, /@property\s+--/);
   assert.doesNotMatch(ROUTE_CAPABILITY, /console\.|setTimeout|setInterval|localStorage|sessionStorage/);
+});
+
+test('computeTooltipShift keeps the tooltip inside the viewport', () => {
+  const base = { tooltipWidth: 256, viewportWidth: 390, gutter: 8 };
+  // Centered car: no shift.
+  assert.equal(computeTooltipShift({ ...base, carCenter: 195 }), 0);
+  // Near left edge: push right so the left edge lands on the gutter.
+  assert.equal(computeTooltipShift({ ...base, carCenter: 100 }), 36);
+  // Near right edge: pull left so the right edge lands on vw - gutter.
+  assert.equal(computeTooltipShift({ ...base, carCenter: 350 }), -96);
+  // Comfortably centered on a wide viewport: no shift.
+  assert.equal(computeTooltipShift({ carCenter: 720, tooltipWidth: 256, viewportWidth: 1440, gutter: 8 }), 0);
+});
+
+test('session-tooltip CSS defaults --tt-shift to 0 and has no edge-class remnants', () => {
+  assert.match(BASE_STYLES, /\.session-tooltip \{[^}]*--tt-shift:\s*0px;/s);
+  assert.match(BASE_STYLES, /\.session-tooltip \{[^}]*transform:\s*translate\(calc\(-50% \+ var\(--tt-shift\)\), -\.25rem\);/s);
+  assert.doesNotMatch(BASE_STYLES, /--vehicle-vw/);
+  assert.doesNotMatch(BASE_STYLES, /\.edge-left|\.edge-right/);
+  assert.doesNotMatch(RENDERER, /--vehicle-vw/);
+  assert.doesNotMatch(RENDERER, /edge-left|edge-right/);
+  assert.match(RENDERER, /export function computeTooltipShift/);
 });
