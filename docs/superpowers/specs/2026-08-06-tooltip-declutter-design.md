@@ -89,8 +89,8 @@ Line by line:
   one is present). Omitted entirely when the ref is already the heading, so the
   same token never appears twice.
 - **Freshness** - `Seen just now` under 60 seconds, otherwise `Seen <relative>`
-  (`Seen 4 minutes ago`). The exact timestamp remains in the `<time datetime>`
-  attribute, so assistive tech and native hover still expose it.
+  (`Seen 4 minutes ago`). `datetime` carries the machine-readable value; a
+  visually-hidden span carries the exact timestamp for assistive tech.
 - **Permission line** - removed. `unknown` means "the classifier could not tell",
   and when the state *is* meaningful the status label already reads "Waiting for
   permission".
@@ -147,11 +147,13 @@ total - any string in, a well-formed object out, no throw path.
 `appendActivity(...)` changes shape. Today it emits `<label>: <exact> (<relative>)`;
 it becomes `<label> <time>{short}</time>` - e.g. the text `Seen ` followed by a
 `<time>` whose visible text is `just now` and whose `datetime` is the ISO
-`activity.datetime`. The `exact` string moves to the `<time>` element's `title`, so
-the precise timestamp stays reachable on hover and to assistive tech without
-occupying a line. Note the details-split seam above keys on `${activity.label}:`
-with a colon - dropping the colon from the rendered output means that seam must be
-kept in sync or replaced with a structural split.
+`activity.datetime`. The `exact` string moves into a trailing visually-hidden
+`<span>`, so it stays in the tooltip's accessible description for assistive tech
+without occupying a visible line or relying on hover (native title tooltips do
+not fire through the tooltip's `pointer-events: none`). Note the details-split
+seam above keys on `${activity.label}:` with a colon - dropping the colon from
+the rendered output means that seam must be kept in sync or replaced with a
+structural split.
 
 `replaceTooltip` needs no change; it already rebuilds through `makeTooltip`.
 

@@ -186,10 +186,11 @@ export function parseWorkRef(name) {
   if (prMatch) label = label.replace(PR_RE, ' ');
   // Token removal orphans separators (`BB-325` alone reduces to `·`). An empty
   // label is a valid result - the renderer falls back to the ref itself.
-  label = label
-    .replace(/\s+/g, ' ')
-    .replace(/(?:·\s*)+/g, '· ')
-    .replace(/^[\s·]+|[\s·]+$/g, '');
+  label = label.replace(/\s+/g, ' ');
+  // Only collapse `·` runs when a token was actually stripped - an untouched
+  // name like `foo·bar` must not have its own separator mangled.
+  if (ticketMatch || prMatch) label = label.replace(/(?:·\s*)+/g, '· ');
+  label = label.replace(/^[\s·]+|[\s·]+$/g, '');
   return { ticketKey, prNumber, label };
 }
 
@@ -218,7 +219,6 @@ export function buildAccessibleText(session, placement, generatedAt, timestampOp
   return Object.freeze({
     label: `${session.mapCode}, ${session.displayName}, ${state.label}, ${location}`,
     details: details.join('. '),
-    location,
     activity,
     workRef: Object.freeze(workRef),
   });

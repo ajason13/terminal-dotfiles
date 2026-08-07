@@ -68,9 +68,10 @@ function appendActivity(documentRef, parent, activity) {
   parent.append(`${activity.label} `);
   const time = element(documentRef, 'time', 'activity-time', activity.short);
   time.dateTime = activity.datetime;
-  // The precise timestamp stays reachable on hover without spending a line.
-  time.setAttribute('title', activity.exact);
   parent.append(time);
+  // The visible line stays short; the exact time still belongs in the
+  // accessible description for assistive tech.
+  parent.append(element(documentRef, 'span', 'visually-hidden', activity.exact));
 }
 
 function refLine(workRef) {
@@ -83,14 +84,14 @@ function refLine(workRef) {
 // The heading may already show one ref (badgeLabel picks PR over ticket), so drop
 // only that token here - a bare "BB-323 PR #504" must still surface its ticket.
 function unusedRefs(workRef) {
-  if (workRef.label) return workRef;
+  if (workRef.label) return { ticketKey: workRef.ticketKey, prNumber: workRef.prNumber };
   return workRef.prNumber !== null
     ? { ticketKey: workRef.ticketKey, prNumber: null }
     : { ticketKey: null, prNumber: null };
 }
 
 // `badgeLabel` gives PR-over-ticket precedence; reused so the heading and the
-// on-map badge never disagree about which ref identifies a session.
+// on-map badge agree for a name with a single ref (multi-ref names are rare and unhandled).
 function headingText(session, workRef) {
   return workRef.label || badgeLabel(workRef) || session.displayName;
 }
