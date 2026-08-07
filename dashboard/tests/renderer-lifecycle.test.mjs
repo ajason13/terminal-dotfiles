@@ -85,29 +85,73 @@ const overflowingSnapshot = (count) => normalizeSnapshot({
   })),
 });
 
-test('tooltip shows the stripped bold label and Jira/PR lines for a route car', () => {
+test('tooltip heading is the stripped name, with one joined Jira/PR line', () => {
   const { root } = dashboardRoot();
   renderDashboard(routeSnapshot([
     routeSession('ref', { displayName: 'BB-228 PR#42 route tooltip' }),
   ]), root, getTrack('ridge-pass'));
-  const wrapper = findCar(root, 'ref').parentElement;
-  const tooltip = wrapper.querySelector('.session-tooltip');
-  assert.match(tooltip.children[0].textContent, /^S\d+ · route tooltip$/);
-  assert.match(tooltip.textContent, /Jira: BB-228/);
-  assert.match(tooltip.textContent, /PR #42/);
+  const tooltip = findCar(root, 'ref').parentElement.querySelector('.session-tooltip');
+  assert.equal(tooltip.children[0].textContent, 'route tooltip');
+  assert.equal(tooltip.children[1].textContent, 'Active');
+  assert.equal(tooltip.children[2].textContent, 'Jira: BB-228 · PR #42');
 });
 
-test('tooltip omits ref lines when the name has no tokens', () => {
+test('tooltip omits the ref line when the name has no tokens', () => {
   const { root } = dashboardRoot();
   renderDashboard(routeSnapshot([
     routeSession('plain', { displayName: 'Aoba' }),
   ]), root, getTrack('ridge-pass'));
   const tooltip = findCar(root, 'plain').parentElement.querySelector('.session-tooltip');
-  assert.match(tooltip.children[0].textContent, /^S\d+ · Aoba$/);
+  assert.equal(tooltip.children[0].textContent, 'Aoba');
   assert.doesNotMatch(tooltip.textContent, /Jira:|PR #/);
 });
 
-test('replaceTooltip renders new ref lines on a live update()', () => {
+test('a bare-ref window name uses the ref as the heading and drops the ref line', () => {
+  const { root } = dashboardRoot();
+  renderDashboard(routeSnapshot([
+    routeSession('bare', { displayName: 'BB-325 · pane 1' }),
+  ]), root, getTrack('ridge-pass'));
+  const tooltip = findCar(root, 'bare').parentElement.querySelector('.session-tooltip');
+  assert.equal(tooltip.children[0].textContent, 'BB-325');
+  // The ref is the heading, so repeating it on its own line would duplicate it.
+  assert.doesNotMatch(tooltip.textContent, /Jira:/);
+});
+
+test('a bare PR window name uses PR# precedence for the heading', () => {
+  const { root } = dashboardRoot();
+  renderDashboard(routeSnapshot([
+    routeSession('barepr', { displayName: 'BB-228 PR#42' }),
+  ]), root, getTrack('ridge-pass'));
+  const tooltip = findCar(root, 'barepr').parentElement.querySelector('.session-tooltip');
+  assert.equal(tooltip.children[0].textContent, 'PR#42');
+  // The heading used the PR token; the ticket must still surface on its own line.
+  assert.match(tooltip.textContent, /Jira: BB-228/);
+});
+
+test('a bare PR-with-space window name keeps the ticket on the ref line under the PR heading', () => {
+  const { root } = dashboardRoot();
+  renderDashboard(routeSnapshot([
+    routeSession('barepr2', { displayName: 'BB-323 PR #504' }),
+  ]), root, getTrack('ridge-pass'));
+  const tooltip = findCar(root, 'barepr2').parentElement.querySelector('.session-tooltip');
+  assert.equal(tooltip.children[0].textContent, 'PR#504');
+  assert.equal(tooltip.children[2].textContent, 'Jira: BB-323');
+});
+
+test('tooltip drops the map code, the pane index, and the location for a placed car', () => {
+  const { root } = dashboardRoot();
+  renderDashboard(routeSnapshot([
+    routeSession('clean', { displayName: 'BB-228 route tooltip · pane 1' }),
+  ]), root, getTrack('ridge-pass'));
+  const tooltip = findCar(root, 'clean').parentElement.querySelector('.session-tooltip');
+  assert.doesNotMatch(tooltip.textContent, /pane 1/);
+  assert.doesNotMatch(tooltip.textContent, /Route Slot/);
+  assert.doesNotMatch(tooltip.textContent, /S\d\d/);
+  assert.equal(tooltip.children[0].textContent, 'route tooltip');
+  assert.equal(tooltip.children[2].textContent, 'Jira: BB-228');
+});
+
+test('replaceTooltip renders the new heading and ref line on a live update()', () => {
   const { root } = dashboardRoot();
   const controller = renderDashboard(routeSnapshot([
     routeSession('ref', { displayName: 'Aoba' }),
@@ -116,9 +160,35 @@ test('replaceTooltip renders new ref lines on a live update()', () => {
     routeSession('ref', { displayName: 'BB-305 PR#9 renamed' }),
   ], '2026-07-26T17:00:05Z'));
   const tooltip = findCar(root, 'ref').parentElement.querySelector('.session-tooltip');
-  assert.match(tooltip.textContent, /Jira: BB-305/);
-  assert.match(tooltip.textContent, /PR #9/);
+  assert.equal(tooltip.children[0].textContent, 'renamed');
+  assert.equal(tooltip.children[2].textContent, 'Jira: BB-305 · PR #9');
   controller.destroy();
+});
+
+test('a placed car in an overflowing pit shows the status alone, with no location suffix', () => {
+  const { root } = dashboardRoot();
+  const controller = renderDashboard(overflowingSnapshot(20), root, getTrack('ridge-pass'));
+  const tooltips = root.querySelectorAll('.session-tooltip')
+    .map((tooltip) => tooltip.children[1].textContent);
+  assert.ok(tooltips.length > 0, 'the pit is not empty');
+  assert.ok(tooltips.every((line) => line === 'Idle'), 'placed cars show the status alone');
+  controller.destroy();
+});
+
+test('the activity line renders the short age visibly and keeps the exact timestamp in a hidden span', () => {
+  const { root } = dashboardRoot();
+  renderDashboard(routeSnapshot([routeSession('clock')]), root, getTrack('ridge-pass'));
+  const tooltip = findCar(root, 'clock').parentElement.querySelector('.session-tooltip');
+  const time = tooltip.querySelector('.activity-time');
+  const details = tooltip.querySelector('.tooltip-details');
+  // Guards the fragile `. ${activity.label}:` split seam in makeTooltip - the
+  // phase/progress prefix must still flow into the activity line.
+  assert.match(details.textContent, /^Progress: 0 percent\. Last active/);
+  assert.match(details.textContent, /1 minute ago/);
+  assert.match(details.textContent, /2026/);
+  assert.equal(time.textContent, '1 minute ago');
+  assert.equal(time.dateTime, '2026-07-26T16:59:00Z');
+  assert.equal(time.getAttribute('title'), undefined);
 });
 
 test('a route car with a PR shows a PR#-precedence badge, aria-hidden', () => {
@@ -379,7 +449,8 @@ test('renderer setTrack preserves identity, focus, pin, parked placement, and up
   assert.equal(routeWrapper.dataset.pinned, 'true');
   assert.notEqual(routeWrapper.style.getPropertyValue('--vehicle-x'), ridgeX);
   assert.match(routeButton.getAttribute('aria-label'), /Launch Line/);
-  assert.match(routeWrapper.querySelector('.session-tooltip').textContent, /Launch Line/);
+  // The segment name lives in the aria-label only; the tooltip drops map geography.
+  assert.doesNotMatch(routeWrapper.querySelector('.session-tooltip').textContent, /Launch Line/);
   assert.deepEqual(parkedWrapper.style.values, parkedStyle);
   assert.equal(root.dataset.trackId, 'cypress-run');
   assert.equal(root.querySelector('#map-heading').textContent, 'Cypress Run');

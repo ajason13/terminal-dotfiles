@@ -168,30 +168,30 @@ export function formatActivityTimestamp(value, options = {}) {
 
 const TICKET_RE = /[A-Z][A-Z0-9]+-\d+/;
 const PR_RE = /\bPR\s*#?\s*(\d+)/i;
+// The ` · pane <N>` suffix sanitizeDisplayName appends; stripped so the tooltip
+// heading is the window name the operator actually chose.
+const PANE_SUFFIX_RE = /\s*·\s*pane\s+\d+\s*$/i;
 
 // Parse the Jira key and/or PR number out of a session displayName (the tmux
-// window name). Total: any string in, nulls + a tidied label out. PR and ticket
-// are matched independently; a PR token cannot false-match the ticket regex
-// (that shape needs a `-\d+`), so a bare PR yields ticketKey: null.
+// window name). Strips both tokens and the ` · pane <N>` suffix; `label` is '' when
+// nothing survives, and callers fall back to the ref.
 export function parseWorkRef(name) {
   const source = typeof name === 'string' ? name : '';
   const ticketMatch = source.match(TICKET_RE);
   const prMatch = source.match(PR_RE);
   const ticketKey = ticketMatch ? ticketMatch[0] : null;
   const prNumber = prMatch ? Number(prMatch[1]) : null;
-  let label = source;
+  let label = source.replace(PANE_SUFFIX_RE, '');
   if (ticketMatch) label = label.replace(TICKET_RE, ' ');
   if (prMatch) label = label.replace(PR_RE, ' ');
-  label = label.replace(/\s+/g, ' ').trim();
-  if (label === '') label = source.trim();
+  // Token removal orphans separators (`BB-325` alone reduces to `·`). An empty
+  // label is a valid result - the renderer falls back to the ref itself.
+  label = label.replace(/\s+/g, ' ');
+  // Only collapse `·` runs when a token was actually stripped - an untouched
+  // name like `foo·bar` must not have its own separator mangled.
+  if (ticketMatch || prMatch) label = label.replace(/(?:·\s*)+/g, '· ');
+  label = label.replace(/^[\s·]+|[\s·]+$/g, '');
   return { ticketKey, prNumber, label };
-}
-
-function permissionText(state) {
-  return {
-    requested: 'Permission requested', denied: 'Permission denied',
-    granted: 'Permission granted', unknown: 'Permission state unknown',
-  }[state];
 }
 
 export function buildAccessibleText(session, placement, generatedAt, timestampOptions = {}) {
@@ -200,16 +200,17 @@ export function buildAccessibleText(session, placement, generatedAt, timestampOp
     ? `Map capacity exceeded for ${placement.poolLabel}`
     : placement.locationLabel;
   const details = [];
-  const permission = permissionText(session.permissionState);
-  if (permission) details.push(permission);
   if (session.phase) details.push(`Phase: ${session.phase}`);
   if (session.progress !== undefined) details.push(`Progress: ${Math.round(session.progress * 100)} percent`);
+  const relative = formatActivityAge(session.lastActivityAt, generatedAt);
   const activity = Object.freeze({
     label: session.activity?.kind === 'observed'
-      ? 'Observed'
+      ? 'Seen'
       : session.status === 'complete' ? 'Last response' : 'Last active',
     exact: formatActivityTimestamp(session.lastActivityAt, timestampOptions),
-    relative: formatActivityAge(session.lastActivityAt, generatedAt),
+    relative,
+    // Tooltip-only wording; `relative` keeps the precise form for the a11y string.
+    short: /^\d+ seconds? ago$/.test(relative) ? 'just now' : relative,
     datetime: session.lastActivityAt,
   });
   details.push(`${activity.label}: ${activity.exact} (${activity.relative})`);
@@ -218,7 +219,6 @@ export function buildAccessibleText(session, placement, generatedAt, timestampOp
   return Object.freeze({
     label: `${session.mapCode}, ${session.displayName}, ${state.label}, ${location}`,
     details: details.join('. '),
-    location,
     activity,
     workRef: Object.freeze(workRef),
   });

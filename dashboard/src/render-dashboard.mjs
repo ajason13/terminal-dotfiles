@@ -65,10 +65,35 @@ function stateClass(status) {
 }
 
 function appendActivity(documentRef, parent, activity) {
-  parent.append(`${activity.label}: `);
-  const time = element(documentRef, 'time', 'activity-time', activity.exact);
+  parent.append(`${activity.label} `);
+  const time = element(documentRef, 'time', 'activity-time', activity.short);
   time.dateTime = activity.datetime;
-  parent.append(time, ` (${activity.relative})`);
+  parent.append(time);
+  // The visible line stays short; the exact time still belongs in the
+  // accessible description for assistive tech.
+  parent.append(element(documentRef, 'span', 'visually-hidden', activity.exact));
+}
+
+function refLine(workRef) {
+  const parts = [];
+  if (workRef.ticketKey) parts.push(`Jira: ${workRef.ticketKey}`);
+  if (workRef.prNumber !== null) parts.push(`PR #${workRef.prNumber}`);
+  return parts.join(' · ');
+}
+
+// The heading may already show one ref (badgeLabel picks PR over ticket), so drop
+// only that token here - a bare "BB-323 PR #504" must still surface its ticket.
+function unusedRefs(workRef) {
+  if (workRef.label) return { ticketKey: workRef.ticketKey, prNumber: workRef.prNumber };
+  return workRef.prNumber !== null
+    ? { ticketKey: workRef.ticketKey, prNumber: null }
+    : { ticketKey: null, prNumber: null };
+}
+
+// `badgeLabel` gives PR-over-ticket precedence; reused so the heading and the
+// on-map badge agree for a name with a single ref (multi-ref names are rare and unhandled).
+function headingText(session, workRef) {
+  return workRef.label || badgeLabel(workRef) || session.displayName;
 }
 
 function makeTooltip(documentRef, session, presentation, text, tooltipId) {
@@ -76,15 +101,11 @@ function makeTooltip(documentRef, session, presentation, text, tooltipId) {
   tooltip.id = tooltipId;
   tooltip.setAttribute('role', 'tooltip');
   tooltip.append(
-    element(documentRef, 'strong', '', `${session.mapCode} · ${text.workRef.label}`),
-    element(documentRef, 'span', '', `${presentation.label} · ${text.location}`),
+    element(documentRef, 'strong', '', headingText(session, text.workRef)),
+    element(documentRef, 'span', '', presentation.label),
   );
-  if (text.workRef.ticketKey) {
-    tooltip.append(element(documentRef, 'span', '', `Jira: ${text.workRef.ticketKey}`));
-  }
-  if (text.workRef.prNumber !== null) {
-    tooltip.append(element(documentRef, 'span', '', `PR #${text.workRef.prNumber}`));
-  }
+  const refs = refLine(unusedRefs(text.workRef));
+  if (refs) tooltip.append(element(documentRef, 'span', '', refs));
   const details = element(documentRef, 'span', 'tooltip-details');
   const nonActivity = text.details.split(`. ${text.activity.label}:`)[0];
   if (nonActivity && nonActivity !== text.details) details.append(`${nonActivity}. `);
