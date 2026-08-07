@@ -124,6 +124,18 @@ test('a bare PR window name uses PR# precedence for the heading', () => {
   ]), root, getTrack('ridge-pass'));
   const tooltip = findCar(root, 'barepr').parentElement.querySelector('.session-tooltip');
   assert.equal(tooltip.children[0].textContent, 'PR#42');
+  // The heading used the PR token; the ticket must still surface on its own line.
+  assert.match(tooltip.textContent, /Jira: BB-228/);
+});
+
+test('a bare PR-with-space window name keeps the ticket on the ref line under the PR heading', () => {
+  const { root } = dashboardRoot();
+  renderDashboard(routeSnapshot([
+    routeSession('barepr2', { displayName: 'BB-323 PR #504' }),
+  ]), root, getTrack('ridge-pass'));
+  const tooltip = findCar(root, 'barepr2').parentElement.querySelector('.session-tooltip');
+  assert.equal(tooltip.children[0].textContent, 'PR#504');
+  assert.equal(tooltip.children[2].textContent, 'Jira: BB-323');
 });
 
 test('tooltip drops the map code, the pane index, and the location for a placed car', () => {

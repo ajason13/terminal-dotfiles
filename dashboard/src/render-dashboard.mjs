@@ -80,6 +80,15 @@ function refLine(workRef) {
   return parts.join(' · ');
 }
 
+// The heading may already show one ref (badgeLabel picks PR over ticket), so drop
+// only that token here - a bare "BB-323 PR #504" must still surface its ticket.
+function unusedRefs(workRef) {
+  if (workRef.label) return workRef;
+  return workRef.prNumber !== null
+    ? { ticketKey: workRef.ticketKey, prNumber: null }
+    : { ticketKey: null, prNumber: null };
+}
+
 // `badgeLabel` gives PR-over-ticket precedence; reused so the heading and the
 // on-map badge never disagree about which ref identifies a session.
 function headingText(session, workRef) {
@@ -94,8 +103,7 @@ function makeTooltip(documentRef, session, presentation, text, tooltipId) {
     element(documentRef, 'strong', '', headingText(session, text.workRef)),
     element(documentRef, 'span', '', presentation.label),
   );
-  // Skipped when the ref is already the heading, so a token never appears twice.
-  const refs = text.workRef.label ? refLine(text.workRef) : '';
+  const refs = refLine(unusedRefs(text.workRef));
   if (refs) tooltip.append(element(documentRef, 'span', '', refs));
   const details = element(documentRef, 'span', 'tooltip-details');
   const nonActivity = text.details.split(`. ${text.activity.label}:`)[0];
