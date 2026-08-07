@@ -300,6 +300,10 @@ test('parseWorkRef drops separators orphaned by token removal', () => {
   assert.equal(parseWorkRef('left · BB-228 · right').label, 'left · right');
 });
 
+test('parseWorkRef leaves an untouched separator alone when no token matched', () => {
+  assert.equal(parseWorkRef('foo·bar').label, 'foo·bar');
+});
+
 test('buildAccessibleText exposes the parsed work-ref for the renderer', () => {
   const data = normalized([session('ref', 'active', { displayName: 'BB-228 PR#42 route tooltip' })]);
   const placement = allocateSessions(data.sessions)[0];

@@ -147,7 +147,8 @@ test('tooltip drops the map code, the pane index, and the location for a placed 
   assert.doesNotMatch(tooltip.textContent, /pane 1/);
   assert.doesNotMatch(tooltip.textContent, /Route Slot/);
   assert.doesNotMatch(tooltip.textContent, /S\d\d/);
-  assert.doesNotMatch(tooltip.textContent, /Permission/i);
+  assert.equal(tooltip.children[0].textContent, 'route tooltip');
+  assert.equal(tooltip.children[2].textContent, 'Jira: BB-228');
 });
 
 test('replaceTooltip renders the new heading and ref line on a live update()', () => {
@@ -174,15 +175,20 @@ test('a placed car in an overflowing pit shows the status alone, with no locatio
   controller.destroy();
 });
 
-test('the activity line renders the short age with the exact time kept on the <time> element', () => {
+test('the activity line renders the short age visibly and keeps the exact timestamp in a hidden span', () => {
   const { root } = dashboardRoot();
   renderDashboard(routeSnapshot([routeSession('clock')]), root, getTrack('ridge-pass'));
   const tooltip = findCar(root, 'clock').parentElement.querySelector('.session-tooltip');
   const time = tooltip.querySelector('.activity-time');
-  assert.equal(tooltip.querySelector('.tooltip-details').textContent.includes('Last active 1 minute ago'), true);
+  const details = tooltip.querySelector('.tooltip-details');
+  // Guards the fragile `. ${activity.label}:` split seam in makeTooltip - the
+  // phase/progress prefix must still flow into the activity line.
+  assert.match(details.textContent, /^Progress: 0 percent\. Last active/);
+  assert.match(details.textContent, /1 minute ago/);
+  assert.match(details.textContent, /2026/);
   assert.equal(time.textContent, '1 minute ago');
   assert.equal(time.dateTime, '2026-07-26T16:59:00Z');
-  assert.match(time.getAttribute('title'), /2026/);
+  assert.equal(time.getAttribute('title'), undefined);
 });
 
 test('a route car with a PR shows a PR#-precedence badge, aria-hidden', () => {
