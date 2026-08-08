@@ -7,7 +7,6 @@ export const CAPACITIES = Object.freeze([2, 3, 3, 3, 3, 2]);
 const FIXED_CURVES = Object.freeze({
   'ridge-pass': [1, 5, 2, 2, 4, 1],
   'cypress-run': [1, 4, 3, 4, 4, 5],
-  'lantern-coil': [1, 2, 2, 3, 4, 4],
 });
 const CONFIG_KEYS = ['schemaVersion', 'trackOrder', 'viewBox', 'profiles'];
 const ROUTE_KEYS = ['schemaVersion', 'id', 'title', 'artId', 'centerlineId', 'desktopAnimationName', 'mobileAnimationName', 'path', 'segments'];
@@ -97,8 +96,8 @@ export function validateSources(config, routes) {
     throw new TypeError('route config viewBox is fixed at 1000x760');
   }
   requireArray(config.trackOrder, 'route config trackOrder');
-  if (config.trackOrder.length !== 3
-    || new Set(config.trackOrder).size !== 3
+  if (config.trackOrder.length !== 2
+    || new Set(config.trackOrder).size !== 2
     || config.trackOrder.some((id) => typeof id !== 'string' || !ID_PATTERN.test(id))) {
     throw new TypeError('route config trackOrder is invalid');
   }

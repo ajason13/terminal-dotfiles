@@ -352,8 +352,7 @@ textarea {
 
 .course-art { display: none; }
 .dashboard-root[data-track-id="ridge-pass"] [data-track-art="ridge-pass"],
-.dashboard-root[data-track-id="cypress-run"] [data-track-art="cypress-run"],
-.dashboard-root[data-track-id="lantern-coil"] [data-track-art="lantern-coil"] {
+.dashboard-root[data-track-id="cypress-run"] [data-track-art="cypress-run"] {
   display: inline;
 }
 
@@ -441,37 +440,6 @@ textarea {
   stroke-width: 3;
   opacity: .9;
 }
-.lantern-water-terraces {
-  fill: #0c1b2a;
-  stroke: #34566a;
-  stroke-width: 3;
-  opacity: .72;
-}
-.lantern-pools {
-  fill: #ffd58a;
-  opacity: .1;
-}
-.lantern-inlay-arcs {
-  fill: none;
-  stroke: #8fc9d1;
-  stroke-width: 4;
-  stroke-linecap: round;
-  opacity: .36;
-}
-.lantern-reeds {
-  fill: none;
-  stroke: #79a58d;
-  stroke-width: 5;
-  stroke-linecap: round;
-  opacity: .62;
-}
-.lantern-retaining-rings {
-  fill: none;
-  stroke: #637d8c;
-  stroke-width: 2;
-  stroke-dasharray: 8 13;
-  opacity: .42;
-}
 .segment-labels text {
   fill: var(--color-text-muted);
   font-family: ui-sans-serif, system-ui, sans-serif;
@@ -531,20 +499,6 @@ textarea {
 .label-drop-chute { fill: #91c69e !important; }
 .label-south-hairpin { fill: #be9bc8 !important; }
 .label-west-switchback { fill: #a9b9c9 !important; }
-
-.segment-ember-gate { stroke: #f0b36a; }
-.segment-outer-lantern { stroke: #e6cd78; stroke-width: 5 !important; }
-.segment-prism-rise { stroke: #7fc6c9; }
-.segment-halo-crest { stroke: #8baee0; stroke-width: 5 !important; }
-.segment-inner-coil { stroke: #c19bd3; }
-.segment-dawn-chute { stroke: #8fc29e; stroke-width: 5 !important; }
-
-.label-ember-gate { fill: #f0b36a !important; }
-.label-outer-lantern { fill: #e6cd78 !important; }
-.label-prism-rise { fill: #7fc6c9 !important; }
-.label-halo-crest { fill: #8baee0 !important; }
-.label-inner-coil { fill: #c19bd3 !important; }
-.label-dawn-chute { fill: #8fc29e !important; }
 
 .segment-labels text {
   font-size: 11px;

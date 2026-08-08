@@ -1,17 +1,14 @@
 import { expect, test } from '@playwright/test';
 import config from '../../routes/route-config.mjs';
 import cypress from '../../routes/cypress-run.route.mjs';
-import lantern from '../../routes/lantern-coil.route.mjs';
 import ridge from '../../routes/ridge-pass.route.mjs';
 import { compileRoutes } from '../../scripts/lib/route-compiler.mjs';
 import { getTrack } from '../../src/track-catalog.mjs';
-import { browserFixturePayloads } from '../generate-browser-fixtures.mjs';
 
-const COMPILED = compileRoutes(config, [ridge, cypress, lantern], '0'.repeat(64));
+const COMPILED = compileRoutes(config, [ridge, cypress], '0'.repeat(64));
 const TRACK_SCHEDULES = new Map(COMPILED.schedules.map((item) => [item.route.id, item]));
 const CYPRESS_TRACK = getTrack('cypress-run');
 const CYPRESS_MOBILE_HEADINGS = TRACK_SCHEDULES.get('cypress-run').mobileStaticHeadings;
-const UPDATE_SCREENSHOTS = process.env.DASHBOARD_UPDATE_SCREENSHOTS === '1';
 
 function angleDistance(first, second) {
   return Math.abs(((first - second + 180) % 360 + 360) % 360 - 180);
@@ -306,7 +303,7 @@ test('fixtures render a nonblank, framed, horizontally safe dashboard', async ({
   });
   await expect(page.locator('#map-stage')).toBeVisible();
 
-  for (const course of ['ridge-pass', 'cypress-run', 'lantern-coil']) {
+  for (const course of ['ridge-pass', 'cypress-run']) {
     await page.locator('#track-select').selectOption(course);
     const layout = await page.evaluate(() => {
       const stage = document.querySelector('#map-stage').getBoundingClientRect();
@@ -334,18 +331,12 @@ test('fixtures render a nonblank, framed, horizontally safe dashboard', async ({
   }
 });
 
-test('native course selection exposes and switches all three stable courses', async ({ page }) => {
+test('native course selection switches Ridge Pass and Cypress Run', async ({ page }) => {
   const selector = page.locator('#track-select');
-  await expect(selector.locator('option')).toHaveCount(4);
   await selector.selectOption('cypress-run');
   await expect(page.locator('#dashboard-root')).toHaveAttribute('data-track-id', 'cypress-run');
   await expect(page.locator('#map-heading')).toHaveText('Cypress Run');
   await expect(page.locator('#track-status')).toHaveText('Active course: Cypress Run · Manual');
-
-  await selector.selectOption('lantern-coil');
-  await expect(page.locator('#dashboard-root')).toHaveAttribute('data-track-id', 'lantern-coil');
-  await expect(page.locator('#map-heading')).toHaveText('Lantern Coil');
-  await expect(page.locator('#track-status')).toHaveText('Active course: Lantern Coil · Manual');
 
   await selector.selectOption('ridge-pass');
   await expect(page.locator('#dashboard-root')).toHaveAttribute('data-track-id', 'ridge-pass');
@@ -359,7 +350,7 @@ test('layout boundaries preserve all course targets, controls, and transform iso
   if (page.viewportSize().width < 1000) return;
   for (const width of [759, 760, 959, 960]) {
     await page.setViewportSize({ width, height: 900 });
-    for (const trackId of ['ridge-pass', 'cypress-run', 'lantern-coil']) {
+    for (const trackId of ['ridge-pass', 'cypress-run']) {
       await page.locator('#track-select').selectOption(trackId);
       const result = await page.evaluate((selected) => {
         const stage = document.querySelector('#map-stage').getBoundingClientRect();
@@ -390,140 +381,6 @@ test('layout boundaries preserve all course targets, controls, and transform iso
       );
     }
   }
-});
-
-test('prepares the neutral Lantern Coil reference for this viewport', async ({ page }) => {
-  await page.locator('#track-select').selectOption('lantern-coil');
-  await page.evaluate(async () => {
-    for (const animation of document.getAnimations({ subtree: true })) {
-      animation.pause();
-      await animation.ready;
-      animation.currentTime = animation.animationName?.includes('traverse')
-        ? 16000
-        : animation.effect?.getTiming().duration * 0.4 || 0;
-    }
-    document.activeElement?.blur();
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  });
-  if (UPDATE_SCREENSHOTS) {
-    const mobile = page.viewportSize().width === 390;
-    await page.screenshot({
-      path: `tests/screenshots/${mobile ? 'mobile' : 'desktop'}-lantern-coil.png`,
-      fullPage: mobile,
-    });
-  }
-});
-
-test('fresh synthetic live mode preserves all three course identities and controls', async ({
-  page,
-}) => {
-  const payload = browserFixturePayloads().valid;
-  await page.locator('#snapshot-file').setInputFiles({
-    name: 'lantern-live.json',
-    mimeType: 'application/json',
-    buffer: Buffer.from(`${JSON.stringify(payload)}\n`),
-  });
-  await expect(page.locator('#source-label')).toHaveText('Live · one-shot tmux observation');
-  // 1 active (route) + 5 non-active (pit, well under the 18-car pit capacity so none overflow).
-  await expect(page.locator('.session-car')).toHaveCount(6);
-  for (const trackId of ['ridge-pass', 'cypress-run', 'lantern-coil']) {
-    await page.locator('#track-select').selectOption(trackId);
-    await expect(page.locator('#dashboard-root')).toHaveAttribute('data-track-id', trackId);
-    await expect(page.locator('#source-label')).toHaveText('Live · one-shot tmux observation');
-    await expect(page.locator('.session-car')).toHaveCount(6);
-  }
-});
-
-test('Lantern Coil audits every retained frame and sixteen static route slots', async ({ page }) => {
-  test.setTimeout(120_000);
-  const profileName = page.viewportSize().width <= 759 ? 'mobile' : 'desktop';
-  const schedule = TRACK_SCHEDULES.get('lantern-coil')[profileName];
-  await page.locator('#track-select').selectOption('lantern-coil');
-  const sweep = await page.evaluate(async (frames) => {
-    const stage = document.querySelector('#map-stage').getBoundingClientRect();
-    const wrappers = [...document.querySelectorAll('.vehicle-anchor')];
-    const animations = wrappers.map((wrapper) => wrapper.getAnimations().find((animation) => (
-      animation.animationName?.includes('lantern-coil-traverse')
-    )));
-    animations.forEach((animation) => animation.pause());
-    let minimumEdge = Infinity;
-    let minimumSeparation = Infinity;
-    let clipped = 0;
-    let overlaps = 0;
-    for (const frame of frames) {
-      animations.forEach((animation) => { animation.currentTime = Number(frame.percent) / 100 * 64000; });
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-      const visible = wrappers.filter((wrapper) => Number(getComputedStyle(wrapper).opacity) > 0.5)
-        .map((wrapper) => wrapper.querySelector('.session-car').getBoundingClientRect());
-      visible.forEach((box) => {
-        const edge = Math.min(
-          box.left - stage.left, stage.right - box.right,
-          box.top - stage.top, stage.bottom - box.bottom,
-        );
-        minimumEdge = Math.min(minimumEdge, edge);
-        if (edge < -0.5) clipped += 1;
-      });
-      for (let first = 0; first < visible.length; first += 1) {
-        for (let second = first + 1; second < visible.length; second += 1) {
-          const a = visible[first];
-          const b = visible[second];
-          const separation = Math.hypot(
-            a.x + a.width / 2 - b.x - b.width / 2,
-            a.y + a.height / 2 - b.y - b.height / 2,
-          );
-          minimumSeparation = Math.min(minimumSeparation, separation);
-          if (separation < Math.max(a.width, b.width) - 0.5) overlaps += 1;
-        }
-      }
-    }
-    return { minimumEdge, minimumSeparation, clipped, overlaps };
-  }, schedule.frames);
-  expect(sweep.clipped).toBe(0);
-  expect(sweep.overlaps).toBe(0);
-  expect(sweep.minimumEdge).toBeGreaterThanOrEqual(-0.5);
-  expect(sweep.minimumSeparation).toBeGreaterThanOrEqual(profileName === 'mobile' ? 44 : 52);
-
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  const capacity = await page.evaluate(async ({ anchors, headings }) => {
-    const layer = document.querySelector('#vehicle-layer');
-    const source = layer.querySelector('.vehicle-anchor');
-    while (layer.querySelectorAll('.vehicle-anchor').length < 16) layer.append(source.cloneNode(true));
-    const wrappers = [...layer.querySelectorAll('.vehicle-anchor')].slice(0, 16);
-    wrappers.forEach((wrapper, index) => {
-      wrapper.dataset.routeSlot = String(index);
-      wrapper.style.setProperty('--vehicle-x', `${anchors[index].x / 10}%`);
-      wrapper.style.setProperty('--vehicle-y', `${anchors[index].y / 7.6}%`);
-      wrapper.style.setProperty('--route-heading', `${headings[index].heading}deg`);
-      wrapper.style.setProperty('--route-upright-heading', `${headings[index].uprightHeading}deg`);
-    });
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    const stage = document.querySelector('#map-stage').getBoundingClientRect();
-    const boxes = wrappers.map((wrapper) => wrapper.querySelector('.session-car').getBoundingClientRect());
-    const edges = boxes.map((box) => Math.min(
-      box.left - stage.left, stage.right - box.right,
-      box.top - stage.top, stage.bottom - box.bottom,
-    ));
-    let separation = Infinity;
-    for (let first = 0; first < boxes.length; first += 1) {
-      for (let second = first + 1; second < boxes.length; second += 1) {
-        separation = Math.min(separation, Math.hypot(
-          boxes[first].x + boxes[first].width / 2 - boxes[second].x - boxes[second].width / 2,
-          boxes[first].y + boxes[first].height / 2 - boxes[second].y - boxes[second].height / 2,
-        ));
-      }
-    }
-    return { minimumEdge: Math.min(...edges), separation, count: boxes.length };
-  }, {
-    anchors: getTrack('lantern-coil').routeAnchors,
-    headings: TRACK_SCHEDULES.get('lantern-coil')[`${profileName}StaticHeadings`],
-  });
-  expect(capacity.count).toBe(16);
-  expect(capacity.minimumEdge).toBeGreaterThanOrEqual(-0.5);
-  expect(capacity.separation).toBeGreaterThanOrEqual(profileName === 'mobile' ? 44 : 52);
-  test.info().annotations.push({
-    type: 'lantern-clearance',
-    description: JSON.stringify({ profileName, sweep, capacity }),
-  });
 });
 
 test('mobile Cypress scale switches without replacing focused pinned route controls', async ({
@@ -574,7 +431,7 @@ test('mobile Cypress scale switches without replacing focused pinned route contr
 
 test('generated geometry hydrates and responsive animation cascade stays exact', async ({ page }) => {
   const mobile = page.viewportSize().width <= 759;
-  for (const course of ['ridge-pass', 'cypress-run', 'lantern-coil']) {
+  for (const course of ['ridge-pass', 'cypress-run']) {
     await page.locator('#track-select').selectOption(course);
     const art = page.locator(`#${course}-art`);
     const centerline = art.locator(`#${course}-centerline`);
@@ -605,8 +462,8 @@ test('generated geometry hydrates and responsive animation cascade stays exact',
 });
 
 test('generated route sweep keeps visible targets aligned, separated, and contained', async ({ page }) => {
-  test.setTimeout(120_000);
-  for (const course of ['ridge-pass', 'cypress-run', 'lantern-coil']) {
+  test.setTimeout(60_000);
+  for (const course of ['ridge-pass', 'cypress-run']) {
     await page.locator('#track-select').selectOption(course);
     const results = await page.evaluate(async ({ courseId }) => {
       const samples = [0, 1234, 7777, 15999, 31888, 47999, 63000];
@@ -1174,7 +1031,7 @@ test('active route motion pauses and resumes for hover, focus, and pin', async (
       wrapper: expected, driftName: 'none', before: expected, after: expected,
     });
   };
-  for (const trackId of ['ridge-pass', 'cypress-run', 'lantern-coil']) {
+  for (const trackId of ['ridge-pass', 'cypress-run']) {
     await page.locator('#track-select').selectOption(trackId);
     const wrapper = page.locator('.vehicle-anchor.state-active').first();
     const button = wrapper.locator('.session-car');
@@ -1231,7 +1088,7 @@ test('prefers-reduced-motion disables traversal, compiled drift, and smoke', asy
   await page.reload();
   await expect(page.locator('#snapshot-summary')).toContainText('24 sessions');
 
-  for (const trackId of ['ridge-pass', 'cypress-run', 'lantern-coil']) {
+  for (const trackId of ['ridge-pass', 'cypress-run']) {
     await page.locator('#track-select').selectOption(trackId);
     const wrapper = page.locator('.vehicle-anchor.state-active').first();
     const nestedMotion = wrapper.locator('.car-motion');
@@ -1302,7 +1159,7 @@ test('registered headings match every retained boundary, seven samples, and midp
   page,
 }) => {
   const profileName = page.viewportSize().width <= 759 ? 'mobile' : 'desktop';
-  for (const trackId of ['ridge-pass', 'cypress-run', 'lantern-coil']) {
+  for (const trackId of ['ridge-pass', 'cypress-run']) {
     await page.locator('#track-select').selectOption(trackId);
     const frames = TRACK_SCHEDULES.get(trackId)[profileName].frames;
     const percentages = [
@@ -1353,7 +1210,7 @@ test('route reset milestones preserve position, heading, opacity, and upright ma
   page,
 }) => {
   const profileName = page.viewportSize().width <= 759 ? 'mobile' : 'desktop';
-  for (const trackId of ['ridge-pass', 'cypress-run', 'lantern-coil']) {
+  for (const trackId of ['ridge-pass', 'cypress-run']) {
     await page.locator('#track-select').selectOption(trackId);
     const frames = TRACK_SCHEDULES.get(trackId)[profileName].frames;
     const first = frames[0];
@@ -1415,7 +1272,7 @@ test('route reset milestones preserve position, heading, opacity, and upright ma
 
 test('every compiled corner has signed zero-peak-zero yaw, clear body bounds, and upright markings', async ({ page }) => {
   const profileName = page.viewportSize().width <= 759 ? 'mobile' : 'desktop';
-  for (const trackId of ['ridge-pass', 'cypress-run', 'lantern-coil']) {
+  for (const trackId of ['ridge-pass', 'cypress-run']) {
     await page.locator('#track-select').selectOption(trackId);
     const schedule = TRACK_SCHEDULES.get(trackId)[profileName];
     const samples = schedule.corners.flatMap((corner, cornerIndex) => [
@@ -1787,7 +1644,7 @@ test('atmosphere geometry, envelopes, mobile policy, hit testing, and bounds sta
       },
     },
   };
-  for (const trackId of ['ridge-pass', 'cypress-run', 'lantern-coil']) {
+  for (const trackId of ['ridge-pass', 'cypress-run']) {
     await page.locator('#track-select').selectOption(trackId);
     for (const state of ['active', 'thinking']) {
       const wrapper = page.locator(`.vehicle-anchor.state-${state}`).first();

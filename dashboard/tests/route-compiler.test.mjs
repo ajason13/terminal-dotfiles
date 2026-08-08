@@ -5,7 +5,6 @@ import test from 'node:test';
 
 import config from '../routes/route-config.mjs';
 import cypress from '../routes/cypress-run.route.mjs';
-import lantern from '../routes/lantern-coil.route.mjs';
 import ridge from '../routes/ridge-pass.route.mjs';
 import {
   GENERATED_ROUTE_GEOMETRY,
@@ -54,7 +53,7 @@ import { LEGACY_ROUTE_MIGRATION } from './fixtures/legacy-route-migration.mjs';
 const clone = (value) => structuredClone(value);
 let cachedCompilation;
 const compile = () => {
-  cachedCompilation ??= compileRoutes(config, [ridge, cypress, lantern], '0'.repeat(64));
+  cachedCompilation ??= compileRoutes(config, [ridge, cypress], '0'.repeat(64));
   return cachedCompilation;
 };
 const syntheticCircle = () => {
@@ -68,100 +67,10 @@ const syntheticCircle = () => {
 };
 
 test('checked-in config and routes validate with fixed cubic and segment mappings', () => {
-  const validated = validateSources(config, [ridge, cypress, lantern]);
-  assert.deepEqual(validated.map(({ cubics }) => cubics.length), [15, 21, 16]);
+  const validated = validateSources(config, [ridge, cypress]);
+  assert.deepEqual(validated.map(({ cubics }) => cubics.length), [15, 21]);
   assert.deepEqual(ridge.segments.map(({ curveCount }) => curveCount), [1, 5, 2, 2, 4, 1]);
   assert.deepEqual(cypress.segments.map(({ curveCount }) => curveCount), [1, 4, 3, 4, 4, 5]);
-  assert.deepEqual(lantern.segments.map(({ curveCount }) => curveCount), [1, 2, 2, 3, 4, 4]);
-});
-
-test('Lantern Coil pins source identity, locators, medium-speed geometry, and open spacing', () => {
-  assert.equal(lantern.id, 'lantern-coil');
-  assert.equal(lantern.title, 'Lantern Coil');
-  assert.deepEqual(lantern.segments.map(({ anchors }) => (
-    anchors.map(({ at, lateralOffset }) => [at, lateralOffset])
-  )), [
-    [[0, 0], [0.651, 0]],
-    [[0.158, 0], [0.498, 0], [0.838, 0]],
-    [[0.2, 0], [0.582, 0], [0.964, 0]],
-    [[0.269, 0], [0.566, 0], [0.863, 0]],
-    [[0.16, 0], [0.456, 0], [0.752, 0]],
-    [[0.075, 0], [1, 0]],
-  ]);
-  const cubics = parseCubicPath(lantern.path, config.viewBox);
-  const metrics = pathMetrics(cubics);
-  const output = compile();
-  const schedule = output.schedules.find(({ route }) => route.id === lantern.id);
-  assert.equal(schedule.desktop.frames.length, 528);
-  assert.equal(schedule.mobile.frames.length, 528);
-  assert.ok(schedule.desktop.metrics.total > output.schedules[0].desktop.metrics.total);
-  assert.ok(schedule.desktop.metrics.total < output.schedules[1].desktop.metrics.total);
-  assert.ok(schedule.mobile.metrics.total > output.schedules[0].mobile.metrics.total);
-  assert.ok(schedule.mobile.metrics.total < output.schedules[1].mobile.metrics.total);
-
-  const flattened = cubics.flatMap((cubic, cubicIndex) => (
-    Array.from({ length: 33 }, (_, index) => cubicPoint(cubic, index / 32))
-      .slice(cubicIndex === 0 ? 0 : 1)
-  ));
-  const orientation = (a, b, c) => (
-    (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
-  );
-  for (let first = 0; first < flattened.length - 1; first += 1) {
-    for (let second = first + 2; second < flattened.length - 1; second += 1) {
-      const a = flattened[first];
-      const b = flattened[first + 1];
-      const c = flattened[second];
-      const d = flattened[second + 1];
-      const intersects = orientation(a, b, c) * orientation(a, b, d) < 0
-        && orientation(c, d, a) * orientation(c, d, b) < 0;
-      assert.equal(intersects, false, `flattened segments ${first}/${second} intersect`);
-    }
-  }
-
-  const samples = Array.from({ length: 1025 }, (_, index) => (
-    pointAtDistance(cubics, metrics, metrics.total * index / 1024).point
-  ));
-  for (const profile of config.profiles) {
-    let minimum = Infinity;
-    for (let first = 0; first < samples.length; first += 1) {
-      for (let second = first + 82; second < samples.length; second += 1) {
-        minimum = Math.min(minimum, Math.hypot(
-          (samples[second].x - samples[first].x) * profile.width / config.viewBox.width,
-          (samples[second].y - samples[first].y) * profile.height / config.viewBox.height,
-        ));
-      }
-    }
-    assert.ok(minimum >= profile.targetDiameter, `${profile.id} nonlocal spacing ${minimum}`);
-  }
-});
-
-test('Lantern Coil pins five positive drift envelopes, responsive peaks, and zero-yaw gaps', () => {
-  const item = compile().schedules.find(({ route }) => route.id === lantern.id);
-  assert.deepEqual(item.cornerAnalysis.corners.map(({ sign, apex }) => [sign, apex.fraction]), [
-    [1, 0.072265625], [1, 0.421875], [1, 0.693359375],
-    [1, 0.880859375], [1, 0.98046875],
-  ]);
-  assert.deepEqual(item.desktop.corners.map(({ peakYaw }) => peakYaw), [
-    34.0332, 30.7834, 33.1415, 40.164, 19.1235,
-  ]);
-  assert.deepEqual(item.mobile.corners.map(({ peakYaw }) => peakYaw), [
-    19.8528, 18.6834, 20.1688, 23.8153, 25.0196,
-  ]);
-  assert.equal(item.desktop.frames.filter(({ driftYaw }) => driftYaw === '0').length, 359);
-  assert.equal(item.mobile.frames.filter(({ driftYaw }) => driftYaw === '0').length, 303);
-  for (const profileName of ['desktop', 'mobile']) {
-    const schedule = item[profileName];
-    schedule.corners.forEach((corner) => {
-      assert.equal(schedule.frames[corner.entryFrameIndex].driftYaw, '0');
-      assert.equal(schedule.frames[corner.exitFrameIndex].driftYaw, '0');
-    });
-    for (let index = 1; index < schedule.corners.length; index += 1) {
-      assert.ok(schedule.frames.slice(
-        schedule.corners[index - 1].exitFrameIndex,
-        schedule.corners[index].entryFrameIndex + 1,
-      ).some(({ driftYaw }) => driftYaw === '0'));
-    }
-  }
 });
 
 test('closed schema rejects missing and extra keys at every source depth', () => {
@@ -176,7 +85,7 @@ test('closed schema rejects missing and extra keys at every source depth', () =>
     (cfg, routes) => { delete routes[0].segments[0].anchors[0].at; },
   ]) {
     const cfg = clone(config);
-    const routes = [clone(ridge), clone(cypress), clone(lantern)];
+    const routes = [clone(ridge), clone(cypress)];
     mutate(cfg, routes);
     assert.throws(() => validateSources(cfg, routes), /unsupported or missing keys/);
   }
@@ -195,14 +104,14 @@ test('identity, uniqueness, primitive, locator, and fixed mapping boundaries fai
     (cfg, routes) => { routes[0].segments[0].anchors[1].at = 0; },
   ]) {
     const cfg = clone(config);
-    const routes = [clone(ridge), clone(cypress), clone(lantern)];
+    const routes = [clone(ridge), clone(cypress)];
     mutate(cfg, routes);
     assert.throws(() => validateSources(cfg, routes));
   }
 });
 
 test('segment cssClass references are unique across the complete catalog', () => {
-  const routes = [clone(ridge), clone(cypress), clone(lantern)];
+  const routes = [clone(ridge), clone(cypress)];
   routes[1].segments[0].cssClass = routes[0].segments[0].cssClass;
   assert.throws(() => validateSources(clone(config), routes), /segments\[0\] is duplicated/);
 });
@@ -232,7 +141,7 @@ test('closed source graph rejects hidden, symbolic, accessor, prototype, and pri
 });
 
 test('route filename set rejects missing and orphan sources', () => {
-  const current = ['cypress-run.route.mjs', 'lantern-coil.route.mjs', 'ridge-pass.route.mjs'];
+  const current = ['cypress-run.route.mjs', 'ridge-pass.route.mjs'];
   assert.doesNotThrow(() => validateRouteFileNames(config.trackOrder, current));
   assert.throws(() => validateRouteFileNames(config.trackOrder, current.slice(1)), /missing or extra/);
   assert.throws(() => validateRouteFileNames(
@@ -601,12 +510,8 @@ test('compiled canonical detector reproduces exact generic Ridge and Cypress top
       [-1, 212, 225, 235], [-1, 235, 247, 259], [1, 302, 325, 340],
       [1, 440, 454, 463], [1, 475, 486, 496],
     ]],
-    ['lantern-coil', [
-      [1, 24, 37, 54], [1, 186, 216, 232], [1, 331, 355, 371],
-      [1, 434, 451, 484], [1, 494, 502, 507],
-    ]],
   ]);
-  for (const route of [ridge, cypress, lantern]) {
+  for (const route of [ridge, cypress]) {
     const analysis = detectCourseCorners(
       route,
       parseCubicPath(route.path, config.viewBox),
@@ -647,16 +552,6 @@ test('responsive projection preserves route-turn sign and emits bounded visual y
       '24.1211/26.2437/33.7695', '39.9445/42.4531/45.3477',
       '45.3477/49.0141/51.1367', '57.6977/63.4867/66.1883',
       '81.8187/84.7133/87.4148', '91.2742/94.5547/96.2914',
-    ]],
-    ['lantern-coil/desktop', [
-      '4.4383/6.5609/9.4555', '36.0852/41.2953/43.9969',
-      '64.0656/68.3109/71.2055', '83.9414/87.0289/93.2039',
-      '95.3266/96.8703/97.8352',
-    ]],
-    ['lantern-coil/mobile', [
-      '5.7891/9.2625/13.8937', '35.5063/43.225/47.2773',
-      '63.4867/69.4688/73.3281', '83.3625/87.2219/93.9758',
-      '95.3266/96.6773/97.6422',
     ]],
   ]);
   for (const item of compile().schedules) {
@@ -773,7 +668,7 @@ test('responsive landmark projection rejects collapse and overlapping envelopes'
 });
 
 test('static headings come from responsive source locators in exact slot order', () => {
-  for (const route of [ridge, cypress, lantern]) {
+  for (const route of [ridge, cypress]) {
     const cubics = parseCubicPath(route.path, config.viewBox);
     const desktop = generateStaticHeadings(route, cubics, config.profiles[0], config);
     const mobile = generateStaticHeadings(route, cubics, config.profiles[1], config);
@@ -790,7 +685,7 @@ test('static headings come from responsive source locators in exact slot order',
 
 test('frame and slot derivatives use outgoing start/boundary/final and map-space locators', () => {
   const output = compile();
-  for (const [routeIndex, route] of [ridge, cypress, lantern].entries()) {
+  for (const [routeIndex, route] of [ridge, cypress].entries()) {
     const cubics = parseCubicPath(route.path, config.viewBox);
     for (const [profileName, profile] of [
       ['desktop', config.profiles[0]], ['mobile', config.profiles[1]],
@@ -889,8 +784,6 @@ test('all pre-heading schedule percentages, positions, and visible opacity are p
     ['ridge-pass/mobile', '4a52fd7029bf9719db251c8d74217afbef532a4c7e7861d572d49e155a29787f'],
     ['cypress-run/desktop', '6b9cd28c7def47fdf88ed2a232fb02650f4de75941d061e685719f75c876f2e3'],
     ['cypress-run/mobile', '9accf028b75799d3b85214236fcd6bfc68844ed9ac4bfc8d95fcf905c486e1e9'],
-    ['lantern-coil/desktop', '844bf7abf6ac9351d8364088a755f55359f4e0de06a8d51715bab387fbd0caed'],
-    ['lantern-coil/mobile', '9d0a08fb506dcfd420fab30a554f038e72f5a7233bf7ea214111c84392ffcf23'],
   ]);
   for (const item of compile().schedules) {
     for (const profileName of ['desktop', 'mobile']) {
@@ -916,7 +809,6 @@ test('generated anchors preserve IDs, capacities, labels, angle and migration to
       track.routeAnchors.filter(({ poolLabel }) => poolLabel === segment).length
     )), [2, 3, 3, 3, 3, 2]);
     assert.equal(track.routeAnchors.every(({ angle }) => angle === 0), true);
-    if (!legacy) return;
     track.routeAnchors.forEach((anchor, index) => {
       assert.ok(Math.hypot(
         anchor.x - legacy[index][0],
@@ -1102,7 +994,7 @@ test('serialized boundary endpoint and multi-boundary collisions are rejected se
 
 test('generated serialization is deterministic, owned, precise and reset-stable', () => {
   const first = compile();
-  const second = compileRoutes(config, [ridge, cypress, lantern], '0'.repeat(64));
+  const second = compileRoutes(config, [ridge, cypress], '0'.repeat(64));
   assert.equal(first.mjs, second.mjs);
   assert.equal(first.css, second.css);
   assert.match(first.mjs, /^\/\/ @generated by dashboard\/scripts\/compile-routes\.mjs/);
@@ -1110,12 +1002,14 @@ test('generated serialization is deterministic, owned, precise and reset-stable'
   assert.doesNotMatch(`${first.mjs}${first.css}`, /Users\/|timestamp|sourceMappingURL|https?:\/\//);
   assert.equal(first.mjs.endsWith('\n'), true);
   assert.equal(first.css.endsWith('\n'), true);
-  assert.equal((first.css.match(/99\.2% \{/g) ?? []).length, 6);
-  assert.equal((first.css.match(/99\.6% \{/g) ?? []).length, 6);
-  assert.equal((first.css.match(/100% \{/g) ?? []).length, 6);
-  assert.equal((first.css.match(/vehicle-anchor\[data-route-slot="\d+"\]/g) ?? []).length, 96);
-  assert.equal((first.css.match(/--route-heading:/g) ?? []).length, 3290);
-  assert.equal((first.css.match(/--drift-yaw:/g) ?? []).length, 3194);
+  assert.equal((first.css.match(/99\.2% \{/g) ?? []).length, 4);
+  assert.equal((first.css.match(/99\.6% \{/g) ?? []).length, 4);
+  assert.equal((first.css.match(/100% \{/g) ?? []).length, 4);
+  assert.equal((first.css.match(/vehicle-anchor\[data-route-slot="\d+"\]/g) ?? []).length, 64);
+  assert.equal((first.css.match(/--route-heading:/g) ?? []).length,
+    2 * (527 + 533 + 3 + 3) + 64);
+  assert.equal((first.css.match(/--drift-yaw:/g) ?? []).length,
+    2 * (527 + 533 + 3 + 3));
   assert.doesNotMatch(first.css, /@property\s+--/);
   for (const item of first.schedules) {
     for (const profileName of ['desktop', 'mobile']) {
@@ -1134,7 +1028,7 @@ test('generated serialization is deterministic, owned, precise and reset-stable'
     );
   assert.equal(
     createHash('sha256').update(normalizedNonYawCss).digest('hex'),
-    'eff7c90d4e365a7d90ff5fa9c54fd0b29f1a04b7550d7472cab279cd6576bfbb',
+    '2923ecc9f7263688923ddb861adc6b7cb1fce6dbd348409cbb0e16deacc87534',
   );
 });
 
@@ -1144,8 +1038,8 @@ test('generated slot selectors and every frame declaration have exact order and 
   const selectors = [...output.css.matchAll(selectorPattern)].map((match) => ({
     track: match[1], slot: Number(match[2]),
   }));
-  assert.equal(selectors.length, 96);
-  for (const track of ['ridge-pass', 'cypress-run', 'lantern-coil']) {
+  assert.equal(selectors.length, 64);
+  for (const track of ['ridge-pass', 'cypress-run']) {
     assert.deepEqual(
       selectors.filter((item) => item.track === track).map(({ slot }) => slot),
       [...Array.from({ length: 16 }, (_, index) => index),
@@ -1348,11 +1242,10 @@ test('failed second install rename restores both committed artifacts', async () 
 });
 
 test('generated artifacts match the checked-in bytes', () => {
-  const output = compileRoutes(config, [ridge, cypress, lantern], sourceDigest([
+  const output = compileRoutes(config, [ridge, cypress], sourceDigest([
     { path: 'routes/route-config.mjs', contents: readFileSync(new URL('../routes/route-config.mjs', import.meta.url)) },
     { path: 'routes/ridge-pass.route.mjs', contents: readFileSync(new URL('../routes/ridge-pass.route.mjs', import.meta.url)) },
     { path: 'routes/cypress-run.route.mjs', contents: readFileSync(new URL('../routes/cypress-run.route.mjs', import.meta.url)) },
-    { path: 'routes/lantern-coil.route.mjs', contents: readFileSync(new URL('../routes/lantern-coil.route.mjs', import.meta.url)) },
   ]));
   assert.equal(readFileSync(new URL('../src/generated/route-geometry.mjs', import.meta.url), 'utf8'), output.mjs);
   assert.equal(readFileSync(new URL('../generated/route-motion.css', import.meta.url), 'utf8'), output.css);
@@ -1364,12 +1257,12 @@ test('HTML and base CSS contain placeholders and preserve generated-first cascad
   const generatedLink = index.indexOf('./generated/route-motion.css');
   const baseLink = index.indexOf('./styles.css');
   assert.ok(generatedLink >= 0 && baseLink > generatedLink);
-  assert.equal((index.match(/data-route-segment-index="[0-5]"/g) ?? []).length, 18);
-  for (const route of [ridge, cypress, lantern]) {
+  assert.equal((index.match(/data-route-segment-index="[0-5]"/g) ?? []).length, 12);
+  for (const route of [ridge, cypress]) {
     assert.match(index, new RegExp(`id="${route.centerlineId}" fill="none"\\s*/>`));
     assert.doesNotMatch(index, new RegExp(`id="${route.centerlineId}"[^>]*\\sd=`));
   }
-  assert.doesNotMatch(baseCss, /@keyframes (?:ridge-pass|cypress-run|lantern-coil)-traverse/);
-  assert.doesNotMatch(baseCss, /animation(?:-name)?:\s*(?:ridge-pass|cypress-run|lantern-coil)-traverse/);
+  assert.doesNotMatch(baseCss, /@keyframes (?:ridge-pass|cypress-run)-traverse/);
+  assert.doesNotMatch(baseCss, /animation(?:-name)?:\s*(?:ridge-pass|cypress-run)-traverse/);
   assert.match(baseCss, /\.vehicle-anchor\s*\{[\s\S]*animation:\s*none !important/);
 });

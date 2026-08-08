@@ -707,8 +707,9 @@ auto-create sidecars from the sample YAML:
 That command:
 
 - moves or copies the image files into `wezterm/assets/inbox/`
-- selects only top-level lowercase `*.png` files from the directory (it does not
-  recurse), ordered by basename in deterministic C/byte order
+- selects only top-level PNG and JPEG files from the directory (it does not
+  recurse), matching extensions case-insensitively and ordering by basename in
+  deterministic C/byte order
 - imports the first files that fit in the remaining inbox capacity, up to 10
 - creates matching `.yaml` sidecars from `_sample/scene-001.yaml`
 - optionally stamps the same `series` / `mode` onto every imported file
@@ -725,8 +726,8 @@ Useful variants:
 ./scripts/import-background-inbox.sh --move --series attack-on-titan --mode as_is --edit --from-dir ~/Desktop
 ```
 
-Explicit image paths continue to support PNG and JPEG files. Directory mode
-cannot be combined with explicit paths.
+Explicit image paths and directory mode support PNG and JPEG files. Directory
+mode cannot be combined with explicit paths.
 
 For each screenshot, add a sidecar YAML file with the same basename:
 
@@ -834,7 +835,7 @@ The current scaling approach is:
 - Keep bundle totals within their current caps:
   - `general`: 16 MiB
   - `vehicles`: 24 MiB
-  - `anime`: 196 MiB
+  - `anime`: 200 MiB
 
 `./scripts/publish-backgrounds.sh` enforces the current image size limits
 (via `./scripts/check-background-assets.sh`) before publishing bundle releases,

@@ -70,11 +70,14 @@ grep -F "./scripts/check-background-inbox.sh" <<<"$move_output" >/dev/null \
 directory_inbox="$tmp_dir/directory-inbox"
 directory_source="$tmp_dir/directory-source"
 mkdir -p "$directory_inbox" "$directory_source/nested"
-for number in $(seq -w 1 12); do
+for number in 01 02 03 04 05 06 07; do
   touch "$directory_source/scene-${number}.png"
 done
-touch "$directory_source/ignored.jpg"
-touch "$directory_source/ignored.PNG"
+touch "$directory_source/scene-08.jpg"
+touch "$directory_source/scene-09.JPG"
+touch "$directory_source/scene-10.jpeg"
+touch "$directory_source/scene-11.JPEG"
+touch "$directory_source/scene-12.PNG"
 touch "$directory_source/nested/scene-00.png"
 
 directory_output="$(
@@ -83,20 +86,24 @@ directory_output="$(
   "$script" --copy --series initial-d --mode stylized --from-dir "$directory_source"
 )" || fail "directory import should succeed"
 
-for number in $(seq -w 1 10); do
+for number in 01 02 03 04 05 06 07; do
   [[ -f "$directory_inbox/scene-${number}.png" ]] \
     || fail "directory import missing scene-${number}.png"
   [[ -f "$directory_inbox/scene-${number}.yaml" ]] \
     || fail "directory import missing scene-${number}.yaml"
 done
-[[ ! -e "$directory_inbox/scene-11.png" ]] \
+[[ -f "$directory_inbox/scene-08.jpg" ]] \
+  || fail "directory import missing lowercase JPG image"
+[[ -f "$directory_inbox/scene-09.JPG" ]] \
+  || fail "directory import missing uppercase JPG image"
+[[ -f "$directory_inbox/scene-10.jpeg" ]] \
+  || fail "directory import missing JPEG image"
+[[ -f "$directory_inbox/scene-08.yaml" ]] \
+  || fail "directory import missing JPG sidecar"
+[[ ! -e "$directory_inbox/scene-11.JPEG" ]] \
   || fail "directory import should stop at 10 images"
-[[ ! -e "$directory_inbox/scene-12.png" ]] \
+[[ ! -e "$directory_inbox/scene-12.PNG" ]] \
   || fail "directory import should stop at 10 images"
-[[ ! -e "$directory_inbox/ignored.jpg" ]] \
-  || fail "directory import should ignore JPEG files"
-[[ ! -e "$directory_inbox/ignored.PNG" ]] \
-  || fail "directory import should match lowercase *.png only"
 [[ ! -e "$directory_inbox/scene-00.png" ]] \
   || fail "directory import should not recurse"
 grep -F "Imported 10 image(s)" <<<"$directory_output" >/dev/null \
@@ -129,7 +136,7 @@ mkdir -p "$empty_source"
 if BACKGROUND_INBOX_DIR="$inbox_dir" \
   BACKGROUND_INBOX_SAMPLE_YAML="$sample_dir/scene-001.yaml" \
   "$script" --copy --from-dir "$empty_source" >/dev/null 2>&1; then
-  fail "directory import without lowercase PNG files should fail"
+  fail "directory import without PNG or JPEG files should fail"
 fi
 
 if BACKGROUND_INBOX_DIR="$inbox_dir" \

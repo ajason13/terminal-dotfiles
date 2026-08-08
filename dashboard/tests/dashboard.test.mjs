@@ -842,7 +842,7 @@ test('route and smoke assignments retain exact pause specificity and order', () 
     > normalizedStyles.indexOf(normalize(selectors.traversal)));
   assert.ok(normalizedStyles.indexOf(normalize(selectors.smokePause))
     > normalizedStyles.indexOf(normalize(selectors.smoke)));
-  for (const track of ['ridge-pass', 'cypress-run', 'lantern-coil']) {
+  for (const track of ['ridge-pass', 'cypress-run']) {
     for (const state of ['active', 'thinking']) {
       assert.ok(normalizedStyles.includes(
         `.dashboard-root:where([data-route-angle-motion="enabled"])[data-track-id="${track}"] `

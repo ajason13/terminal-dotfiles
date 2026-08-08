@@ -26,9 +26,9 @@ Examples:
   ./scripts/import-background-inbox.sh --move --series haikyuu --mode stylized --from-dir ~/Desktop
   ./scripts/import-background-inbox.sh --copy ~/Desktop/'Screenshot 2026-07-15 at 9.12.01 PM.png'
 
-Directory mode scans only DIR/*.png (not subdirectories), orders matches by
-basename in C/byte order, and imports up to the inbox's remaining 10-image
-capacity.
+Directory mode scans top-level PNG and JPEG files (not subdirectories), orders
+matches by basename in C/byte order, and imports up to the inbox's remaining
+10-image capacity.
 EOF
 }
 
@@ -129,20 +129,23 @@ if [[ -n "$from_dir" ]]; then
   remaining_capacity=$((max_images - existing_image_count))
   (( remaining_capacity > 0 )) || fail "inbox already has the maximum of ${max_images} image(s)"
 
-  # Bash expands each glob in locale sort order. Pinning the locale makes the
-  # basename ordering deterministic across machines.
-  export LC_ALL=C
-  shopt -s nullglob
-  directory_pngs=("$from_dir"/*.png)
-  shopt -u nullglob
-  (( ${#directory_pngs[@]} > 0 )) || fail "no *.png files found in directory: $from_dir"
+  directory_images=()
+  while IFS= read -r image; do
+    directory_images+=("$image")
+  done < <(
+    find "$from_dir" -maxdepth 1 -type f \
+      \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \) -print |
+      LC_ALL=C sort
+  )
+  (( ${#directory_images[@]} > 0 )) || \
+    fail "no PNG or JPEG files found in directory: $from_dir"
 
-  selection_count="${#directory_pngs[@]}"
+  selection_count="${#directory_images[@]}"
   if (( selection_count > remaining_capacity )); then
     selection_count="$remaining_capacity"
   fi
   for (( index = 0; index < selection_count; index++ )); do
-    image_paths+=("${directory_pngs[$index]}")
+    image_paths+=("${directory_images[$index]}")
   done
 fi
 

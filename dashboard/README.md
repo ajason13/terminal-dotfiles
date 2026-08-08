@@ -258,12 +258,11 @@ validation, source lifecycle, allocation, and rendering are separate modules.
 Tests inject filesystem, process, file-reader, timer, and renderer behavior; the
 test suite never contacts the user's real/default tmux server.
 
-The browser-local catalog contains exactly three original continuous courses:
+The browser-local catalog contains exactly two original continuous courses:
 **Ridge Pass**, from upper-left High Moor through Pass Ladder, Cedar Chain,
-Cloud Ridge, and Long Arc to lower-right Valley Gate; **Cypress Run**, from
+Cloud Ridge, and Long Arc to lower-right Valley Gate; and **Cypress Run**, from
 Launch Line through North Nineties, East Hairpin, Drop Chute, South Hairpin,
-and West Switchback; and **Lantern Coil**, an open clockwise rain-garden spiral.
-Each course uses 2/3/3/3/3/2 route slots in traversal order
+and West Switchback. Each course uses 2/3/3/3/3/2 route slots in traversal order
 and has independent static SVG art plus responsive motion schedules. Ridge Pass
 retains its mountain terrain language. Cypress Run is a purpose-built paved
 night mixed technical drift course that fills all four quadrants with
@@ -279,16 +278,14 @@ stable catalog order. It recomputes only at startup, its one boundary timeout,
 visible `visibilitychange`, `pageshow`, or window focus. At exactly 08:30 the
 first slot begins; at exactly 12:30 the second begins; at exactly 16:30 the
 dashboard is after-hours and the next automatic change is the following local
-day at 08:30. Manual course selection immediately clears the
+day at 08:30. Manual Ridge Pass or Cypress Run selection immediately clears the
 timeout. Course switching never rereads or mutates fixture/live session data,
 and preserves session button identity, focus, and pin state.
 
 The deterministic 16-slot allocation supplies exact four-second phase offsets
 on one shared 64-second CSS traversal. Desktop and mobile waypoint schedules
 are compiled independently for their target screen proportions from each
-course's one canonical displayed-coordinate cubic path. Lantern Coil adds an
-open clockwise rain-garden spiral through Ember Gate, Outer Lantern, Prism
-Rise, Halo Crest, Inner Coil, and Dawn Chute. The checked-in
+course's one canonical displayed-coordinate cubic path. The checked-in
 compiler derives sixteen static anchors, full and six segment paths, a
 513-position equal-distance base grid, and every internal cubic-boundary
 keyframe. Startup synchronously validates and hydrates all route placeholders
@@ -300,8 +297,8 @@ motion disables traversal and nested car motion, returning each route car to
 its deterministic static anchor without changing accessible location text. At
 the mobile breakpoint, route buttons use a true 44px-diameter circular hit
 region; the original car silhouette is contained inside it while the focus ring
-and tooltip remain unclipped. Responsive tangent-based car orientation and
-corner-aware drifting are compiler-owned protected behavior.
+and tooltip remain unclipped. Tangent-based car orientation and drifting remain
+deferred.
 
 Service Bay, Permission Checkpoint, and the shared idle/complete Pit Stop each
 mount their six stationary anchors inside their own bottom pit-lane bay.
