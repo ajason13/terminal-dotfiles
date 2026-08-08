@@ -28,6 +28,45 @@ The current Auto label is `Auto · workday schedule`. Exact browser-local
 contracts covered by `multi-track.test.mjs`; this manual procedure does not
 claim wall-clock boundary evidence.
 
+## Breakpoint focus and phased-overlap regression — 2026-08-08
+
+The permanent Chromium matrix now covers Ridge Pass and Cypress Run at
+`759`, `760`, `959`, and `960` pixels with a test-only sixteen-route-session
+fixture. Normal motion freezes every retained compiled global frame (`527`
+Ridge frames and `533` Cypress frames); the production four-second negative
+delays remain applied, so every freeze audits all simultaneously visible
+phased targets. Each freeze checks the complete rendered keyboard-focus
+exterior against `#map-stage`, every target pair for positive-area overlap,
+and document overflow. Reduced motion and failed `CSS.registerProperty`
+capability separately audit all sixteen static anchors.
+
+An equivalent synthetic schema-v2 file import exercises the live source path
+without a collector, tmux access, or runtime observability. Fixture and live
+stage/slot rectangles are compared at every width/course/state. Identical
+geometry reuses the fixture sweep; a live source-age line can change the stage
+top and height, in which case the live pixels receive their own complete sweep
+instead. Console warnings, console errors, and page errors are collected for
+every synthetic context. Failure records include width, course, source state,
+motion state, phase, session IDs and slots, rectangles, limiting edge or pair,
+and all edge clearances or overlap dimensions.
+
+The remediation uses a CSS-only compact route-control band from `760px`
+through `960px`: route wrappers and buttons are `44×44px`, route bodies reuse
+the established `24×36px` compact presentation and offsets, and keyboard focus
+is a solid high-contrast `3px` exterior outline with no additional shadow.
+The route map and vehicle layer receive the same rigid `1px` upward placement,
+preserving their alignment while supplying the limiting live Ridge focus
+clearance. Pit controls and the `<=759px` circular mobile target/pseudo-focus
+composition remain unchanged. At `961px`, automated boundary coverage proves
+the original `52×52px` target, `32×48px` body, rounded-square shape, and desktop
+focus treatment resume.
+
+The final targeted Chromium run passed the complete matrix in 4.7 minutes with
+zero focus-clearance failures, positive-area target overlaps, document
+overflow, console warnings/errors, or page errors. No route, compiler,
+generated artifact, runtime JavaScript, screenshot, package, or tmux path was
+changed.
+
 ## Cypress mobile clearance implementation evidence — 2026-07-28
 
 Roadmap item 4 applies a Cypress-mobile-only centered `0.94` presentation

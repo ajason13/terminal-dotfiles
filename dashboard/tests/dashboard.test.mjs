@@ -1000,6 +1000,32 @@ test('CSS and document preserve 44px targets and map-first responsive behavior',
   assert.doesNotMatch(STYLES, /status-rail|session-list|rail-item/);
 });
 
+test('760px through 960px use compact rounded-square route controls only', () => {
+  const compactStart = STYLES.indexOf('@media (min-width: 760px) and (max-width: 960px)');
+  const compactEnd = STYLES.indexOf('@media (max-width: 759px)', compactStart);
+  const compact = STYLES.slice(compactStart, compactEnd);
+  assert.ok(compactStart >= 0, 'compact route-control media query must exist');
+  assert.match(
+    compact,
+    /\.map-stage \.route-map,\s*\.map-stage \.vehicle-layer\s*\{[^}]*top:\s*-1px;[^}]*bottom:\s*auto/si,
+  );
+  assert.match(
+    compact,
+    /\.vehicle-anchor,\s*\.vehicle-anchor \.session-car\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px/si,
+  );
+  assert.match(
+    compact,
+    /\.vehicle-anchor \.car-body\s*\{[^}]*width:\s*24px;[^}]*height:\s*36px/si,
+  );
+  assert.match(compact, /\.vehicle-anchor \.car-glyph\s*\{[^}]*top:\s*13px;[^}]*left:\s*4px/si);
+  assert.match(compact, /\.vehicle-anchor \.car-code\s*\{[^}]*left:\s*1px;[^}]*bottom:\s*3px/si);
+  assert.match(
+    compact,
+    /\.vehicle-anchor \.session-car:focus-visible\s*\{[^}]*outline:\s*3px solid var\(--color-focus\);[^}]*outline-offset:\s*0;[^}]*box-shadow:\s*none/si,
+  );
+  assert.doesNotMatch(compact, /\.pit-vehicle|clip-path|border-radius:\s*50%|::after/si);
+});
+
 test('Cypress mobile uses the approved centered course scale and exact target counterscale', () => {
   const mobileStart = BASE_STYLES.indexOf('@media (max-width: 759px)');
   const mobileEnd = BASE_STYLES.indexOf('@media (max-width: 420px)', mobileStart);

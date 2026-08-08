@@ -1179,6 +1179,41 @@ details[open] > .overflow-toggle::before {
   }
 }
 
+@media (min-width: 760px) and (max-width: 960px) {
+  .map-stage .route-map,
+  .map-stage .vehicle-layer {
+    top: -1px;
+    bottom: auto;
+  }
+
+  .vehicle-anchor,
+  .vehicle-anchor .session-car {
+    width: 44px;
+    height: 44px;
+  }
+
+  .vehicle-anchor .car-body {
+    width: 24px;
+    height: 36px;
+  }
+
+  .vehicle-anchor .car-glyph {
+    top: 13px;
+    left: 4px;
+  }
+
+  .vehicle-anchor .car-code {
+    left: 1px;
+    bottom: 3px;
+  }
+
+  .vehicle-anchor .session-car:focus-visible {
+    outline: 3px solid var(--color-focus);
+    outline-offset: 0;
+    box-shadow: none;
+  }
+}
+
 @media (max-width: 759px) {
   .map-stage {
     min-height: 580px;

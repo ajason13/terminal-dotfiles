@@ -9,6 +9,237 @@ const COMPILED = compileRoutes(config, [ridge, cypress], '0'.repeat(64));
 const TRACK_SCHEDULES = new Map(COMPILED.schedules.map((item) => [item.route.id, item]));
 const CYPRESS_TRACK = getTrack('cypress-run');
 const CYPRESS_MOBILE_HEADINGS = TRACK_SCHEDULES.get('cypress-run').mobileStaticHeadings;
+const BREAKPOINT_WIDTHS = [759, 760, 959, 960];
+const BREAKPOINT_COURSES = ['ridge-pass', 'cypress-run'];
+const ROUTE_LAP_MS = 64_000;
+
+function syntheticFixtureSnapshot() {
+  return {
+    schemaVersion: 1,
+    generatedAt: '2026-08-07T12:00:00.000Z',
+    sessions: Array.from({ length: 16 }, (_, index) => ({
+      id: `breakpoint-fixture-${String(index + 1).padStart(2, '0')}`,
+      displayName: `Breakpoint fixture ${String(index + 1).padStart(2, '0')}`,
+      status: index % 2 === 0 ? 'active' : 'thinking',
+      lastActivityAt: '2026-08-07T12:00:00.000Z',
+      permissionState: 'not_required',
+      progress: (index + 0.25) / 16,
+      phase: 'Synthetic breakpoint geometry',
+    })),
+  };
+}
+
+function syntheticLiveSnapshot() {
+  const observedAt = new Date().toISOString();
+  return {
+    schemaVersion: 2,
+    source: { kind: 'tmux_oneshot', collectorVersion: '1.0.0' },
+    observedAt,
+    sessions: Array.from({ length: 16 }, (_, index) => ({
+      id: `tmux-${index.toString(16).padStart(32, '0')}`,
+      displayName: `Breakpoint live ${String(index + 1).padStart(2, '0')}`,
+      status: index % 2 === 0 ? 'active' : 'thinking',
+      activity: { kind: 'observed', at: observedAt },
+      permissionState: 'unknown',
+      confidence: 'medium',
+      provenance: index % 2 === 0 ? 'tmux_title_working' : 'tmux_title_thinking',
+    })),
+  };
+}
+
+function phaseLattice(trackId, profileName) {
+  // Every retained compiled frame is a global freeze point. At each point the
+  // sixteen wrappers keep their production four-second negative delays, so the
+  // one traversal covers the complete simultaneously phased route population.
+  return TRACK_SCHEDULES.get(trackId)[profileName].frames.map((frame) => (
+    Number(frame.percent) / 100 * ROUTE_LAP_MS
+  ));
+}
+
+async function openBreakpointPage(browser, mode) {
+  const context = await browser.newContext({
+    viewport: { width: BREAKPOINT_WIDTHS[0], height: 900 },
+    ...(mode === 'reduced-motion' ? { reducedMotion: 'reduce' } : {}),
+  });
+  if (mode === 'register-property-fallback') {
+    await context.addInitScript(() => {
+      Object.defineProperty(CSS, 'registerProperty', {
+        configurable: true,
+        value: undefined,
+      });
+    });
+  }
+  const fixture = syntheticFixtureSnapshot();
+  await context.route('**/src/fixture-sessions.mjs', (route) => route.fulfill({
+    contentType: 'text/javascript',
+    body: `export const FIXTURE_SNAPSHOT = ${JSON.stringify(fixture)};`,
+  }));
+  const page = await context.newPage();
+  const diagnostics = watchBrowserDiagnostics(page);
+  await page.goto('http://127.0.0.1:43917/');
+  await expect(page.locator('#snapshot-summary')).toContainText('16 sessions');
+  await expect(page.locator('.vehicle-anchor')).toHaveCount(16);
+  return { context, page, diagnostics };
+}
+
+async function freezeRouteAnimations(page, phaseMs) {
+  await page.locator('.vehicle-anchor').evaluateAll((wrappers, time) => {
+    for (const wrapper of wrappers) {
+      const traversal = wrapper.getAnimations().find((animation) => (
+        (animation.animationName ?? '').includes('traverse')
+      ));
+      if (traversal) {
+        traversal.pause();
+        traversal.currentTime = time;
+      }
+    }
+  }, phaseMs);
+}
+
+async function breakpointLayout(page) {
+  return page.evaluate(() => {
+    const serialize = (value) => ({
+      left: value.left, right: value.right, top: value.top, bottom: value.bottom,
+      width: value.width, height: value.height,
+    });
+    const stage = document.querySelector('#map-stage').getBoundingClientRect();
+    const targets = [...document.querySelectorAll('.vehicle-anchor')]
+      .sort((left, right) => Number(left.dataset.routeSlot) - Number(right.dataset.routeSlot))
+      .map((wrapper) => ({
+        slot: Number(wrapper.dataset.routeSlot),
+        target: serialize(wrapper.querySelector('.session-car').getBoundingClientRect()),
+        opacity: Number(getComputedStyle(wrapper).opacity),
+      }));
+    return {
+      stage: serialize(stage),
+      targets,
+      overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  });
+}
+
+async function focusExpansions(page) {
+  const wrappers = page.locator('.vehicle-anchor');
+  const result = [];
+  for (let index = 0; index < await wrappers.count(); index += 1) {
+    const wrapper = wrappers.nth(index);
+    const button = wrapper.locator('.session-car');
+    await button.focus();
+    // Programmatic focus can retain pointer modality. A non-activating key event
+    // makes this the keyboard focus state whose complete exterior we are auditing.
+    await button.press('Shift');
+    result.push(await wrapper.evaluate((element) => {
+      const buttonStyle = getComputedStyle(element.querySelector('.session-car'));
+      const outline = parseFloat(buttonStyle.outlineWidth)
+        + parseFloat(buttonStyle.outlineOffset);
+      const pseudo = getComputedStyle(element, '::after');
+      const pseudoInset = Math.max(...[
+        pseudo.left, pseudo.right, pseudo.top, pseudo.bottom,
+      ].map((value) => -parseFloat(value)).filter(Number.isFinite));
+      return {
+        slot: Number(element.dataset.routeSlot),
+        expansion: buttonStyle.outlineStyle !== 'none' && Number.isFinite(outline)
+          ? outline
+          : Number.isFinite(pseudoInset) ? pseudoInset : 0,
+      };
+    }));
+  }
+  await page.locator('#track-select').focus();
+  return result;
+}
+
+async function auditBreakpointGeometry(page, {
+  width, course, sourceState, mode, phases,
+}) {
+  const expansions = new Map((await focusExpansions(page)).map((item) => (
+    [item.slot, item.expansion]
+  )));
+  expect([...expansions.values()].every((value) => value > 0),
+    `${width}/${course}/${sourceState}/${mode} visible focus exterior ${JSON.stringify([...expansions])}`)
+    .toBe(true);
+  const result = await page.evaluate(async ({ auditPhases, focusBySlot }) => {
+    const expansionsBySlot = new Map(focusBySlot);
+    const wrappers = [...document.querySelectorAll('.vehicle-anchor')];
+    const traversals = wrappers.map((wrapper) => wrapper.getAnimations().find((animation) => (
+      (animation.animationName ?? '').includes('traverse')
+    )));
+    const rect = (element) => {
+      const value = element.getBoundingClientRect();
+      return {
+        left: value.left, right: value.right, top: value.top, bottom: value.bottom,
+        width: value.width, height: value.height,
+      };
+    };
+    let minimumFocus = { value: Infinity };
+    let firstOverlap = null;
+    let firstOverflow = null;
+    for (const phase of auditPhases) {
+      for (const traversal of traversals) {
+        if (traversal) {
+          traversal.pause();
+          traversal.currentTime = phase;
+        }
+      }
+      // Reading layout flushes the deterministic currentTime writes; no wall-clock wait is used.
+      const stage = rect(document.querySelector('#map-stage'));
+      const targets = wrappers.map((wrapper) => ({
+        id: wrapper.dataset.sessionId,
+        slot: Number(wrapper.dataset.routeSlot),
+        opacity: Number(getComputedStyle(wrapper).opacity),
+        rect: rect(wrapper.querySelector('.session-car')),
+      })).filter((item) => item.opacity > 0.001);
+      const overflow = document.documentElement.scrollWidth
+        - document.documentElement.clientWidth;
+      if (overflow !== 0 && firstOverflow === null) firstOverflow = { phase, overflow };
+      for (const target of targets) {
+        const expansion = expansionsBySlot.get(target.slot);
+        const edges = {
+          left: target.rect.left - expansion - stage.left,
+          right: stage.right - target.rect.right - expansion,
+          top: target.rect.top - expansion - stage.top,
+          bottom: stage.bottom - target.rect.bottom - expansion,
+        };
+        const limiting = Object.entries(edges).reduce((best, item) => (
+          item[1] < best[1] ? item : best
+        ));
+        if (limiting[1] < minimumFocus.value) {
+          minimumFocus = {
+            value: limiting[1], phase, id: target.id, slot: target.slot,
+            rect: target.rect, stage, focusExpansion: expansion,
+            limitingEdge: limiting[0], edgeClearances: edges,
+          };
+        }
+      }
+      for (let first = 0; first < targets.length && firstOverlap === null; first += 1) {
+        for (let second = first + 1; second < targets.length; second += 1) {
+          const left = targets[first];
+          const right = targets[second];
+          const overlap = {
+            horizontal: Math.min(left.rect.right, right.rect.right)
+              - Math.max(left.rect.left, right.rect.left),
+            vertical: Math.min(left.rect.bottom, right.rect.bottom)
+              - Math.max(left.rect.top, right.rect.top),
+          };
+          if (overlap.horizontal > 0.01 && overlap.vertical > 0.01) {
+            firstOverlap = {
+              phase, pair: [left.id, right.id], slots: [left.slot, right.slot],
+              rectangles: [left.rect, right.rect], overlap,
+            };
+            break;
+          }
+        }
+      }
+    }
+    return { minimumFocus, firstOverlap, firstOverflow };
+  }, { auditPhases: phases, focusBySlot: [...expansions] });
+  const prefix = { width, course, sourceState, mode, phaseCount: phases.length };
+  return [
+    ...(result.minimumFocus.value < -0.01
+      ? [{ kind: 'focus-clearance', ...prefix, ...result.minimumFocus }] : []),
+    ...(result.firstOverlap ? [{ kind: 'target-overlap', ...prefix, ...result.firstOverlap }] : []),
+    ...(result.firstOverflow ? [{ kind: 'document-overflow', ...prefix, ...result.firstOverflow }] : []),
+  ];
+}
 
 function angleDistance(first, second) {
   return Math.abs(((first - second + 180) % 360 + 360) % 360 - 180);
@@ -348,16 +579,25 @@ test('layout boundaries preserve all course targets, controls, and transform iso
   page,
 }) => {
   if (page.viewportSize().width < 1000) return;
-  for (const width of [759, 760, 959, 960]) {
+  for (const width of [759, 760, 959, 960, 961]) {
     await page.setViewportSize({ width, height: 900 });
     for (const trackId of ['ridge-pass', 'cypress-run']) {
       await page.locator('#track-select').selectOption(trackId);
+      if (width === 961) {
+        const button = page.locator('.vehicle-anchor .session-car').first();
+        await button.focus();
+        await button.press('Shift');
+      }
       const result = await page.evaluate((selected) => {
         const stage = document.querySelector('#map-stage').getBoundingClientRect();
         const selector = document.querySelector('#track-select').getBoundingClientRect();
         const status = document.querySelector('#track-status').getBoundingClientRect();
-        const targets = [...document.querySelectorAll('.vehicle-anchor .session-car')]
-          .map((element) => element.getBoundingClientRect());
+        const routeButtons = [...document.querySelectorAll('.vehicle-anchor .session-car')];
+        const targets = routeButtons.map((element) => element.getBoundingClientRect());
+        const firstButton = routeButtons[0];
+        const firstBody = document.querySelector('.vehicle-anchor .car-body');
+        const buttonStyle = getComputedStyle(firstButton);
+        const bodyStyle = getComputedStyle(firstBody);
         return {
           overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
           clipped: targets.filter((box) => box.left < stage.left - 0.5
@@ -369,6 +609,17 @@ test('layout boundaries preserve all course targets, controls, and transform iso
             .filter((element) => getComputedStyle(element).display !== 'none')
             .map((element) => element.dataset.trackArt),
           layerTransform: getComputedStyle(document.querySelector('#vehicle-layer')).transform,
+          firstTarget: firstButton.getBoundingClientRect().toJSON(),
+          firstBody: firstBody.getBoundingClientRect().toJSON(),
+          firstBodyStyle: { width: bodyStyle.width, height: bodyStyle.height },
+          firstStyle: {
+            borderRadius: buttonStyle.borderRadius,
+            clipPath: buttonStyle.clipPath,
+            outlineStyle: buttonStyle.outlineStyle,
+            outlineWidth: buttonStyle.outlineWidth,
+            outlineOffset: buttonStyle.outlineOffset,
+            boxShadow: buttonStyle.boxShadow,
+          },
           selected,
         };
       }, trackId);
@@ -379,8 +630,96 @@ test('layout boundaries preserve all course targets, controls, and transform iso
       expect(result.layerTransform === 'none', `${width}/${trackId}`).toBe(
         !(width <= 759 && trackId === 'cypress-run'),
       );
+      if (width === 961) {
+        expect(result.firstTarget.width, `${width}/${trackId} route target width`).toBe(52);
+        expect(result.firstTarget.height, `${width}/${trackId} route target height`).toBe(52);
+        expect(result.firstBodyStyle.width, `${width}/${trackId} route body width`).toBe('32px');
+        expect(result.firstBodyStyle.height, `${width}/${trackId} route body height`).toBe('48px');
+        expect(result.firstStyle.borderRadius, `${width}/${trackId} rounded square`).toBe('12px');
+        expect(result.firstStyle.clipPath, `${width}/${trackId} no circle clip`).toBe('none');
+        expect(result.firstStyle.outlineStyle, `${width}/${trackId} desktop focus style`).toBe('solid');
+        expect(result.firstStyle.outlineWidth, `${width}/${trackId} desktop focus width`).toBe('4px');
+        expect(result.firstStyle.outlineOffset, `${width}/${trackId} desktop focus offset`).toBe('4px');
+        expect(result.firstStyle.boxShadow, `${width}/${trackId} desktop focus shadow`)
+          .not.toBe('none');
+      }
+      await page.locator('#track-select').focus();
     }
   }
+});
+
+test('breakpoint pairs preserve phased focus clearance and target separation', async ({
+  browser,
+  page,
+}) => {
+  test.setTimeout(420_000);
+  // One project owns this width matrix; running it again from the mobile project
+  // would repeat identical browser contexts without adding geometry coverage.
+  if (page.viewportSize().width < 1000) return;
+
+  const live = syntheticLiveSnapshot();
+  const geometryFailures = [];
+  for (const mode of ['normal-motion', 'reduced-motion', 'register-property-fallback']) {
+    const opened = await openBreakpointPage(browser, mode);
+    try {
+      for (const width of BREAKPOINT_WIDTHS) {
+        await opened.page.setViewportSize({ width, height: 900 });
+        for (const course of BREAKPOINT_COURSES) {
+          await opened.page.locator('#track-select').selectOption(course);
+          const profileName = width <= 759 ? 'mobile' : 'desktop';
+          const phases = mode === 'normal-motion' ? phaseLattice(course, profileName) : [0];
+          await freezeRouteAnimations(opened.page, 0);
+          const fixtureLayout = await breakpointLayout(opened.page);
+          geometryFailures.push(...await auditBreakpointGeometry(opened.page, {
+            width,
+            course,
+            sourceState: 'synthetic-fixture',
+            mode,
+            phases,
+          }));
+
+          await opened.page.locator('#snapshot-file').setInputFiles({
+            name: 'synthetic-breakpoint-live.json',
+            mimeType: 'application/json',
+            buffer: Buffer.from(JSON.stringify(live)),
+          });
+          await expect(opened.page.locator('#source-label'))
+            .toHaveText('Live · one-shot tmux observation');
+          await expect(opened.page.locator('.vehicle-anchor')).toHaveCount(16);
+          await freezeRouteAnimations(opened.page, 0);
+          const liveLayout = await breakpointLayout(opened.page);
+          const layoutsMatch = JSON.stringify(liveLayout) === JSON.stringify(fixtureLayout);
+          if (!layoutsMatch) {
+            test.info().annotations.push({
+              type: 'breakpoint-live-resweep',
+              description: JSON.stringify({
+                width, course, mode,
+                fixtureStage: fixtureLayout.stage,
+                liveStage: liveLayout.stage,
+              }),
+            });
+            // Pixel geometry changed with the source state, so the fixture sweep
+            // cannot stand in for live: repeat it instead of assuming equivalence.
+            geometryFailures.push(...await auditBreakpointGeometry(opened.page, {
+              width,
+              course,
+              sourceState: 'synthetic-live',
+              mode,
+              phases,
+            }));
+          }
+
+          await opened.page.locator('#reset-source').click();
+          await expect(opened.page.locator('#source-label')).toHaveText('Fixtures · Night sector');
+          await expect(opened.page.locator('.vehicle-anchor')).toHaveCount(16);
+        }
+      }
+      expect(opened.diagnostics, `${mode} browser console warnings/errors`).toEqual([]);
+    } finally {
+      await opened.context.close();
+    }
+  }
+  expect(geometryFailures, JSON.stringify(geometryFailures)).toEqual([]);
 });
 
 test('mobile Cypress scale switches without replacing focused pinned route controls', async ({
