@@ -28,6 +28,69 @@ The current Auto label is `Auto · workday schedule`. Exact browser-local
 contracts covered by `multi-track.test.mjs`; this manual procedure does not
 claim wall-clock boundary evidence.
 
+## Neutral reference precondition regression — 2026-08-08
+
+`dashboard.spec.mjs` now owns the reusable test-side
+`prepareNeutralReferenceState` helper and the permanent `neutral reference
+preconditions settle before any future capture` case. Each configured Chromium
+project runs Ridge Pass and then Cypress Run in that fixed order: exactly
+`1440x900` in `desktop-chromium` and exactly `390x844` in
+`mobile-chromium`. The Ridge invocation is also the asserted preparation for
+its byte-identical alias; the suite does not repeat an identical browser
+scenario merely for the alias filename.
+
+The helper first uses the existing Escape and native disclosure behavior to
+clear a session pin and close the legend if necessary, explicitly selects the
+course, moves the pointer away from session controls, and removes residual
+session/legend focus. It then enumerates the current Web Animations without a
+fixed animation-count assumption. Selected-course `*-traverse-*` animations
+are paused at `16000ms`; every semantically named smoke animation is paused at
+40 percent of its own duration with its delay neutralized; every other current
+animation is paused at zero. One nested `requestAnimationFrame` wait supplies
+exactly two animation frames after those writes. Only then does the helper
+read back each animation's actual `playState` and `currentTime` and run the
+final neutral-state assertions. Corner yaw remains part of the traversal
+keyframe and has no separate clock.
+
+The fail-closed assertions identify the expected viewport, selected course,
+reference filename(s), and violated precondition. They prove the Playwright
+and document viewport, root/heading/status/select/visible-art course identity,
+the exact `Fixtures · Night sector` source, exact `24 sessions` summary and 24
+controls, idle source controls with empty age/notice and no import or polling,
+closed legend and hidden empty overflow notices, no session focus/hover/press
+or route/pit pin, all computed tooltips hidden at zero opacity, and no rejected
+snapshot or application-failure surface. Every moving wrapper must expose the
+selected responsive traversal name; displayed active/thinking atmosphere must
+expose semantically identified smoke. This preserves the intentional mobile
+policy where active atmosphere is not displayed and avoids encoding a stale
+global animation count.
+
+The neutral inventory is exactly:
+
+- `desktop-ridge-pass.png` and its byte-identical `desktop.png` Ridge alias;
+- `mobile-ridge-pass.png` and its byte-identical `mobile.png` Ridge alias;
+- `desktop-cypress-run.png`;
+- `mobile-cypress-run.png`.
+
+The following evidence is explicitly non-neutral and is never passed through
+or asserted by this helper: `desktop-live.png`, `mobile-live.png`, and
+`desktop-complete-detail.png`.
+
+Verification passed all 241 dependency-free Node tests. The complete
+Playwright matrix reported 67 passed and the three longstanding,
+project-conditional scope skips declared in `full-bleed-layout.spec.mjs`; it
+had zero failures, todos, browser console warnings/errors, or page errors. The
+new project-expanded case passed 2/2 and all nine tracked PNG SHA-256 values
+remained unchanged. No screenshot API, pixel comparison, baseline update, or
+environment-controlled writer was added.
+
+Actual screenshot writing remains a separately authorized manual step. The
+legacy `playwright-cli` commands later in this document do not automatically
+inherit the helper's assertions; an operator must reproduce and inspect the
+same state, or a separately approved future opt-in writer must call the helper
+immediately before writing. This residual handoff between proved browser state
+and manual file output is the remaining capture risk.
+
 ## Breakpoint focus and phased-overlap regression — 2026-08-08
 
 The permanent Chromium matrix now covers Ridge Pass and Cypress Run at

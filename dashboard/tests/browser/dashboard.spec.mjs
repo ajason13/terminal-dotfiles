@@ -12,6 +12,30 @@ const CYPRESS_MOBILE_HEADINGS = TRACK_SCHEDULES.get('cypress-run').mobileStaticH
 const BREAKPOINT_WIDTHS = [759, 760, 959, 960];
 const BREAKPOINT_COURSES = ['ridge-pass', 'cypress-run'];
 const ROUTE_LAP_MS = 64_000;
+const NEUTRAL_REFERENCE_CASES = Object.freeze([
+  Object.freeze({
+    id: 'ridge-pass',
+    title: 'Ridge Pass',
+    references: Object.freeze({
+      'desktop-chromium': Object.freeze(['desktop-ridge-pass.png', 'desktop.png']),
+      'mobile-chromium': Object.freeze(['mobile-ridge-pass.png', 'mobile.png']),
+    }),
+  }),
+  Object.freeze({
+    id: 'cypress-run',
+    title: 'Cypress Run',
+    references: Object.freeze({
+      'desktop-chromium': Object.freeze(['desktop-cypress-run.png']),
+      'mobile-chromium': Object.freeze(['mobile-cypress-run.png']),
+    }),
+  }),
+]);
+const NEUTRAL_REFERENCE_VIEWPORTS = Object.freeze({
+  'desktop-chromium': Object.freeze({ width: 1440, height: 900 }),
+  'mobile-chromium': Object.freeze({ width: 390, height: 844 }),
+});
+const NEUTRAL_TRAVERSAL_MS = 16_000;
+const NEUTRAL_SMOKE_FRACTION = 0.4;
 
 function syntheticFixtureSnapshot() {
   return {
@@ -264,6 +288,211 @@ function watchBrowserDiagnostics(page) {
   });
   page.on('pageerror', (error) => diagnostics.push(`pageerror: ${error.message}`));
   return diagnostics;
+}
+
+async function prepareNeutralReferenceState(page, testInfo, course) {
+  const expectedViewport = NEUTRAL_REFERENCE_VIEWPORTS[testInfo.project.name];
+  const references = course.references[testInfo.project.name];
+  expect(expectedViewport, `${testInfo.project.name} neutral reference viewport`).toBeTruthy();
+  expect(references, `${testInfo.project.name}/${course.id} neutral reference inventory`)
+    .toBeTruthy();
+  const context = `${expectedViewport.width}x${expectedViewport.height}/${course.id}`
+    + `/references=${references.join(',')}`;
+
+  const interacted = page.locator(
+    '.session-car:focus, .vehicle-anchor[data-pinned="true"] .session-car, '
+      + '.pit-vehicle[data-pinned="true"] .session-car',
+  ).first();
+  if (await interacted.count()) {
+    await interacted.focus();
+    await page.keyboard.press('Escape');
+  }
+  const disclosure = page.locator('.legend-disclosure');
+  if (await disclosure.getAttribute('open') !== null) {
+    await disclosure.locator('summary').focus();
+    await disclosure.locator('summary').press('Enter');
+  }
+  await page.locator('#track-select').selectOption(course.id);
+  await page.mouse.move(0, 0);
+  await page.evaluate(() => {
+    if (document.activeElement?.matches?.('.session-car')) document.activeElement.blur();
+    if (document.activeElement?.matches?.('.legend-disclosure summary')) {
+      document.activeElement.blur();
+    }
+  });
+
+  const settled = await page.evaluate(async ({
+    expectedCourse, expectedTitle, traversalMs, smokeFraction,
+  }) => {
+    const root = document.querySelector('#dashboard-root');
+    // Force selected-course style resolution before enumerating CSS Animations.
+    getComputedStyle(root).getPropertyValue('display');
+    const animations = document.getAnimations();
+    for (const animation of animations) {
+      animation.pause();
+      const name = animation.animationName ?? '';
+      if (name.includes('-traverse-')) {
+        animation.currentTime = traversalMs;
+      } else if (name.includes('smoke')) {
+        animation.effect.updateTiming({ delay: 0 });
+        animation.currentTime = animation.effect.getTiming().duration * smokeFraction;
+      } else {
+        animation.currentTime = 0;
+      }
+    }
+    await new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+    });
+
+    const violations = [];
+    const check = (condition, precondition, actual) => {
+      if (!condition) violations.push(`${precondition}: ${JSON.stringify(actual)}`);
+    };
+    const viewport = {
+      width: document.documentElement.clientWidth,
+      height: document.documentElement.clientHeight,
+    };
+    const selector = document.querySelector('#track-select');
+    const visibleArt = [...document.querySelectorAll('.course-art')]
+      .filter((element) => {
+        const style = getComputedStyle(element);
+        return style.display !== 'none' && style.visibility !== 'hidden'
+          && Number(style.opacity) !== 0;
+      })
+      .map((element) => element.dataset.trackArt);
+    check(root?.dataset.trackId === expectedCourse, 'dashboard course identity', {
+      actual: root?.dataset.trackId, expected: expectedCourse,
+    });
+    check(document.querySelector('#map-heading')?.textContent === expectedTitle,
+      'map heading course identity', document.querySelector('#map-heading')?.textContent);
+    check(document.querySelector('#track-status')?.textContent
+      === `Active course: ${expectedTitle} · Manual`, 'track status course identity',
+      document.querySelector('#track-status')?.textContent);
+    check(selector?.value === expectedCourse, 'native selector course identity', selector?.value);
+    check(visibleArt.length === 1 && visibleArt[0] === expectedCourse,
+      'single visible course art', visibleArt);
+
+    const sourceControls = document.querySelector('#source-controls');
+    const sourceFile = document.querySelector('#snapshot-file');
+    check(document.querySelector('#source-label')?.textContent === 'Fixtures · Night sector',
+      'fixture source label', document.querySelector('#source-label')?.textContent);
+    check(document.querySelector('#snapshot-summary')?.textContent === '24 sessions',
+      'fixture session summary', document.querySelector('#snapshot-summary')?.textContent);
+    check(document.querySelectorAll('.session-car').length === 24,
+      'fixture session control population', document.querySelectorAll('.session-car').length);
+    check(Boolean(sourceControls) && sourceControls.getAttribute('aria-busy') === null,
+      'source region not busy', sourceControls?.getAttribute('aria-busy'));
+    check(document.querySelector('#source-age')?.textContent === '',
+      'empty source age', document.querySelector('#source-age')?.textContent);
+    check(document.querySelector('#source-notice')?.textContent === '',
+      'empty source notice', document.querySelector('#source-notice')?.textContent);
+    check(sourceFile?.disabled === false && sourceFile?.files?.length === 0,
+      'no live import in progress', {
+        disabled: sourceFile?.disabled, files: sourceFile?.files?.length,
+      });
+    check(document.querySelector('#go-live')?.disabled === true,
+      'live polling unavailable', document.querySelector('#go-live')?.disabled);
+
+    const legend = document.querySelector('.legend-disclosure');
+    check(legend?.open === false, 'legend disclosure closed', legend?.open);
+    for (const overflowId of ['overflow-notice', 'pit-overflow']) {
+      const notice = document.querySelector(`#${overflowId}`);
+      check(notice?.hidden === true && notice?.textContent === '',
+        `${overflowId} neutral and hidden`, {
+          hidden: notice?.hidden, text: notice?.textContent,
+        });
+    }
+
+    const sessionButtons = [...document.querySelectorAll('.session-car')];
+    check(!document.activeElement?.matches?.('.session-car'),
+      'no session control is active element', document.activeElement?.dataset?.sessionId);
+    check(sessionButtons.every((button) => !button.matches(':focus, :focus-visible')),
+      'no focused session control', sessionButtons.filter((button) => (
+        button.matches(':focus, :focus-visible')
+      )).map((button) => button.dataset.sessionId));
+    check(sessionButtons.every((button) => !button.matches(':hover')),
+      'no hovered session control', sessionButtons.filter((button) => (
+        button.matches(':hover')
+      )).map((button) => button.dataset.sessionId));
+    check(sessionButtons.every((button) => button.getAttribute('aria-pressed') === 'false'),
+      'all session controls unpressed', sessionButtons.filter((button) => (
+        button.getAttribute('aria-pressed') !== 'false'
+      )).map((button) => ({
+        id: button.dataset.sessionId, pressed: button.getAttribute('aria-pressed'),
+      })));
+    const pinned = [...document.querySelectorAll(
+      '.vehicle-anchor[data-pinned="true"], .pit-vehicle[data-pinned="true"]',
+    )].map((wrapper) => wrapper.dataset.sessionId);
+    check(pinned.length === 0, 'no pinned route or pit wrapper', pinned);
+
+    const visibleTooltips = [...document.querySelectorAll('.session-tooltip')]
+      .map((tooltip) => {
+        const style = getComputedStyle(tooltip);
+        return {
+          id: tooltip.id, visibility: style.visibility, opacity: Number(style.opacity),
+        };
+      }).filter((tooltip) => tooltip.visibility !== 'hidden' || tooltip.opacity !== 0);
+    check(visibleTooltips.length === 0, 'all tooltips computed hidden at zero opacity',
+      visibleTooltips);
+    check(document.querySelectorAll('.invalid-snapshot').length === 0,
+      'no rejected snapshot state', document.querySelectorAll('.invalid-snapshot').length);
+    check(document.querySelectorAll('.application-failure').length === 0,
+      'no application failure state', document.querySelectorAll('.application-failure').length);
+
+    const expectedTraversalName = `${expectedCourse}-traverse-${viewport.width <= 759
+      ? 'mobile' : 'desktop'}`;
+    const movingWrappers = [...document.querySelectorAll(
+      '.vehicle-anchor.state-active, .vehicle-anchor.state-thinking',
+    )];
+    for (const wrapper of movingWrappers) {
+      const traversals = wrapper.getAnimations().filter((animation) => (
+        (animation.animationName ?? '').includes('-traverse-')
+      ));
+      check(traversals.length === 1 && traversals[0].animationName === expectedTraversalName,
+        `session ${wrapper.dataset.sessionId} traversal identity`,
+        traversals.map((animation) => animation.animationName));
+      const smoke = wrapper.querySelector('.car-atmosphere').getAnimations({ subtree: true })
+        .filter((animation) => (animation.animationName ?? '').includes('smoke'));
+      const atmosphereDisplay = getComputedStyle(
+        wrapper.querySelector('.car-atmosphere'),
+      ).display;
+      check(atmosphereDisplay === 'none' || smoke.length > 0,
+        `session ${wrapper.dataset.sessionId} smoke identity`,
+        smoke.map((animation) => animation.animationName));
+    }
+    const animationStates = document.getAnimations().map((animation) => {
+      const name = animation.animationName ?? '(unnamed)';
+      const duration = animation.effect.getTiming().duration;
+      const expectedTime = name.includes('-traverse-')
+        ? traversalMs
+        : name.includes('smoke') ? duration * smokeFraction : 0;
+      return {
+        name,
+        pseudo: animation.effect.pseudoElement ?? null,
+        playState: animation.playState,
+        currentTime: animation.currentTime,
+        expectedTime,
+      };
+    });
+    check(animationStates.length > 0, 'Web Animations present', animationStates.length);
+    for (const state of animationStates) {
+      check(state.playState === 'paused', `animation ${state.name} paused`, state);
+      check(typeof state.currentTime === 'number'
+        && Math.abs(state.currentTime - state.expectedTime) <= 0.01,
+        `animation ${state.name} deterministic currentTime`, state);
+    }
+    return { violations, viewport, animationStates };
+  }, {
+    expectedCourse: course.id,
+    expectedTitle: course.title,
+    traversalMs: NEUTRAL_TRAVERSAL_MS,
+    smokeFraction: NEUTRAL_SMOKE_FRACTION,
+  });
+
+  expect(page.viewportSize(), `${context}/Playwright viewport`).toEqual(expectedViewport);
+  expect(settled.viewport, `${context}/document viewport`).toEqual(expectedViewport);
+  expect(settled.violations, `${context}/neutral preconditions`).toEqual([]);
+  return settled;
 }
 
 async function animationState(locator) {
@@ -559,6 +788,23 @@ test('fixtures render a nonblank, framed, horizontally safe dashboard', async ({
     expect(layout.stage.left, course).toBeGreaterThanOrEqual(0);
     expect(layout.stage.right, course).toBeLessThanOrEqual(layout.viewportWidth);
     expect(layout.clippedRouteCars, course).toBe(0);
+  }
+});
+
+test('neutral reference preconditions settle before any future capture', async ({
+  page,
+}, testInfo) => {
+  for (const course of NEUTRAL_REFERENCE_CASES) {
+    const settled = await prepareNeutralReferenceState(page, testInfo, course);
+    testInfo.annotations.push({
+      type: 'neutral-reference-state',
+      description: JSON.stringify({
+        viewport: settled.viewport,
+        course: course.id,
+        references: course.references[testInfo.project.name],
+        animations: settled.animationStates.length,
+      }),
+    });
   }
 });
 
