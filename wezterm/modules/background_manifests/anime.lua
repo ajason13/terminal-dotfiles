@@ -216,4 +216,8 @@ return {
   '200-anime/haikyuu/032-dark-net-block.png',
   '200-anime/haikyuu/033-serious-net-side.png',
   '200-anime/haikyuu/034-desperate-dive.png',
+  '200-anime/haikyuu/035-karasuno-point-celebration.jpg',
+  '200-anime/haikyuu/036-kageyama-dont-flail.jpg',
+  '200-anime/haikyuu/037-tanaka-flying-save.jpg',
+  '200-anime/haikyuu/038-aoba-johsai-ace-receive.jpg',
 }
