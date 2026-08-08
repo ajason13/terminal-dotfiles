@@ -1,6 +1,5 @@
 return {
   '100-vehicles/110-ae86-rainy-mountain-pass.png',
-  '100-vehicles/140-g35-rainy-mountain-pass.png',
   '100-vehicles/150-gr-corolla-foggy-mountain-pass.png',
   '100-vehicles/160-wrx-rainy-mountain-pass.png',
   '100-vehicles/170-mini-cooper-s-foggy-mountain-pass.png',
@@ -14,4 +13,7 @@ return {
   '100-vehicles/260-gr-gt-after-hours-pitlane.png',
   '100-vehicles/270-gr86-gr-supra-touge-chase.png',
   '100-vehicles/290-gr-gt-gr-supra-expressway-duel.png',
+  '100-vehicles/300-g35-front-three-quarter-night.jpg',
+  '100-vehicles/310-g35-rear-night-tunnel.jpg',
+  '100-vehicles/320-g35-rear-three-quarter-rain.jpg',
 }
