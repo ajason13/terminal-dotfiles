@@ -25,7 +25,13 @@ end
 function M.apply(config)
   config.automatically_reload_config = true
   config.check_for_updates = false
-  config.default_prog = { tmux_path(), 'new-session', '-A', '-s', 'main' }
+  -- Attach the most recently used session rather than a fixed name, so renaming a
+  -- session does not make the next window spawn a stray empty one. Bare `attach`
+  -- exits nonzero only when no server is running, which is when `main` is created.
+  local tmux = tmux_path()
+  -- `-A` on the fallback so an attach that failed for some other reason still lands
+  -- in `main` instead of erroring out with "duplicate session".
+  config.default_prog = { '/bin/sh', '-c', tmux .. ' attach || exec ' .. tmux .. ' new-session -A -s main' }
   config.scrollback_lines = 20000
   config.enable_scroll_bar = true
   config.enable_tab_bar = false
