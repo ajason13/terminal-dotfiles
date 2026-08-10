@@ -110,73 +110,77 @@ local function pane_cwd(pane)
   return cwd
 end
 
-local function tmux_display_cwd(wezterm, extra_args)
-  local args = { tmux_path(), 'display-message' }
-  for _, arg in ipairs(extra_args) do
-    table.insert(args, arg)
-  end
-  table.insert(args, '-p')
-  table.insert(args, '#{pane_current_path}')
-
-  local success, stdout = wezterm.run_child_process(args)
-  if not success or not stdout then
-    return nil
+-- Exact-match `tty` against `tmux list-clients -F '#{client_tty}'` output. Must
+-- stay exact: a prefix match would let an unattached tty borrow another client.
+local function tty_is_client(tty, list_clients_stdout)
+  for line in list_clients_stdout:gmatch('[^\r\n]+') do
+    if (line:gsub('%s+$', '')) == tty then
+      return true
+    end
   end
 
-  local cwd = stdout:gsub('%s+$', '')
-  if #cwd == 0 then
-    return nil
-  end
-
-  return cwd
+  return false
 end
+M._tty_is_client = tty_is_client
 
-local function pane_runs_tmux(pane)
-  local proc = pane and pane:get_foreground_process_name()
-  return proc ~= nil and proc:find('tmux') ~= nil
-end
-
--- The working directory of the pane that triggered the action.
--- Only ask tmux when this pane is actually running tmux, and then target the
--- pane's own client tty: an untargeted `display-message` returns whichever
--- pane tmux considers globally active, which may be a different window or an
--- unrelated tmux server. For a non-tmux pane, WezTerm's own cwd is
--- authoritative; querying tmux at all would return a stray path.
-local function pane_effective_cwd(wezterm, pane)
-  if pane_runs_tmux(pane) then
-    local tty = pane:get_tty_name()
-    return (tty and tmux_display_cwd(wezterm, { '-c', tty }))
-      or tmux_display_cwd(wezterm, {})
-      or pane_cwd(pane)
-  end
-
-  return pane_cwd(pane) or tmux_display_cwd(wezterm, {})
-end
-
--- The tmux pane id (e.g. "%5") for the WezTerm pane that triggered the action,
--- found via its client tty, or nil when this pane is not running tmux.
-local function tmux_target_pane(wezterm, pane)
-  if not pane_runs_tmux(pane) then
-    return nil
-  end
-
-  local tty = pane:get_tty_name()
+-- This pane's tty, but only when it is an attached tmux client. The pane's
+-- foreground process name is not a usable oracle: WezTerm reports the client's
+-- shell (e.g. /bin/bash), not `tmux`, so gating on it disabled the tmux path
+-- entirely and every quick-selected file fell back to VS Code.
+local function tmux_client_tty(wezterm, pane)
+  local tty = pane and pane:get_tty_name()
   if not tty then
     return nil
   end
 
   local success, stdout =
-    wezterm.run_child_process({ tmux_path(), 'display-message', '-c', tty, '-p', '#{pane_id}' })
+    wezterm.run_child_process({ tmux_path(), 'list-clients', '-F', '#{client_tty}' })
   if not success or not stdout then
     return nil
   end
 
-  local id = stdout:gsub('%s+$', '')
-  if #id == 0 then
+  return tty_is_client(tty, stdout) and tty or nil
+end
+
+-- Evaluate a tmux format against one specific client. Targeting matters and the
+-- caller must have verified the tty: `display-message` exits 0 for an unknown
+-- `-c` and answers for whichever pane tmux considers globally active, which may
+-- be a different window or an unrelated session.
+local function tmux_client_query(wezterm, tty, format)
+  local success, stdout =
+    wezterm.run_child_process({ tmux_path(), 'display-message', '-c', tty, '-p', format })
+  if not success or not stdout then
     return nil
   end
 
-  return id
+  local value = stdout:gsub('%s+$', '')
+  if #value == 0 then
+    return nil
+  end
+
+  return value
+end
+
+-- The working directory of the pane that triggered the action. For a tmux
+-- client, WezTerm's own cwd is the client's, not the visible tmux pane's.
+local function pane_effective_cwd(wezterm, pane)
+  local tty = tmux_client_tty(wezterm, pane)
+  if tty then
+    return tmux_client_query(wezterm, tty, '#{pane_current_path}') or pane_cwd(pane)
+  end
+
+  return pane_cwd(pane)
+end
+
+-- The tmux pane id (e.g. "%5") visible in the WezTerm pane that triggered the
+-- action, or nil when this pane is not an attached tmux client.
+local function tmux_target_pane(wezterm, pane)
+  local tty = tmux_client_tty(wezterm, pane)
+  if not tty then
+    return nil
+  end
+
+  return tmux_client_query(wezterm, tty, '#{pane_id}')
 end
 
 local function resolve_editor_path(wezterm, pane, path)
