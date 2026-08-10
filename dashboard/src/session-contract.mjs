@@ -168,8 +168,9 @@ export function formatActivityTimestamp(value, options = {}) {
 
 const TICKET_RE = /[A-Z][A-Z0-9]+-\d+/;
 const PR_RE = /\bPR\s*#?\s*(\d+)/i;
-// The ` · pane <N>` suffix sanitizeDisplayName appends; stripped so the tooltip
-// heading is the window name the operator actually chose.
+// Legacy ` · pane <N>` suffix. The collector no longer emits it, but imported and
+// hand-authored snapshots still carry it, and the heading must stay the window
+// name the operator chose either way.
 const PANE_SUFFIX_RE = /\s*·\s*pane\s+\d+\s*$/i;
 // The `<session> ▸ ` prefix sanitizeDisplayName prepends. Stripped for the same
 // reason as the pane suffix: the heading is the window name, not its location.

@@ -93,26 +93,29 @@ function clampPoints(value, maximum) {
   return `${points.slice(0, Math.max(0, maximum - 1)).join('')}…`;
 }
 
-// `<session> ▸ <window> · pane <N>`. The session segment disambiguates windows that
-// share a name across tmux sessions, which is otherwise invisible on the board.
-// ▸ is structural, so it is stripped from both segments: exactly one appears in a
-// display name, letting parseWorkRef find the boundary without guessing.
+// ▸ is structural, so it is stripped here: exactly one can appear in a display
+// name, letting parseWorkRef find the session boundary without guessing.
+function cleanSegment(value) {
+  return canonicalizeDisplayName(String(value ?? '')).replaceAll('▸', ' ')
+    .replace(/\s+/gu, ' ').trim();
+}
+
+// `<session> ▸ <window>`. The session segment disambiguates windows that share a
+// name across tmux sessions, which is otherwise invisible on the board. There is
+// no pane segment: the convention is one agent pane per window, so a pane index
+// on every card was noise. It survives only where a window has no usable name.
 export function sanitizeDisplayName(windowName, paneIndex, sessionName = '') {
-  const session = canonicalizeDisplayName(String(sessionName ?? '')).replaceAll('▸', ' ')
-    .replace(/\s+/gu, ' ').trim();
-  const base = canonicalizeDisplayName(windowName).replaceAll('▸', ' ')
-    .replace(/\s+/gu, ' ').trim();
-  const suffix = base ? ` · pane ${paneIndex}` : '';
-  const body = base || `Pane ${paneIndex}`;
-  if (!session) return `${clampPoints(body, LIVE_MAX_POINTS - [...suffix].length)}${suffix}`;
+  const session = cleanSegment(sessionName);
+  const body = cleanSegment(windowName) || `Pane ${paneIndex}`;
+  if (!session) return clampPoints(body, LIVE_MAX_POINTS);
 
   // The window name carries the ticket or PR the operator navigates by, so it is
   // served first; the session prefix takes only what is left over.
   const separator = ' ▸ ';
-  const fixed = [...separator].length + [...suffix].length;
+  const fixed = [...separator].length;
   const bodyText = clampPoints(body, Math.max(0, LIVE_MAX_POINTS - fixed - MIN_SESSION_POINTS));
   const sessionRoom = LIVE_MAX_POINTS - fixed - [...bodyText].length;
-  return `${clampPoints(session, sessionRoom)}${separator}${bodyText}${suffix}`;
+  return `${clampPoints(session, sessionRoom)}${separator}${bodyText}`;
 }
 
 const LIVE_MAX_POINTS = 80;

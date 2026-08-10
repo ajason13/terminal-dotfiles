@@ -175,6 +175,7 @@ test('parser framing enforces every field byte maximum and structural edge case'
     ['socket_path', LIVE_CONSTANTS.MAX_SOCKET_BYTES, (length) => `/${'s'.repeat(length - 1)}`],
     ['start_time', LIVE_CONSTANTS.MAX_ID_FIELD_BYTES, (length) => '1'.repeat(length)],
     ['session_id', LIVE_CONSTANTS.MAX_ID_FIELD_BYTES, (length) => `$${'1'.repeat(length - 1)}`],
+    ['session_name', LIVE_CONSTANTS.MAX_NAME_OR_TITLE_BYTES, (length) => 's'.repeat(length)],
     ['window_id', LIVE_CONSTANTS.MAX_ID_FIELD_BYTES, (length) => `@${'1'.repeat(length - 1)}`],
     ['pane_id', LIVE_CONSTANTS.MAX_ID_FIELD_BYTES, (length) => `%${'1'.repeat(length - 1)}`],
     ['pane_index', LIVE_CONSTANTS.MAX_ID_FIELD_BYTES, (length) => '1'.repeat(length)],
@@ -262,14 +263,18 @@ test('classifier asserts full tuples for precedence, spinner families, tokens, a
 });
 
 test('display names carry the tmux session so identical window names stay distinct', () => {
-  assert.equal(sanitizeDisplayName('BB-325', '1', 'E2E'), 'E2E ▸ BB-325 · pane 1');
-  // Empty window name keeps the `Pane <N>` fallback, still session-scoped.
+  assert.equal(sanitizeDisplayName('BB-325', '1', 'E2E'), 'E2E ▸ BB-325');
+  // The pane index is not part of a named window's label: one LLM pane per window
+  // is the working convention, so the index was noise on every card.
+  assert.equal(sanitizeDisplayName('BB-325', '7', 'E2E'), 'E2E ▸ BB-325');
+  // It survives only as the fallback when a window has no usable name, where it
+  // is the sole distinguishing detail left.
   assert.equal(sanitizeDisplayName('', '3', 'E2E'), 'E2E ▸ Pane 3');
   // A missing or control-only session name falls back to the unprefixed form.
-  assert.equal(sanitizeDisplayName('BB-325', '1'), 'BB-325 · pane 1');
-  assert.equal(sanitizeDisplayName('BB-325', '1', ''), 'BB-325 · pane 1');
+  assert.equal(sanitizeDisplayName('BB-325', '1'), 'BB-325');
+  assert.equal(sanitizeDisplayName('BB-325', '1', ''), 'BB-325');
   // ▸ is the structural delimiter, so neither segment may smuggle one through.
-  assert.equal(sanitizeDisplayName('a▸b', '1', 'E▸2'), 'E 2 ▸ a b · pane 1');
+  assert.equal(sanitizeDisplayName('a▸b', '1', 'E▸2'), 'E 2 ▸ a b');
   // The 80 code-point budget covers the prefix, and the ref-bearing window name
   // outranks the session when the two compete for it.
   const squeezed = sanitizeDisplayName('BB-325 long window title here', '1', 'y'.repeat(60));
@@ -283,11 +288,11 @@ test('two sessions sharing a window name produce distinct display names', () => 
     raw({ session_id: '$1', session_name: 'API', pane_id: '%1' }),
   ], OBSERVED);
   assert.deepEqual(sessions.map((entry) => entry.displayName),
-    ['E2E ▸ Synthetic · pane 0', 'API ▸ Synthetic · pane 0']);
+    ['E2E ▸ Synthetic', 'API ▸ Synthetic']);
 });
 
 test('display sanitization and stable identity preserve privacy and server epochs', () => {
-  assert.equal(sanitizeDisplayName(' \u0001 Project\t\n Name \u0085 ', '2'), 'Project Name · pane 2');
+  assert.equal(sanitizeDisplayName(' \u0001 Project\t\n Name \u0085 ', '2'), 'Project Name');
   assert.equal(canonicalizeDisplayName(' A\u2003B '), 'A B');
   assert.equal(sanitizeDisplayName('\u0001\u0085', '7'), 'Pane 7');
   assert.equal([...sanitizeDisplayName('x'.repeat(100), '12')].length, 80);
