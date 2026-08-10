@@ -52,11 +52,22 @@ local function trim_trailing_path_punctuation(path)
   return (path:gsub('[%.,%;%)%]>]+$', ''))
 end
 
+-- A rendered list marker or prompt glyph that quick select handed over along
+-- with the path ("1. ", ". ", "- "). Only punctuation and digits qualify, so a
+-- real path -- absolute, "./", "~/", or one containing spaces -- never matches.
+local function strip_leading_marker(text)
+  return text:match('^[%p%d]+%s+(.+)$') or text
+end
+
 local function trim_selection(text)
   local trimmed = text:gsub('^%s+', ''):gsub('%s+$', '')
   trimmed = trimmed:gsub('^[`"\']+', ''):gsub('[`"\']+$', '')
+  -- Before trailing punctuation: a leading marker left unhandled makes an
+  -- absolute path look relative, and it gets silently opened as a new file.
+  trimmed = strip_leading_marker(trimmed)
   return trim_trailing_path_punctuation(trimmed)
 end
+M._trim_selection = trim_selection
 
 local function uri_escape_path(path)
   return (path:gsub(' ', '%%20'))

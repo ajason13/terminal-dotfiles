@@ -64,6 +64,28 @@ check(
   M._tty_is_client('/dev/ttys0011', '/dev/ttys001\n') == false
 )
 
+-- Selection trimming --------------------------------------------------------
+
+local function trim_case(name, selection, want)
+  check(name, M._trim_selection(selection) == want)
+end
+
+trim_case('trims surrounding whitespace', '  /tmp/a.md \n', '/tmp/a.md')
+trim_case('strips wrapping backticks', '`/tmp/a.md`', '/tmp/a.md')
+trim_case('strips trailing sentence punctuation', '/tmp/a.md.', '/tmp/a.md')
+trim_case('keeps a relative dot-slash path intact', './rel/a.md', './rel/a.md')
+trim_case('keeps a home-relative path intact', '~/rel/a.md', '~/rel/a.md')
+trim_case('keeps interior spaces in a real path', '/tmp/my dir/a.md', '/tmp/my dir/a.md')
+
+-- REGRESSION GUARD -----------------------------------------------------------
+-- A rendered list marker ahead of the path made the selection start with "." ,
+-- so resolve_editor_path treated the absolute path as relative, prepended the
+-- cwd, and nvim silently opened a new empty buffer instead of the file.
+trim_case('regression: strips a bare dot marker before an absolute path', '. /tmp/a.md', '/tmp/a.md')
+trim_case('regression: strips a numbered list marker', '1. /tmp/a.md', '/tmp/a.md')
+trim_case('regression: strips a bullet marker', '- /tmp/a.md', '/tmp/a.md')
+trim_case('regression: strips a marker before a relative path', '1. rel/a.md', 'rel/a.md')
+
 print('')
 if failures > 0 then
   print(failures .. ' failure(s)')
