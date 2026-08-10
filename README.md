@@ -10,13 +10,15 @@ terminal backgrounds.
 - WezTerm attaches your most recently used tmux session, creating `main` if no
   server is running yet. Renaming sessions is safe: `Ctrl-a $`.
 - tmux owns windows and panes; WezTerm tabs are hidden.
-- tmux status bar shows aggregate LLM activity markers.
+- tmux status bar shows LLM activity markers: per window, plus a roll-up for the
+  current session next to its name (each session counts only its own windows).
 - The current tmux window shows its agent's session objective after a `▸`,
   so a pane you come back to says what it was doing.
 - `Ctrl-a` is the tmux prefix.
 - `Ctrl-a \` splits horizontally and `Ctrl-a -` splits vertically.
 - `Ctrl-a h/j/k/l` moves between panes.
-- `Ctrl-a s` picks a session, `Ctrl-a $` renames the current one.
+- `Ctrl-a s` picks a session, `Ctrl-a S` creates one (prompts for a name, starts
+  in the current pane's directory), `Ctrl-a $` renames the current one.
 - `Ctrl-Shift-Space` opens selected text paths in a tmux Neovim split, PNG
   images in Preview, and web targets in the browser.
 - WezTerm backgrounds rotate every 15 minutes by default.

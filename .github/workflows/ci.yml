@@ -11,10 +11,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Check shell syntax
-        run: bash -n install-macos.sh uninstall-macos.sh bin/session-objective tmux/tmux-llm-status scripts/background-bundles.sh scripts/check-background-assets.sh scripts/check-background-inbox.sh scripts/test-check-background-inbox.sh scripts/list-background-inbox.sh scripts/test-list-background-inbox.sh scripts/check-manifest-paths.sh scripts/test-check-manifest-paths.sh scripts/publish-backgrounds.sh scripts/test-publish-backgrounds.sh scripts/fetch-backgrounds.sh scripts/test-fetch-backgrounds.sh scripts/test-backgrounds-lua.sh scripts/test-nvim.sh scripts/test-session-objective.sh
+        run: bash -n install-macos.sh uninstall-macos.sh bin/session-objective tmux/tmux-llm-status scripts/background-bundles.sh scripts/check-background-assets.sh scripts/check-background-inbox.sh scripts/test-check-background-inbox.sh scripts/list-background-inbox.sh scripts/test-list-background-inbox.sh scripts/check-manifest-paths.sh scripts/test-check-manifest-paths.sh scripts/publish-backgrounds.sh scripts/test-publish-backgrounds.sh scripts/fetch-backgrounds.sh scripts/test-fetch-backgrounds.sh scripts/test-backgrounds-lua.sh scripts/test-nvim.sh scripts/test-session-objective.sh scripts/test-tmux-llm-status.sh
 
       - name: Lint shell scripts (shellcheck)
-        run: shellcheck install-macos.sh uninstall-macos.sh bin/session-objective tmux/tmux-llm-status scripts/background-bundles.sh scripts/check-background-assets.sh scripts/check-background-inbox.sh scripts/test-check-background-inbox.sh scripts/list-background-inbox.sh scripts/test-list-background-inbox.sh scripts/check-manifest-paths.sh scripts/test-check-manifest-paths.sh scripts/publish-backgrounds.sh scripts/test-publish-backgrounds.sh scripts/fetch-backgrounds.sh scripts/test-fetch-backgrounds.sh scripts/test-backgrounds-lua.sh scripts/test-nvim.sh scripts/test-session-objective.sh
+        run: shellcheck install-macos.sh uninstall-macos.sh bin/session-objective tmux/tmux-llm-status scripts/background-bundles.sh scripts/check-background-assets.sh scripts/check-background-inbox.sh scripts/test-check-background-inbox.sh scripts/list-background-inbox.sh scripts/test-list-background-inbox.sh scripts/check-manifest-paths.sh scripts/test-check-manifest-paths.sh scripts/publish-backgrounds.sh scripts/test-publish-backgrounds.sh scripts/fetch-backgrounds.sh scripts/test-fetch-backgrounds.sh scripts/test-backgrounds-lua.sh scripts/test-nvim.sh scripts/test-session-objective.sh scripts/test-tmux-llm-status.sh
 
       - name: Check executable scripts
         run: |
@@ -37,6 +37,7 @@ jobs:
           test -x scripts/test-backgrounds-lua.sh
           test -x scripts/test-nvim.sh
           test -x scripts/test-session-objective.sh
+          test -x scripts/test-tmux-llm-status.sh
 
       - name: Check ignored macOS metadata
         run: |
@@ -55,6 +56,12 @@ jobs:
           ./scripts/test-fetch-backgrounds.sh
           ./scripts/test-list-background-inbox.sh
           ./scripts/test-session-objective.sh
+
+      - name: Install tmux (for tmux-llm-status behavioural tests)
+        run: sudo apt-get update && sudo apt-get install -y tmux
+
+      - name: Run tmux-llm-status tests
+        run: ./scripts/test-tmux-llm-status.sh
 
       - name: Install Neovim (current stable, for config headless-load test)
         run: |
