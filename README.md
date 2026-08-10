@@ -7,7 +7,8 @@ terminal backgrounds.
 
 ## What This Includes
 
-- WezTerm starts or attaches to tmux session `main`.
+- WezTerm attaches your most recently used tmux session, creating `main` if no
+  server is running yet. Renaming sessions is safe: `Ctrl-a $`.
 - tmux owns windows and panes; WezTerm tabs are hidden.
 - tmux status bar shows aggregate LLM activity markers.
 - The current tmux window shows its agent's session objective after a `▸`,
@@ -15,6 +16,7 @@ terminal backgrounds.
 - `Ctrl-a` is the tmux prefix.
 - `Ctrl-a \` splits horizontally and `Ctrl-a -` splits vertically.
 - `Ctrl-a h/j/k/l` moves between panes.
+- `Ctrl-a s` picks a session, `Ctrl-a $` renames the current one.
 - `Ctrl-Shift-Space` opens selected text paths in a tmux Neovim split, PNG
   images in Preview, and web targets in the browser.
 - WezTerm backgrounds rotate every 15 minutes by default.
@@ -241,7 +243,7 @@ always reload immediately. Press `Cmd-r` in WezTerm if needed. Reload tmux with
 `Ctrl-a r`.
 
 Note that a tmux server is long-lived. Because WezTerm attaches to the existing
-`main` server (`new-session -A`), edits to `tmux.conf` don't apply to a running
+server (`tmux attach`), edits to `tmux.conf` don't apply to a running
 server until it is reloaded, and a server started before a change can drift out
 of sync (for example, an old status-bar position). This config re-sources itself
 whenever a client attaches, so newly opened WezTerm windows pick up the latest
