@@ -86,6 +86,17 @@ trim_case('regression: strips a numbered list marker', '1. /tmp/a.md', '/tmp/a.m
 trim_case('regression: strips a bullet marker', '- /tmp/a.md', '/tmp/a.md')
 trim_case('regression: strips a marker before a relative path', '1. rel/a.md', 'rel/a.md')
 
+-- Path payload splitting ----------------------------------------------------
+
+local function split_case(name, payload, want_path, want_line, want_column)
+  local path, line, column = M._split_file_uri_payload(payload)
+  check(name, path == want_path and line == want_line and column == want_column)
+end
+
+split_case('bare path has no line or column', '/tmp/a.md', '/tmp/a.md', nil, nil)
+split_case('path with line', '/tmp/a.md:12', '/tmp/a.md', '12', nil)
+split_case('path with line and column', '/tmp/a.md:12:5', '/tmp/a.md', '12', '5')
+
 print('')
 if failures > 0 then
   print(failures .. ' failure(s)')

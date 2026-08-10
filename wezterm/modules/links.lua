@@ -45,8 +45,16 @@ local function split_file_uri_payload(payload)
     return path, line, nil
   end
 
+  -- No trailing colon: the hyperlink rules always emit one, but quick select
+  -- hands over the raw on-screen text, where `file.lua:291` has none.
+  path, line = payload:match('^(.-):(%d+)$')
+  if path then
+    return path, line, nil
+  end
+
   return payload:match('^(.-)::$') or payload, nil, nil
 end
+M._split_file_uri_payload = split_file_uri_payload
 
 local function trim_trailing_path_punctuation(path)
   return (path:gsub('[%.,%;%)%]>]+$', ''))
