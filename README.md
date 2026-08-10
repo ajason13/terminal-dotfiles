@@ -17,7 +17,8 @@ terminal backgrounds.
 - `Ctrl-a` is the tmux prefix.
 - `Ctrl-a \` splits horizontally and `Ctrl-a -` splits vertically.
 - `Ctrl-a h/j/k/l` moves between panes.
-- `Ctrl-a s` picks a session, `Ctrl-a $` renames the current one.
+- `Ctrl-a s` picks a session, `Ctrl-a S` creates one (prompts for a name, starts
+  in the current pane's directory), `Ctrl-a $` renames the current one.
 - `Ctrl-Shift-Space` opens selected text paths in a tmux Neovim split, PNG
   images in Preview, and web targets in the browser.
 - WezTerm backgrounds rotate every 15 minutes by default.
