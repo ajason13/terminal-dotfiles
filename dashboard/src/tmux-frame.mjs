@@ -1,9 +1,12 @@
 import { LIVE_CONSTANTS, TMUX_FIELDS } from './live-constants.mjs';
 
+// Positional, paired with TMUX_FIELDS. session_name is operator-chosen text, so it
+// takes the name cap rather than the id cap the surrounding id fields use.
 const FIELD_LIMITS = Object.freeze([
   LIVE_CONSTANTS.MAX_SOCKET_BYTES,
   LIVE_CONSTANTS.MAX_ID_FIELD_BYTES,
   LIVE_CONSTANTS.MAX_ID_FIELD_BYTES,
+  LIVE_CONSTANTS.MAX_NAME_OR_TITLE_BYTES,
   LIVE_CONSTANTS.MAX_ID_FIELD_BYTES,
   LIVE_CONSTANTS.MAX_ID_FIELD_BYTES,
   LIVE_CONSTANTS.MAX_ID_FIELD_BYTES,

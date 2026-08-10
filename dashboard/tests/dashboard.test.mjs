@@ -304,6 +304,21 @@ test('parseWorkRef leaves an untouched separator alone when no token matched', (
   assert.equal(parseWorkRef('foo·bar').label, 'foo·bar');
 });
 
+test('parseWorkRef strips the session prefix so the heading stays the window name', () => {
+  assert.deepEqual(parseWorkRef('E2E ▸ BB-325 · pane 1'), {
+    ticketKey: 'BB-325', prNumber: null, label: '',
+  });
+  assert.equal(parseWorkRef('E2E ▸ verifying BB-511 output · pane 2').label, 'verifying output');
+  assert.equal(parseWorkRef('API ▸ Aoba').label, 'Aoba');
+  assert.equal(parseWorkRef('E2E ▸ PR #495 · pane 1').prNumber, 495);
+});
+
+test('parseWorkRef strips only the first ▸, which is always the session delimiter', () => {
+  // sanitizeDisplayName strips ▸ from both segments, so a second one cannot come
+  // from tmux. Guard the parse anyway: a hand-authored snapshot could carry one.
+  assert.equal(parseWorkRef('E2E ▸ left ▸ right').label, 'left ▸ right');
+});
+
 test('buildAccessibleText exposes the parsed work-ref for the renderer', () => {
   const data = normalized([session('ref', 'active', { displayName: 'BB-228 PR#42 route tooltip' })]);
   const placement = allocateSessions(data.sessions)[0];

@@ -168,20 +168,29 @@ export function formatActivityTimestamp(value, options = {}) {
 
 const TICKET_RE = /[A-Z][A-Z0-9]+-\d+/;
 const PR_RE = /\bPR\s*#?\s*(\d+)/i;
-// The ` · pane <N>` suffix sanitizeDisplayName appends; stripped so the tooltip
-// heading is the window name the operator actually chose.
+// Legacy ` · pane <N>` suffix. The collector no longer emits it, but imported and
+// hand-authored snapshots still carry it, and the heading must stay the window
+// name the operator chose either way.
 const PANE_SUFFIX_RE = /\s*·\s*pane\s+\d+\s*$/i;
+// The `<session> ▸ ` prefix sanitizeDisplayName prepends. Stripped for the same
+// reason as the pane suffix: the heading is the window name, not its location.
+// The class excludes ▸ so only the first one is consumed - that is the delimiter,
+// since sanitizeDisplayName strips ▸ out of both segments it joins.
+const SESSION_PREFIX_RE = /^[^▸]*▸\s*/u;
 
 // Parse the Jira key and/or PR number out of a session displayName (the tmux
 // window name). Strips both tokens and the ` · pane <N>` suffix; `label` is '' when
 // nothing survives, and callers fall back to the ref.
 export function parseWorkRef(name) {
   const source = typeof name === 'string' ? name : '';
-  const ticketMatch = source.match(TICKET_RE);
-  const prMatch = source.match(PR_RE);
+  // Match tokens on the window name alone. A session named after a ticket would
+  // otherwise hijack the ref for every window inside it.
+  const scoped = source.replace(SESSION_PREFIX_RE, '');
+  const ticketMatch = scoped.match(TICKET_RE);
+  const prMatch = scoped.match(PR_RE);
   const ticketKey = ticketMatch ? ticketMatch[0] : null;
   const prNumber = prMatch ? Number(prMatch[1]) : null;
-  let label = source.replace(PANE_SUFFIX_RE, '');
+  let label = scoped.replace(PANE_SUFFIX_RE, '');
   if (ticketMatch) label = label.replace(TICKET_RE, ' ');
   if (prMatch) label = label.replace(PR_RE, ' ');
   // Token removal orphans separators (`BB-325` alone reduces to `·`). An empty
