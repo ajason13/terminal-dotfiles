@@ -10,7 +10,8 @@ terminal backgrounds.
 - WezTerm attaches your most recently used tmux session, creating `main` if no
   server is running yet. Renaming sessions is safe: `Ctrl-a $`.
 - tmux owns windows and panes; WezTerm tabs are hidden.
-- tmux status bar shows aggregate LLM activity markers.
+- tmux status bar shows LLM activity markers: per window, plus a roll-up for the
+  current session next to its name (each session counts only its own windows).
 - The current tmux window shows its agent's session objective after a `▸`,
   so a pane you come back to says what it was doing.
 - `Ctrl-a` is the tmux prefix.

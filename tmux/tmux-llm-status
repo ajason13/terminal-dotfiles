@@ -207,7 +207,8 @@ window_category() {
   fi
 }
 
-# Compact fleet roll-up across windows: working, present, waiting (zeros omitted).
+# Compact roll-up across one session's windows: working, present, waiting (zeros
+# omitted).
 format_fleet() {
   local active_w="$1" present_w="$2" waiting_w="$3" out=''
 
@@ -225,9 +226,16 @@ window_status() {
   format_marker "$active" "$present" "$waiting"
 }
 
+# Roll-up for one session, defaulting to the current one. Falls back to every
+# window only when run outside tmux, where there is no session to scope to.
 fleet_summary() {
+  local target="${1:-}"
   local window active present waiting
   local active_w=0 present_w=0 waiting_w=0
+  local scope=(-a)
+
+  [[ -n "$target" ]] || target="$(tmux_cmd display-message -p '#{session_id}' 2>/dev/null || true)"
+  [[ -n "$target" ]] && scope=(-t "$target")
 
   while IFS= read -r window; do
     [[ -n "$window" ]] || continue
@@ -237,7 +245,7 @@ fleet_summary() {
       present) present_w=$((present_w + 1)) ;;
       waiting) waiting_w=$((waiting_w + 1)) ;;
     esac
-  done < <(tmux_cmd list-windows -a -F '#{window_id}' 2>/dev/null || true)
+  done < <(tmux_cmd list-windows "${scope[@]}" -F '#{window_id}' 2>/dev/null || true)
 
   format_fleet "$active_w" "$present_w" "$waiting_w"
 }
@@ -275,7 +283,12 @@ next_waiting() {
   tmux_cmd display-message 'No agents waiting on you' 2>/dev/null || true
 }
 
-update_all_windows() {
+# Refresh one session's windows and publish that session's roll-up. The roll-up
+# is a SESSION option, not a global one: status-left renders it beside #S, so it
+# has to describe that session. A single global value showed every session the
+# same fleet-wide count, so a fresh session displayed another session's agents.
+update_session() {
+  local target="${1:?session target required}"
   local window active present waiting
   local active_w=0 present_w=0 waiting_w=0
 
@@ -291,9 +304,25 @@ update_all_windows() {
       present) present_w=$((present_w + 1)) ;;
       waiting) waiting_w=$((waiting_w + 1)) ;;
     esac
-  done < <(tmux_cmd list-windows -a -F '#{window_id}' 2>/dev/null || true)
+  done < <(tmux_cmd list-windows -t "$target" -F '#{window_id}' 2>/dev/null || true)
 
-  tmux_cmd set-option -gq @llm_fleet "$(format_fleet "$active_w" "$present_w" "$waiting_w")" 2>/dev/null || true
+  # Always set, even when empty: a session whose agents all finished must clear,
+  # and an unset session option falls back to the global one.
+  tmux_cmd set-option -q -t "$target" @llm_fleet \
+    "$(format_fleet "$active_w" "$present_w" "$waiting_w")" 2>/dev/null || true
+}
+
+update_all_windows() {
+  local session
+
+  # Clear the global fallback so a session created between passes renders empty
+  # rather than inheriting whatever the last session to be scanned reported.
+  tmux_cmd set-option -gqu @llm_fleet 2>/dev/null || true
+
+  while IFS= read -r session; do
+    [[ -n "$session" ]] || continue
+    update_session "$session"
+  done < <(tmux_cmd list-sessions -F '#{session_id}' 2>/dev/null || true)
 }
 
 run_daemon() {
@@ -338,7 +367,7 @@ case "${1:-}" in
     window_status "${2:-}"
     ;;
   summary)
-    fleet_summary
+    fleet_summary "${2:-}"
     ;;
   objective)
     publish_objectives "${2:-}"
@@ -363,7 +392,7 @@ case "${1:-}" in
     start_daemon
     ;;
   *)
-    printf 'Usage: %s window <target> | objective <target> | summary | next-waiting | once | start | stop | restart\n' "${0##*/}" >&2
+    printf 'Usage: %s window <target> | objective <target> | summary [session] | next-waiting | once | start | stop | restart\n' "${0##*/}" >&2
     exit 2
     ;;
 esac
