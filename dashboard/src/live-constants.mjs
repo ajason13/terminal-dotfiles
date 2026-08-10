@@ -18,7 +18,7 @@ export const LIVE_CONSTANTS = Object.freeze({
   TMUX_KILL_SIGNAL: 'SIGKILL',
   MAX_RAW_RECORDS: 256,
   MAX_LENGTH_DIGITS: 7,
-  TMUX_FIELD_COUNT: 9,
+  TMUX_FIELD_COUNT: 10,
   MAX_SOCKET_BYTES: 4096,
   MAX_NAME_OR_TITLE_BYTES: 4096,
   MAX_COMMAND_BYTES: 256,
@@ -33,10 +33,13 @@ export const TMUX_BINARIES = Object.freeze([
   '/usr/local/bin/tmux',
 ]);
 
+// Order is load-bearing: the frame parser indexes TMUX_FIELDS and FIELD_LIMITS in
+// lockstep, and LENGTH_PREFIXED_FORMAT must emit the fields in this same order.
 export const TMUX_FIELDS = Object.freeze([
   'socket_path',
   'start_time',
   'session_id',
+  'session_name',
   'window_id',
   'pane_id',
   'pane_index',
@@ -47,7 +50,8 @@ export const TMUX_FIELDS = Object.freeze([
 
 export const LENGTH_PREFIXED_FORMAT =
   'T1#{n:socket_path}:#{socket_path}#{n:start_time}:#{start_time}'
-  + '#{n:session_id}:#{session_id}#{n:window_id}:#{window_id}'
+  + '#{n:session_id}:#{session_id}#{n:session_name}:#{session_name}'
+  + '#{n:window_id}:#{window_id}'
   + '#{n:pane_id}:#{pane_id}#{n:pane_index}:#{pane_index}'
   + '#{n:window_name}:#{window_name}#{n:pane_title}:#{pane_title}'
   + '#{n:pane_current_command}:#{pane_current_command}';
