@@ -36,6 +36,7 @@ function raw(overrides = {}) {
     socket_path: SOCKET,
     start_time: '1784773438',
     session_id: '$0',
+    session_name: 'Synth',
     window_id: '@0',
     pane_id: '%0',
     pane_index: '0',
@@ -100,7 +101,7 @@ test('exports every resolved constant, enum, error code, and exact tmux format',
     TMUX_KILL_SIGNAL: 'SIGKILL',
     MAX_RAW_RECORDS: 256,
     MAX_LENGTH_DIGITS: 7,
-    TMUX_FIELD_COUNT: 9,
+    TMUX_FIELD_COUNT: 10,
     MAX_SOCKET_BYTES: 4096,
     MAX_NAME_OR_TITLE_BYTES: 4096,
     MAX_COMMAND_BYTES: 256,
@@ -126,7 +127,8 @@ test('exports every resolved constant, enum, error code, and exact tmux format',
   ]);
   assert.equal(LENGTH_PREFIXED_FORMAT,
     'T1#{n:socket_path}:#{socket_path}#{n:start_time}:#{start_time}'
-    + '#{n:session_id}:#{session_id}#{n:window_id}:#{window_id}'
+    + '#{n:session_id}:#{session_id}#{n:session_name}:#{session_name}'
+    + '#{n:window_id}:#{window_id}'
     + '#{n:pane_id}:#{pane_id}#{n:pane_index}:#{pane_index}'
     + '#{n:window_name}:#{window_name}#{n:pane_title}:#{pane_title}'
     + '#{n:pane_current_command}:#{pane_current_command}');
@@ -257,6 +259,31 @@ test('classifier asserts full tuples for precedence, spinner families, tokens, a
   assert.equal(tuple('⠧\u0085Thinking'), null);
   assert.deepEqual(tuple('✳\u0001Ready', 'claude'), command);
   assert.equal(tuple('plain', 'mycodex'), null);
+});
+
+test('display names carry the tmux session so identical window names stay distinct', () => {
+  assert.equal(sanitizeDisplayName('BB-325', '1', 'E2E'), 'E2E ▸ BB-325 · pane 1');
+  // Empty window name keeps the `Pane <N>` fallback, still session-scoped.
+  assert.equal(sanitizeDisplayName('', '3', 'E2E'), 'E2E ▸ Pane 3');
+  // A missing or control-only session name falls back to the unprefixed form.
+  assert.equal(sanitizeDisplayName('BB-325', '1'), 'BB-325 · pane 1');
+  assert.equal(sanitizeDisplayName('BB-325', '1', ''), 'BB-325 · pane 1');
+  // ▸ is the structural delimiter, so neither segment may smuggle one through.
+  assert.equal(sanitizeDisplayName('a▸b', '1', 'E▸2'), 'E 2 ▸ a b · pane 1');
+  // The 80 code-point budget covers the prefix, and the ref-bearing window name
+  // outranks the session when the two compete for it.
+  const squeezed = sanitizeDisplayName('BB-325 long window title here', '1', 'y'.repeat(60));
+  assert.equal([...squeezed].length, 80);
+  assert.ok(squeezed.includes('BB-325'), `session crowded out the ref: ${squeezed}`);
+});
+
+test('two sessions sharing a window name produce distinct display names', () => {
+  const { sessions } = buildSnapshot([
+    raw({ session_id: '$0', session_name: 'E2E' }),
+    raw({ session_id: '$1', session_name: 'API', pane_id: '%1' }),
+  ], OBSERVED);
+  assert.deepEqual(sessions.map((entry) => entry.displayName),
+    ['E2E ▸ Synthetic · pane 0', 'API ▸ Synthetic · pane 0']);
 });
 
 test('display sanitization and stable identity preserve privacy and server epochs', () => {

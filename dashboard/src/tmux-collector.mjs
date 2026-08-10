@@ -73,7 +73,7 @@ export function buildSnapshot(records, observedAt = new Date().toISOString()) {
     emittedIds.add(id);
     sessions.push({
       id,
-      displayName: sanitizeDisplayName(record.window_name, record.pane_index),
+      displayName: sanitizeDisplayName(record.window_name, record.pane_index, record.session_name),
       ...classification,
       activity: { kind: 'observed', at: observedAt },
     });
