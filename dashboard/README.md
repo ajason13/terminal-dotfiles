@@ -233,6 +233,31 @@ shown by each car's own tooltip on hover, keyboard focus, or pin - there is no
 separate persistent readout strip. Keeping the detail anchored to the car
 avoids reflowing the stage as it populates.
 
+Vehicle artwork is a local catalog of 32 original generated pixel-art PNGs.
+Map codes `S01` through `S64` select a deterministic 8-by-8 catalog. The model
+cycles first, so `S01` through `S08` show a rounded grand tourer, upright hatch,
+rally sedan, long-roof van, low sport coupe, high-rise classic, long-hood
+fastback, and boxy liftback; each following group of eight repeats those models
+with the next of eight stable livery metadata keys.
+The model selects the generated PNG family; there is no separate runtime livery
+art layer. The map-code index also cycles through side, front, and rear previews. Each family
+has a 32-by-48 top view and three 48-by-32 tooltip views with hard transparent
+pixel edges; tooltip art is displayed at an exact 2x size. Immutable model
+metadata records whether each native top image points up or down. Coupe,
+hatchback, and rally top art receive a 180-degree correction; sedan, wagon,
+roadster, fastback, and utility receive none. This canonicalizes every nose to
+the route renderer's negative-Y forward axis and makes parked cars face up,
+while wrappers and tooltip previews keep their existing transforms. The generated assets
+use read-only local vehicle images only as stance, proportion, and lighting
+references: the resulting generic cars contain no manufacturer badges, logos,
+text, or copied liveries. The generated PNG artwork renders unobscured, without
+legacy polygon or SVG artwork layered over it. In-car state glyphs, map-code
+labels, and their CSS are intentionally absent;
+accessible button labels, tooltip status wording, state colors and boundaries,
+and separate work-reference chips carry those semantics instead. A tooltip includes that matching
+non-interactive preview and an assistive-text equivalent; model and livery
+never replace state colors, boundaries, accessible labels, or status wording.
+
 Below 760px, the bar wraps to multiple rows, the pit lane reflows to a 2x2
 grid of bays, route targets shrink to a true 44px hit region, and the stage
 keeps a minimum height so the track stays the visual hero within the

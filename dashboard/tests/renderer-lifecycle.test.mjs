@@ -7,7 +7,7 @@ import {
 } from '../src/app.mjs';
 import { GENERATED_ROUTE_GEOMETRY } from '../src/generated/route-geometry.mjs';
 import { LIVE_CONSTANTS } from '../src/live-constants.mjs';
-import { renderDashboard } from '../src/render-dashboard.mjs';
+import { CAR_VISUAL_CATALOG, renderDashboard } from '../src/render-dashboard.mjs';
 import { normalizeSnapshot } from '../src/session-contract.mjs';
 import { TRACK_CATALOG, getTrack } from '../src/track-catalog.mjs';
 import { createTrackSelectionController } from '../src/track-selection.mjs';
@@ -61,6 +61,12 @@ const routeSnapshot = (sessions, generatedAt = '2026-07-26T17:00:00Z') => normal
 
 function findCar(root, id) {
   return root.querySelectorAll('.session-car').find((button) => button.dataset.sessionId === id);
+}
+
+function descendants(node) {
+  return node.children.flatMap((child) => (
+    child instanceof FakeElement ? [child, ...descendants(child)] : []
+  ));
 }
 
 const pitSession = (id, status, overrides = {}) => ({
@@ -237,6 +243,142 @@ test('the activity line renders the short age visibly and keeps the exact timest
   assert.equal(time.dateTime, '2026-07-26T16:59:00Z');
   assert.equal(time.getAttribute('title'), undefined);
 });
+
+test('initial icon and tooltip PNG share deterministic metadata and accessible text', () => {
+  const { root } = dashboardRoot();
+  renderDashboard(routeSnapshot([routeSession('visual')]), root, getTrack('ridge-pass'));
+  const button = findCar(root, 'visual');
+  const wrapper = button.parentElement;
+  const silhouette = button.querySelector('.car-silhouette');
+  const topImage = button.querySelector('.car-sprite');
+  const tooltip = wrapper.querySelector('.session-tooltip');
+  const preview = tooltip.querySelector('.vehicle-preview');
+  const previewImage = preview.querySelector('.vehicle-preview-image');
+  const previewText = tooltip.querySelector('.vehicle-preview-text');
+  for (const key of ['carModel', 'carLivery']) {
+    assert.equal(button.dataset[key], wrapper.dataset[key]);
+    assert.equal(preview.dataset[key], wrapper.dataset[key]);
+    assert.equal(silhouette.dataset[key], wrapper.dataset[key]);
+    assert.equal(topImage.dataset[key], wrapper.dataset[key]);
+    assert.equal(previewImage.dataset[key], wrapper.dataset[key]);
+  }
+  assert.equal(topImage.dataset.carView, 'top');
+  const model = CAR_VISUAL_CATALOG.models.find(({ key }) => key === button.dataset.carModel);
+  assert.equal(topImage.dataset.carNativeTopNose, model.nativeTopNose);
+  assert.equal(topImage.dataset.carTopCorrection, String(model.topCorrection));
+  assert.match(topImage.getAttribute('src'), new RegExp(`/${button.dataset.carModel}-top\\.png$`));
+  assert.equal(topImage.getAttribute('width'), '32');
+  assert.equal(topImage.getAttribute('height'), '48');
+  assert.equal(previewImage.dataset.carView, wrapper.dataset.carView);
+  assert.match(previewImage.getAttribute('src'),
+    new RegExp(`/${button.dataset.carModel}-${button.dataset.carView}\\.png$`));
+  assert.equal(previewImage.getAttribute('width'), '48');
+  assert.equal(previewImage.getAttribute('height'), '32');
+  for (const image of [topImage, previewImage]) {
+    assert.equal(image.getAttribute('alt'), '');
+    assert.equal(image.getAttribute('aria-hidden'), 'true');
+    assert.equal(image.getAttribute('draggable'), 'false');
+  }
+  assert.equal(preview.dataset.carSignature, wrapper.dataset.carSignature);
+  assert.equal(tooltip.dataset.carSignature, wrapper.dataset.carSignature);
+  assert.equal(preview.getAttribute('aria-hidden'), 'true');
+  assert.equal(descendants(silhouette).some((node) => node.tagName === 'SVG'), false);
+  assert.equal(descendants(preview).some((node) => node.tagName === 'SVG'), false);
+  assert.equal(button.querySelector('.car-glyph'), null);
+  assert.equal(button.querySelector('.car-code'), null);
+  assert.match(previewText.textContent, /^Vehicle preview: .+, (side|front|rear) view$/);
+  assert.equal(descendants(preview).some((node) => (
+    ['BUTTON', 'A', 'INPUT', 'SELECT', 'TEXTAREA'].includes(node.tagName)
+      || node.getAttribute('tabindex') !== undefined
+  )), false);
+});
+
+test('route and pit cars expose status through labels and tooltips without visual code or glyph nodes', () => {
+  const { root } = dashboardRoot();
+  renderDashboard(routeSnapshot([
+    routeSession('route-status'),
+    pitSession('pit-status', 'idle'),
+  ]), root, getTrack('ridge-pass'));
+  for (const button of root.querySelectorAll('.session-car')) {
+    const tooltip = button.parentElement.querySelector('.session-tooltip');
+    assert.equal(button.querySelector('.car-glyph'), null);
+    assert.equal(button.querySelector('.car-code'), null);
+    assert.match(button.getAttribute('aria-label'), /(?:Active|Idle)/);
+    assert.equal(button.getAttribute('aria-describedby'), tooltip.id);
+    assert.equal(tooltip.getAttribute('role'), 'tooltip');
+    assert.match(tooltip.children[1].textContent, /^(?:Active|Idle)$/);
+  }
+});
+
+test('side, front, and rear previews use matching fixed-size images without SVG overlays', () => {
+  const { root } = dashboardRoot();
+  renderDashboard(routeSnapshot([
+    routeSession('preview-a', { progress: 0 }),
+    routeSession('preview-b', { progress: 0.25 }),
+    routeSession('preview-c', { progress: 0.5 }),
+  ]), root, getTrack('ridge-pass'));
+
+  const buttons = root.querySelectorAll('.session-car');
+  assert.deepEqual(new Set(buttons.map((button) => button.dataset.carView)),
+    new Set(['side', 'front', 'rear']));
+  for (const button of buttons) {
+    const preview = button.parentElement.querySelector('.vehicle-preview');
+    const image = preview.querySelector('.vehicle-preview-image');
+    assert.equal(image.dataset.carModel, button.dataset.carModel);
+    assert.equal(image.dataset.carLivery, button.dataset.carLivery);
+    assert.equal(image.dataset.carView, button.dataset.carView);
+    assert.equal(image.dataset.carSignature, button.dataset.carSignature);
+    assert.equal(descendants(preview).some((node) => node.tagName === 'SVG'), false);
+  }
+});
+
+test('all 32 family and view PNG assets instantiate through stable local URLs', () => {
+  const targetButtons = [];
+  for (let modelIndex = 0; modelIndex < 8; modelIndex += 1) {
+    const targetIndexes = new Set([modelIndex, modelIndex + 8, modelIndex + 16]);
+    const sessions = Array.from({ length: modelIndex + 17 }, (_, index) => {
+      const id = `family-${String(index).padStart(2, '0')}`;
+      if (!targetIndexes.has(index)) return pitSession(id, 'idle');
+      const order = [...targetIndexes].indexOf(index);
+      return routeSession(id, { progress: (order + 1) / 4 });
+    });
+    const { root } = dashboardRoot();
+    renderDashboard(routeSnapshot(sessions), root, getTrack('ridge-pass'));
+    targetButtons.push(...[...targetIndexes].map((index) => (
+      findCar(root, `family-${String(index).padStart(2, '0')}`)
+    )));
+  }
+  assert.ok(targetButtons.every(Boolean));
+  const topSources = new Set();
+  const previewSources = new Set();
+  for (const button of targetButtons) {
+    topSources.add(button.querySelector('.car-sprite').getAttribute('src'));
+    previewSources.add(
+      button.parentElement.querySelector('.vehicle-preview-image').getAttribute('src'),
+    );
+  }
+  assert.equal(topSources.size, 8);
+  assert.equal(previewSources.size, 24);
+  assert.equal(new Set([...topSources, ...previewSources]).size, 32);
+  assert.ok([...topSources, ...previewSources].every((src) => (
+    src.startsWith('file:') && src.includes('/dashboard/assets/cars/')
+  )));
+});
+
+test('representative fixture cars render different generated models and liveries', () => {
+  const { root } = dashboardRoot();
+  const sessions = Array.from({ length: 10 }, (_, index) => routeSession(`visual-${index}`, {
+    progress: index / 16,
+  }));
+  renderDashboard(routeSnapshot(sessions), root, getTrack('ridge-pass'));
+  const buttons = root.querySelectorAll('.session-car');
+  assert.ok(new Set(buttons.map((button) => button.dataset.carModel)).size > 1);
+  assert.ok(new Set(buttons.map((button) => button.dataset.carLivery)).size > 1);
+  assert.ok(new Set(buttons.map((button) => (
+    button.querySelector('.car-sprite').getAttribute('src')
+  ))).size > 1);
+});
+
 
 test('a route car with a PR shows a PR#-precedence badge, aria-hidden', () => {
   const { root } = dashboardRoot();
@@ -426,6 +568,52 @@ test('update() keeps a pinned car pinned when it persists across the update', ()
   controller.destroy();
 });
 
+test('update() changes a persistent car visual in place when its deterministic map code changes', () => {
+  const { documentRef, root } = dashboardRoot();
+  const controller = renderDashboard(routeSnapshot([
+    routeSession('alpha', { progress: 0 }),
+  ]), root, getTrack('ridge-pass'));
+  const button = findCar(root, 'alpha');
+  const wrapper = button.parentElement;
+  const initialModel = button.dataset.carModel;
+  const initialLivery = button.dataset.carLivery;
+  const initialArt = button.querySelector('.car-silhouette');
+  const initialTopSource = button.querySelector('.car-sprite').getAttribute('src');
+  const initialPreviewSource = wrapper.querySelector('.vehicle-preview-image').getAttribute('src');
+  button.focus();
+  button.dispatchEvent(keydown('Enter'));
+
+  controller.update(routeSnapshot([
+    routeSession('aardvark', { progress: 0.5 }),
+    routeSession('alpha', { progress: 0 }),
+  ], '2026-07-26T17:00:05Z'));
+
+  const after = findCar(root, 'alpha');
+  const tooltip = wrapper.querySelector('.session-tooltip');
+  assert.equal(after, button);
+  assert.equal(after.parentElement, wrapper);
+  assert.equal(documentRef.activeElement, button);
+  assert.equal(wrapper.dataset.pinned, 'true');
+  assert.notEqual(after.dataset.carModel, initialModel);
+  assert.equal(after.dataset.carLivery, initialLivery);
+  assert.notEqual(after.querySelector('.car-silhouette'), initialArt);
+  assert.notEqual(after.querySelector('.car-sprite').getAttribute('src'), initialTopSource);
+  assert.notEqual(wrapper.querySelector('.vehicle-preview-image').getAttribute('src'),
+    initialPreviewSource);
+  assert.equal(after.querySelector('.car-code'), null);
+  assert.equal(after.querySelector('.car-glyph'), null);
+  const updatedModel = CAR_VISUAL_CATALOG.models.find(({ key }) => key === after.dataset.carModel);
+  assert.equal(after.querySelector('.car-sprite').dataset.carTopCorrection,
+    String(updatedModel.topCorrection));
+  assert.equal(after.dataset.carModel, tooltip.dataset.carModel);
+  assert.equal(after.dataset.carLivery, tooltip.dataset.carLivery);
+  assert.equal(after.dataset.carView, tooltip.dataset.carView);
+  assert.equal(after.getAttribute('aria-describedby'), tooltip.id);
+  after.dispatchEvent(keydown(' '));
+  assert.equal(wrapper.dataset.pinned, undefined, 'the original keyboard listener still toggles pinning');
+  controller.destroy();
+});
+
 test('update() re-sorts the pit so a freshly active session moves to the front', () => {
   const { root } = dashboardRoot();
   const t = (m) => `2026-08-05T10:${String(m).padStart(2, '0')}:00Z`;
@@ -477,6 +665,9 @@ test('renderer setTrack preserves identity, focus, pin, parked placement, and up
   const routeButton = buttons.find((button) => button.dataset.sessionId === 'route');
   const parkedButton = buttons.find((button) => button.dataset.sessionId === 'parked');
   const routeWrapper = routeButton.parentElement;
+  const routeSilhouette = routeButton.querySelector('.car-body').children[0];
+  const routeTopSource = routeButton.querySelector('.car-sprite').getAttribute('src');
+  const routePreviewSource = routeWrapper.querySelector('.vehicle-preview-image').getAttribute('src');
   const parkedWrapper = parkedButton.parentElement;
   const parkedStyle = new Map(parkedWrapper.style.values);
   const ridgeX = routeWrapper.style.getPropertyValue('--vehicle-x');
@@ -494,6 +685,10 @@ test('renderer setTrack preserves identity, focus, pin, parked placement, and up
   assert.equal(documentRef.activeElement, routeButton);
   assert.equal(routeButton.getAttribute('aria-pressed'), 'true');
   assert.equal(routeWrapper.dataset.pinned, 'true');
+  assert.equal(routeButton.querySelector('.car-body').children[0], routeSilhouette);
+  assert.equal(routeButton.querySelector('.car-sprite').getAttribute('src'), routeTopSource);
+  assert.equal(routeWrapper.querySelector('.vehicle-preview-image').getAttribute('src'),
+    routePreviewSource);
   assert.notEqual(routeWrapper.style.getPropertyValue('--vehicle-x'), ridgeX);
   assert.match(routeButton.getAttribute('aria-label'), /Launch Line/);
   // The segment name lives in the aria-label only; the tooltip drops map geography.

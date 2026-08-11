@@ -146,6 +146,60 @@ test('route tooltips stay fully on-screen (both axes) at any point along the lap
   }
 });
 
+test('a hovered lower-course tooltip measures its full content before clamping', async ({ page }) => {
+  await page.setViewportSize({ width: 1996, height: 1092 });
+  await page.reload();
+  await page.locator('#track-select').selectOption('cypress-run');
+  const wrapper = page.locator('.vehicle-anchor[data-session-id="route-cinder"]');
+  const tooltip = wrapper.locator('.session-tooltip');
+  const measurement = await wrapper.evaluate((element) => {
+    const route = element.getAnimations().find((animation) => (
+      (animation.animationName ?? '').includes('traverse')
+    ));
+    route.pause();
+    let bottomTime = 0;
+    let bottom = -Infinity;
+    for (let time = 0; time < 64000; time += 1000) {
+      route.currentTime = time;
+      const value = element.getBoundingClientRect().bottom;
+      if (value > bottom) {
+        bottom = value;
+        bottomTime = time;
+      }
+    }
+    route.currentTime = bottomTime;
+    return {
+      bottomTime,
+      hiddenHeight: element.querySelector('.session-tooltip').offsetHeight,
+    };
+  });
+  await wrapper.hover({ force: true });
+  await expect(tooltip).toBeVisible();
+  await tooltip.evaluate(async (element) => {
+    await Promise.all(element.getAnimations().map((animation) => animation.finished.catch(() => {})));
+  });
+
+  const bounds = await tooltip.evaluate((element) => {
+    const tip = element.getBoundingClientRect();
+    const stage = document.querySelector('#map-stage').getBoundingClientRect();
+    return {
+      visibleHeight: element.offsetHeight,
+      inlineContentVisibility: element.style.contentVisibility,
+      openUp: element.parentElement.classList.contains('tooltip-up'),
+      tipTop: tip.top,
+      tipBottom: tip.bottom,
+      stageTop: stage.top,
+      stageBottom: stage.bottom,
+    };
+  });
+  expect(measurement.bottomTime).toBeGreaterThanOrEqual(0);
+  expect(measurement.hiddenHeight).toBeLessThan(bounds.visibleHeight);
+  expect(bounds.inlineContentVisibility).toBe('');
+  expect(bounds.openUp).toBe(true);
+  expect(bounds.tipTop).toBeGreaterThanOrEqual(bounds.stageTop + 7.5);
+  expect(bounds.tipBottom).toBeLessThanOrEqual(bounds.stageBottom - 7.5);
+});
+
 test('mobile pit tooltips never overlap: pinning one suppresses others on focus', async ({ page }) => {
   test.skip(page.viewportSize().width > 759, 'mobile docked-tooltip project only');
   const cars = page.locator('#pit .pit-vehicle');

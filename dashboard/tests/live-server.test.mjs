@@ -91,6 +91,9 @@ const makeReader = (overrides = {}) =>
     readFile: async (abs) => {
       if (abs === path.join(ROOT, 'index.html')) return Buffer.from(`<script>window.__LIVE_TOKEN__="${LIVE_CONSTANTS.LIVE_TOKEN_PLACEHOLDER}";</script>`);
       if (abs === path.join(ROOT, 'styles.css')) return Buffer.from('body{}');
+      if (abs === path.join(ROOT, 'assets', 'cars', 'coupe-top.png')) {
+        return Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 255, 128]);
+      }
       if (abs === path.join(ROOT, 'link.css')) return Buffer.from('/* symlink */');
       const err = new Error('ENOENT'); err.code = 'ENOENT'; throw err;
     },
@@ -112,6 +115,15 @@ test('serves a css file with the right content type', async () => {
   const res = await makeReader()('/styles.css');
   assert.equal(res.status, 200);
   assert.equal(res.headers['Content-Type'], 'text/css; charset=utf-8');
+});
+
+test('serves a PNG as an unchanged binary buffer with the image content type', async () => {
+  const res = await makeReader()('/assets/cars/coupe-top.png');
+  assert.equal(res.status, 200);
+  assert.equal(res.headers['Content-Type'], 'image/png');
+  assert.equal(res.headers['Cache-Control'], 'no-store');
+  assert.ok(Buffer.isBuffer(res.body));
+  assert.deepEqual([...res.body], [137, 80, 78, 71, 13, 10, 26, 10, 0, 255, 128]);
 });
 
 test('path traversal is rejected with 403', async () => {
@@ -171,18 +183,20 @@ test('unknown extension is 403 forbidden (no octet-stream fallback)', async () =
   assert.equal(res.status, 403);
 });
 
-test('index.html, styles.css, and an .mjs file still serve 200 through the allowlist', async () => {
+test('HTML, CSS, modules, and PNGs still serve 200 through the allowlist', async () => {
   const reader = makeReader({
     readFile: async (abs) => {
       if (abs === path.join(ROOT, 'index.html')) return Buffer.from('<html></html>');
       if (abs === path.join(ROOT, 'styles.css')) return Buffer.from('body{}');
       if (abs === path.join(ROOT, 'src', 'app.mjs')) return Buffer.from('export const x = 1;');
+      if (abs === path.join(ROOT, 'assets', 'cars', 'coupe-top.png')) return Buffer.from([137]);
       const err = new Error('ENOENT'); err.code = 'ENOENT'; throw err;
     },
   });
   assert.equal((await reader('/')).status, 200);
   assert.equal((await reader('/styles.css')).status, 200);
   assert.equal((await reader('/src/app.mjs')).status, 200);
+  assert.equal((await reader('/assets/cars/coupe-top.png')).status, 200);
 });
 
 test('parseServeArgs reads --port and defaults otherwise', () => {

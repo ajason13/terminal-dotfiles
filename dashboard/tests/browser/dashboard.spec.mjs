@@ -647,12 +647,6 @@ async function auditStaticCypress(page, mode) {
         alignment: Math.hypot(target.x - expected.x, target.y - expected.y),
         heading: angleOf(wrapper.querySelector('.car-angle')),
         expectedHeading: Number(headings[index].heading),
-        glyphNet: angleOf(wrapper.querySelector('.car-angle'))
-          + angleOf(wrapper.querySelector('.car-motion'))
-          + angleOf(wrapper.querySelector('.car-glyph')),
-        codeNet: angleOf(wrapper.querySelector('.car-angle'))
-          + angleOf(wrapper.querySelector('.car-motion'))
-          + angleOf(wrapper.querySelector('.car-code')),
         routeAnimation: getComputedStyle(wrapper).animationName,
         driftAnimation: getComputedStyle(wrapper.querySelector('.car-motion')).animationName,
         smokeAnimations: ['::before', '::after'].map((pseudo) => (
@@ -717,10 +711,6 @@ async function auditStaticCypress(page, mode) {
     expect(sample.alignment, `${mode}/${sample.id} CTM anchor`).toBeLessThanOrEqual(0.1);
     expect(angleDistance(sample.heading, sample.expectedHeading),
       `${mode}/${sample.id} heading`).toBeLessThanOrEqual(0.25);
-    expect(angleDistance(sample.glyphNet, 0), `${mode}/${sample.id} glyph`)
-      .toBeLessThanOrEqual(0.25);
-    expect(angleDistance(sample.codeNet, 0), `${mode}/${sample.id} code`)
-      .toBeLessThanOrEqual(0.25);
     expect(sample.routeAnimation, `${mode}/${sample.id} route`).toBe('none');
     expect(sample.driftAnimation, `${mode}/${sample.id} drift`).toBe('none');
     expect(sample.smokeAnimations, `${mode}/${sample.id} smoke`).toEqual(['none', 'none']);
@@ -1444,8 +1434,6 @@ test('Cypress mobile counter-transform preserves content quads, focus, puff, and
   const expressions = {
     wrapper: 'document.querySelector(".vehicle-anchor.state-thinking")',
     body: 'document.querySelector(".vehicle-anchor.state-thinking .car-body")',
-    glyph: 'document.querySelector(".vehicle-anchor.state-thinking .car-glyph")',
-    code: 'document.querySelector(".vehicle-anchor.state-thinking .car-code")',
     tooltip: 'document.querySelector(".vehicle-anchor.state-thinking .session-tooltip")',
   };
   const capture = async () => {
@@ -1533,7 +1521,7 @@ test('Cypress mobile counter-transform preserves content quads, focus, puff, and
   const unscaled = await capture();
   await cdp.send('Runtime.releaseObjectGroup', { objectGroup: 'item-4-quads' });
 
-  for (const name of ['body', 'glyph', 'code', 'tooltip']) {
+  for (const name of ['body', 'tooltip']) {
     const actual = quadEdgeLengths(transformed.quads[name]);
     const baseline = quadEdgeLengths(unscaled.quads[name]);
     actual.forEach((edge, index) => {
@@ -1594,7 +1582,7 @@ test('Cypress mobile counter-transform preserves content quads, focus, puff, and
   transformed.stacking.buttonSize.forEach((edge) => (
     expect(Math.abs(edge - 44)).toBeLessThanOrEqual(0.1)
   ));
-  expect(transformed.stacking.wrapperZ).toBe('3');
+  expect(transformed.stacking.wrapperZ).toBe('30');
   expect(transformed.stacking.tooltipZ).toBe('20');
   expect(transformed.stacking.overflowZ).toBe('12');
   expect(transformed.stacking.hit).toBe(true);
@@ -1665,6 +1653,324 @@ test('active route motion pauses and resumes for hover, focus, and pin', async (
       message: `${trackId} should resume after Escape`,
       timeout: 2_500,
     }).toBeGreaterThan(1);
+  }
+});
+
+test('cars omit visual code and glyph overlays while retaining complete accessible status', async ({
+  page,
+}) => {
+  await expect(page.locator('.vehicle-anchor .car-code, .vehicle-anchor .car-glyph, '
+    + '.pit-vehicle .car-code, .pit-vehicle .car-glyph')).toHaveCount(0);
+  for (const selector of ['.vehicle-anchor .session-car', '.pit-vehicle .session-car']) {
+    const button = page.locator(selector).first();
+    const wrapper = button.locator('..');
+    const tooltip = wrapper.locator('.session-tooltip');
+    const status = (await wrapper.getAttribute('data-status')).replaceAll('_', ' ');
+    await expect(button).toHaveAttribute('aria-describedby', await tooltip.getAttribute('id'));
+    await expect(button).toHaveAttribute('aria-label', new RegExp(status, 'i'));
+    await expect(tooltip).toHaveAttribute('role', 'tooltip');
+    await expect(tooltip).toContainText(new RegExp(status, 'i'));
+  }
+});
+
+test('inspected route and pit cars own the top stacking layer', async ({ page }) => {
+  await page.locator('#track-select').selectOption('ridge-pass');
+  const wrapper = page.locator('.vehicle-anchor.state-active').first();
+  const button = wrapper.locator('.session-car');
+  await button.focus();
+  await expect(wrapper.locator('.session-tooltip')).toBeVisible();
+  const routeStacking = await wrapper.evaluate((owner) => {
+    const buttonNode = owner.querySelector('.session-car');
+    const tooltip = owner.querySelector('.session-tooltip');
+    const other = [...document.querySelectorAll('.vehicle-anchor')].find((node) => node !== owner);
+    other.style.animation = 'none';
+    other.style.transform = 'translate(-50%, -50%)';
+    const layer = document.querySelector('#vehicle-layer').getBoundingClientRect();
+    const placeOtherAt = ({ x, y }) => {
+      other.style.left = `${x - layer.left}px`;
+      other.style.top = `${y - layer.top}px`;
+    };
+    const center = (node) => {
+      const box = node.getBoundingClientRect();
+      return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+    };
+    const buttonCenter = center(buttonNode);
+    placeOtherAt(buttonCenter);
+    const controlHit = buttonNode.contains(document.elementFromPoint(buttonCenter.x, buttonCenter.y));
+    const tooltipCenter = center(tooltip);
+    placeOtherAt(tooltipCenter);
+    tooltip.style.pointerEvents = 'auto';
+    const tooltipHit = tooltip.contains(document.elementFromPoint(tooltipCenter.x, tooltipCenter.y));
+    tooltip.style.removeProperty('pointer-events');
+    return {
+      ownerZ: getComputedStyle(owner).zIndex,
+      otherZ: getComputedStyle(other).zIndex,
+      controlHit,
+      tooltipHit,
+    };
+  });
+  expect(routeStacking).toEqual({ ownerZ: '30', otherZ: '3', controlHit: true, tooltipHit: true });
+
+  const pit = page.locator('.pit-vehicle').first();
+  await pit.locator('.session-car').focus();
+  await expect(pit.locator('.session-tooltip')).toBeVisible();
+  expect(await pit.evaluate((element) => getComputedStyle(element).zIndex)).toBe('30');
+});
+
+test('all top sprites face measured route travel while previews and pit placement stay stable', async ({
+  page,
+}) => {
+  await page.locator('#track-select').selectOption('ridge-pass');
+  const profile = page.viewportSize().width <= 759 ? 'mobile' : 'desktop';
+  const frames = TRACK_SCHEDULES.get('ridge-pass')[profile].frames;
+  const frameIndex = frames.findIndex((frame, index) => (
+    index < frames.length - 1
+      && frame.driftYaw === '0'
+      && frames[index + 1].driftYaw === '0'
+      && (frame.left !== frames[index + 1].left || frame.top !== frames[index + 1].top)
+  ));
+  const sample = { start: frames[frameIndex], end: frames[frameIndex + 1] };
+  const result = await page.locator(
+    '.vehicle-anchor.state-active, .vehicle-anchor.state-thinking',
+  ).first().evaluate((wrapper, { start, end }) => {
+    const route = wrapper.getAnimations().find((animation) => (
+      (animation.animationName ?? '').includes('traverse')
+    ));
+    const sprite = wrapper.querySelector('.car-sprite[data-car-view="top"]');
+    const matrixAngle = (element) => {
+      const matrix = new DOMMatrixReadOnly(getComputedStyle(element).transform);
+      return Math.atan2(matrix.b, matrix.a) * 180 / Math.PI;
+    };
+    const center = (element) => {
+      const box = element.getBoundingClientRect();
+      return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+    };
+    route.pause();
+    route.currentTime = Number(start.percent) / 100 * 64000;
+    const from = center(wrapper);
+    const totalAngle = matrixAngle(wrapper.querySelector('.car-angle'))
+      + matrixAngle(wrapper.querySelector('.car-motion'))
+      + matrixAngle(sprite);
+    route.currentTime = Number(end.percent) / 100 * 64000;
+    const to = center(wrapper);
+    const movement = { x: to.x - from.x, y: to.y - from.y };
+    const distance = Math.hypot(movement.x, movement.y);
+    const radians = totalAngle * Math.PI / 180;
+    const nativeY = sprite.dataset.carNativeTopNose === 'down' ? 1 : -1;
+    // Carry the audited native pixel nose through the actual image, drift, and
+    // route transforms, then compare it with measured forward displacement.
+    const nose = { x: -nativeY * Math.sin(radians), y: nativeY * Math.cos(radians) };
+    return {
+      distance,
+      alignment: (nose.x * movement.x + nose.y * movement.y) / distance,
+      wrapperAngle: matrixAngle(wrapper),
+      routeHeading: getComputedStyle(wrapper).getPropertyValue('--route-heading').trim(),
+    };
+  }, sample);
+  expect(result.distance).toBeGreaterThan(1);
+  expect(result.alignment).toBeGreaterThan(0.95);
+  expect(result.routeHeading).toMatch(/-?\d+(?:\.\d+)?deg/);
+  expect(angleDistance(result.wrapperAngle, 0)).toBeLessThanOrEqual(0.01);
+
+  const artAngles = await page.locator('.session-car').evaluateAll((buttons) => {
+    const angle = (element) => {
+      const matrix = new DOMMatrixReadOnly(getComputedStyle(element).transform);
+      return Math.atan2(matrix.b, matrix.a) * 180 / Math.PI;
+    };
+    return buttons.map((button) => ({
+      model: button.dataset.carModel,
+      native: button.querySelector('.car-sprite').dataset.carNativeTopNose,
+      correction: Number(button.querySelector('.car-sprite').dataset.carTopCorrection),
+      top: angle(button.querySelector('.car-sprite[data-car-view="top"]')),
+      preview: angle(button.parentElement.querySelector('.vehicle-preview-image')),
+    }));
+  });
+  expect(new Set(artAngles.map(({ model }) => model)).size).toBe(8);
+  const expectedOrientation = {
+    coupe: ['down', 180], hatchback: ['down', 180], sedan: ['up', 0], wagon: ['up', 0],
+    roadster: ['up', 0], rally: ['down', 180], fastback: ['up', 0], utility: ['up', 0],
+  };
+  for (const { model, native, correction, top } of artAngles) {
+    expect([native, correction]).toEqual(expectedOrientation[model]);
+    expect(angleDistance(top, correction)).toBeLessThanOrEqual(0.01);
+    const nativeY = native === 'down' ? 1 : -1;
+    expect(nativeY * Math.cos(top * Math.PI / 180)).toBeLessThan(-0.999);
+  }
+  expect(artAngles.every(({ preview }) => angleDistance(preview, 0) <= 0.01)).toBe(true);
+
+  const pit = page.locator('.pit-vehicle');
+  const pitBefore = await pit.evaluateAll((wrappers) => wrappers.map((wrapper) => {
+    const box = wrapper.getBoundingClientRect();
+    return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+  }));
+  await page.waitForTimeout(200);
+  const pitAfter = await pit.evaluateAll((wrappers) => wrappers.map((wrapper) => {
+    const box = wrapper.getBoundingClientRect();
+    const sprite = wrapper.querySelector('.car-sprite[data-car-view="top"]');
+    const matrix = new DOMMatrixReadOnly(getComputedStyle(sprite).transform);
+    const topAngle = Math.atan2(matrix.b, matrix.a) * 180 / Math.PI;
+    const nativeY = sprite.dataset.carNativeTopNose === 'down' ? 1 : -1;
+    return {
+      model: wrapper.dataset.carModel,
+      x: box.left + box.width / 2,
+      y: box.top + box.height / 2,
+      canonicalNoseY: nativeY * Math.cos(topAngle * Math.PI / 180),
+      wrapperAnimation: getComputedStyle(wrapper).animationName,
+      angleAnimation: getComputedStyle(wrapper.querySelector('.car-angle')).animationName,
+    };
+  }));
+  expect(new Set(pitAfter.map(({ model }) => model)).size).toBe(8);
+  pitAfter.forEach((item, index) => {
+    expect(distance(pitBefore[index], item)).toBeLessThan(0.1);
+    expect(item.canonicalNoseY).toBeLessThan(-0.999);
+    expect(item.wrapperAnimation).toBe('none');
+    expect(item.angleAnimation).toBe('none');
+  });
+});
+
+test('vehicle previews match their cars across hover, focus, pinning, and responsive containment', async ({
+  page,
+}) => {
+  const catalog = await page.locator('.session-car').evaluateAll((buttons) => ({
+    models: new Set(buttons.map((button) => button.dataset.carModel)).size,
+    liveries: new Set(buttons.map((button) => button.dataset.carLivery)).size,
+    topSources: new Set(buttons.map((button) => button.querySelector('.car-sprite').currentSrc)).size,
+    modelCounts: Object.fromEntries(buttons.reduce((counts, button) => {
+      counts.set(button.dataset.carModel, (counts.get(button.dataset.carModel) ?? 0) + 1);
+      return counts;
+    }, new Map())),
+    loaded: buttons.every((button) => {
+      const image = button.querySelector('.car-sprite');
+      return image.complete && image.naturalWidth === 32 && image.naturalHeight === 48;
+    }),
+  }));
+  expect(catalog.models).toBe(8);
+  expect(catalog.liveries).toBe(3);
+  expect(catalog.topSources).toBe(8);
+  expect(Object.values(catalog.modelCounts)).toEqual(Array(8).fill(3));
+  expect(catalog.loaded).toBe(true);
+
+  const wrapper = page.locator('.vehicle-anchor.state-active').first();
+  const button = wrapper.locator('.session-car');
+  const tooltip = wrapper.locator('.session-tooltip');
+  const preview = tooltip.locator('.vehicle-preview');
+  const matching = async () => wrapper.evaluate((element) => {
+    const car = element.querySelector('.session-car');
+    const top = car.querySelector('.car-sprite');
+    const tip = element.querySelector('.session-tooltip');
+    const art = tip.querySelector('.vehicle-preview');
+    const image = art.querySelector('.vehicle-preview-image');
+    const topStyle = getComputedStyle(top);
+    const imageStyle = getComputedStyle(image);
+    return {
+      model: [car.dataset.carModel, top.dataset.carModel, tip.dataset.carModel,
+        art.dataset.carModel, image.dataset.carModel],
+      livery: [car.dataset.carLivery, top.dataset.carLivery, tip.dataset.carLivery,
+        art.dataset.carLivery, image.dataset.carLivery],
+      view: [car.dataset.carView, tip.dataset.carView, art.dataset.carView,
+        image.dataset.carView],
+      signature: [car.dataset.carSignature, top.dataset.carSignature,
+        tip.dataset.carSignature, art.dataset.carSignature, image.dataset.carSignature],
+      previewAria: art.getAttribute('aria-hidden'),
+      imageAria: image.getAttribute('aria-hidden'),
+      imageAlt: image.getAttribute('alt'),
+      imageDraggable: image.draggable,
+      focusables: art.querySelectorAll('button, a, input, select, textarea, [tabindex]').length,
+      text: tip.querySelector('.vehicle-preview-text').textContent,
+      previewAnimations: art.getAnimations({ subtree: true }).length,
+      renderedView: image.dataset.carView,
+      renderedSignature: image.dataset.carSignature,
+      previewSource: new URL(image.currentSrc).pathname,
+      topSource: new URL(top.currentSrc).pathname,
+      previewLoaded: image.complete && image.naturalWidth === 48 && image.naturalHeight === 32,
+      topLoaded: top.complete && top.naturalWidth === 32 && top.naturalHeight === 48,
+      previewSize: [Number.parseFloat(imageStyle.width), Number.parseFloat(imageStyle.height)],
+      topSize: [Number.parseFloat(topStyle.width), Number.parseFloat(topStyle.height)],
+      imageRendering: [topStyle.imageRendering, imageStyle.imageRendering],
+      pointerEvents: [topStyle.pointerEvents, imageStyle.pointerEvents],
+      legacySvgCounts: [
+        car.querySelectorAll('.car-silhouette svg').length,
+        art.querySelectorAll('svg').length,
+      ],
+      legacyArtworkCount: element.querySelectorAll(
+        '.car-overlay, .car-livery, .car-centerline, .car-headlamp, '
+          + '.vehicle-preview-overlay, .vehicle-preview-livery',
+      ).length,
+    };
+  });
+
+  // Focus freezes the moving route target long enough to place the pointer on
+  // it deterministically; moving focus away then proves hover alone holds it.
+  await button.focus();
+  await wrapper.hover({ force: true });
+  await page.locator('#track-select').focus();
+  await expect(tooltip).toBeVisible();
+  let state = await matching();
+  expect(new Set(state.model).size).toBe(1);
+  expect(new Set(state.livery).size).toBe(1);
+  expect(new Set(state.view).size).toBe(1);
+  expect(new Set(state.signature).size).toBe(1);
+  expect(state.previewAria).toBe('true');
+  expect(state.imageAria).toBe('true');
+  expect(state.imageAlt).toBe('');
+  expect(state.imageDraggable).toBe(false);
+  expect(state.focusables).toBe(0);
+  expect(state.text).toMatch(/^Vehicle preview: .+, (side|front|rear) view$/);
+  expect(state.previewAnimations).toBe(0);
+  expect(state.renderedView).toBe(state.view[0]);
+  expect(state.renderedSignature).toBe(state.signature[0]);
+  expect(state.previewSource).toMatch(
+    new RegExp(`/${state.model[0]}-${state.view[0]}\\.png$`),
+  );
+  expect(state.topSource).toMatch(new RegExp(`/${state.model[0]}-top\\.png$`));
+  expect(state.previewLoaded).toBe(true);
+  expect(state.topLoaded).toBe(true);
+  expect(state.previewSize).toEqual([96, 64]);
+  expect(state.topSize).toEqual(page.viewportSize().width <= 960 ? [24, 36] : [32, 48]);
+  expect(state.imageRendering).toEqual(['pixelated', 'pixelated']);
+  expect(state.pointerEvents).toEqual(['none', 'none']);
+  expect(state.legacySvgCounts).toEqual([0, 0]);
+  expect(state.legacyArtworkCount).toBe(0);
+
+
+  await page.mouse.move(1, 1);
+  await expect(tooltip).toBeHidden();
+  await button.focus();
+  await expect(tooltip).toBeVisible();
+  const containment = await wrapper.evaluate((element) => {
+    const rect = (node) => node.getBoundingClientRect();
+    const tip = rect(element.querySelector('.session-tooltip'));
+    const stage = rect(document.querySelector('#map-stage'));
+    return {
+      insideStage: tip.top >= stage.top - 1 && tip.bottom <= stage.bottom + 1,
+      insideViewport: tip.left >= 0 && tip.right <= innerWidth && tip.top >= 0 && tip.bottom <= innerHeight,
+    };
+  });
+  expect(containment).toEqual({ insideStage: true, insideViewport: true });
+  await page.locator('#track-select').focus();
+  await expect(tooltip).toBeHidden();
+
+  await wrapper.hover({ force: true });
+  await button.dispatchEvent('click', { detail: 1 });
+  await expect(wrapper).toHaveAttribute('data-pinned', 'true');
+  await page.locator('#track-select').focus();
+  await page.mouse.move(1, 1);
+  await expect(tooltip).toBeVisible();
+  state = await matching();
+  expect(new Set(state.model).size).toBe(1);
+  await page.keyboard.press('Escape');
+  await expect(wrapper).not.toHaveAttribute('data-pinned', 'true');
+  await expect(tooltip).toBeHidden();
+
+  if (page.viewportSize().width <= 759) {
+    const pit = page.locator('.pit-vehicle').first();
+    await pit.locator('.session-car').focus();
+    await expect(pit.locator('.session-tooltip')).toBeVisible();
+    const pitContained = await pit.locator('.session-tooltip').evaluate((element) => {
+      const value = element.getBoundingClientRect();
+      return value.left >= 0 && value.right <= innerWidth && value.top >= 0 && value.bottom <= innerHeight;
+    });
+    expect(pitContained).toBe(true);
   }
 });
 
@@ -1791,7 +2097,7 @@ test('registered headings match every retained boundary, seven samples, and midp
   }
 });
 
-test('route reset milestones preserve position, heading, opacity, and upright markings', async ({
+test('route reset milestones preserve position, heading, and opacity without car overlays', async ({
   page,
 }) => {
   const profileName = page.viewportSize().width <= 759 ? 'mobile' : 'desktop';
@@ -1824,18 +2130,13 @@ test('route reset milestones preserve position, heading, opacity, and upright ma
           return Math.atan2(matrix.b, matrix.a) * 180 / Math.PI;
         };
         const heading = Number.parseFloat(style.getPropertyValue('--route-heading'));
-        const glyph = wrapper.querySelector('.car-glyph');
-        const code = wrapper.querySelector('.car-code');
-        const carAngle = matrixAngle(wrapper.querySelector('.car-angle'));
-        const driftAngle = matrixAngle(motion);
         return {
           left: Number.parseFloat(style.left),
           top: Number.parseFloat(style.top),
           heading,
           opacity: Number(style.opacity),
           visibility: style.visibility,
-          glyphNet: carAngle + driftAngle + matrixAngle(glyph),
-          codeNet: carAngle + driftAngle + matrixAngle(code),
+          overlays: wrapper.querySelectorAll('.car-glyph, .car-code').length,
         };
       });
     }, expected);
@@ -1849,13 +2150,12 @@ test('route reset milestones preserve position, heading, opacity, and upright ma
         .toBeLessThanOrEqual(0.01);
       expect(actual[index].opacity).toBeCloseTo(milestone.opacity, 3);
       expect(actual[index].visibility).toBe('visible');
-      expect(angleDistance(actual[index].glyphNet, 0)).toBeLessThanOrEqual(0.25);
-      expect(angleDistance(actual[index].codeNet, 0)).toBeLessThanOrEqual(0.25);
+      expect(actual[index].overlays).toBe(0);
     });
   }
 });
 
-test('every compiled corner has signed zero-peak-zero yaw, clear body bounds, and upright markings', async ({ page }) => {
+test('every compiled corner has signed zero-peak-zero yaw and clear body bounds', async ({ page }) => {
   const profileName = page.viewportSize().width <= 759 ? 'mobile' : 'desktop';
   for (const trackId of ['ridge-pass', 'cypress-run']) {
     await page.locator('#track-select').selectOption(trackId);
@@ -1885,14 +2185,11 @@ test('every compiled corner has signed zero-peak-zero yaw, clear body bounds, an
             const inverse = Number.parseFloat(
               style.getPropertyValue('--drift-upright-yaw'),
             );
-            const total = angleOf(wrapper.querySelector('.car-angle')) + angleOf(motion);
             return {
               ...input,
               yaw,
               inverse,
               motionAngle: angleOf(motion),
-              glyphNet: total + angleOf(wrapper.querySelector('.car-glyph')),
-              codeNet: total + angleOf(wrapper.querySelector('.car-code')),
               buttonTransform: getComputedStyle(wrapper.querySelector('.session-car')).transform,
               tooltipAngle: angleOf(wrapper.querySelector('.session-tooltip')),
               motionAnimation: getComputedStyle(motion).animationName,
@@ -1951,8 +2248,6 @@ test('every compiled corner has signed zero-peak-zero yaw, clear body bounds, an
         const corner = schedule.corners[result.cornerIndex];
         expect(Math.abs(result.yaw + result.inverse)).toBeLessThanOrEqual(0.01);
         expect(angleDistance(result.motionAngle, result.yaw)).toBeLessThanOrEqual(0.25);
-        expect(angleDistance(result.glyphNet, 0)).toBeLessThanOrEqual(0.25);
-        expect(angleDistance(result.codeNet, 0)).toBeLessThanOrEqual(0.25);
         expect(result.buttonTransform).toBe('none');
         expect(angleDistance(result.tooltipAngle, 0)).toBeLessThanOrEqual(0.01);
         expect(result.motionAnimation).toBe('none');
@@ -2057,8 +2352,6 @@ test('every Cypress mobile corner landmark audits all visible phased cars', asyn
               percent: progress === null ? null : progress * 100,
               yaw: Number.parseFloat(style.getPropertyValue('--drift-yaw')),
               inverse: Number.parseFloat(style.getPropertyValue('--drift-upright-yaw')),
-              glyphNet: total + angle(wrapper.querySelector('.car-glyph')),
-              codeNet: total + angle(wrapper.querySelector('.car-code')),
               buttonTransform: getComputedStyle(
                 wrapper.querySelector('.session-car'),
               ).transform,
@@ -2072,8 +2365,6 @@ test('every Cypress mobile corner landmark audits all visible phased cars', asyn
             `corner ${cornerIndex + 1}/${phase}/slot ${car.slot} yaw`)
             .toBeLessThanOrEqual(0.25);
           expect(Math.abs(car.yaw + car.inverse)).toBeLessThanOrEqual(0.01);
-          expect(angleDistance(car.glyphNet, 0)).toBeLessThanOrEqual(0.25);
-          expect(angleDistance(car.codeNet, 0)).toBeLessThanOrEqual(0.25);
           expect(car.buttonTransform).toBe('none');
         }
         const landmarkCar = measured.find(({ slot }) => slot === 0);

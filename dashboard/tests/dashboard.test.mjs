@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 
 import { FixtureSessionAdapter } from '../src/fixture-adapter.mjs';
 import { FIXTURE_SNAPSHOT } from '../src/fixture-sessions.mjs';
-import { computeTooltipShift } from '../src/render-dashboard.mjs';
+import {
+  CAR_ASSET_CATALOG, CAR_VISUAL_CATALOG, computeTooltipShift, selectCarVisual,
+} from '../src/render-dashboard.mjs';
 import {
   PERMISSION_STATES,
   SESSION_STATUSES,
@@ -738,23 +740,99 @@ test('compiled drift uses the route clock and parked cars remain static', () => 
   }
 });
 
-test('session controls render an original top-down SVG car without shrinking the accessible target', () => {
-  assert.match(RENDERER, /createElementNS\('http:\/\/www\.w3\.org\/2000\/svg'/);
-  assert.match(RENDERER, /function makeCarSilhouette\(documentRef\)/);
-  assert.match(RENDERER, /viewBox: '0 0 32 48'/);
-  assert.match(RENDERER, /'car-wheel'/);
-  assert.match(RENDERER, /'car-chassis'/);
-  assert.match(RENDERER, /'car-glass car-glass-front'/);
-  assert.match(RENDERER, /'car-glass car-glass-rear'/);
-  assert.match(RENDERER, /'car-roof'/);
-  assert.match(RENDERER, /body\.append\(makeCarSilhouette\(documentRef\), glyph, code\)/);
-  assert.match(STYLES, /\.session-car\s*\{[^}]*width:\s*52px;[^}]*height:\s*52px;[^}]*min-width:\s*44px;[^}]*min-height:\s*44px;[^}]*border:\s*0;[^}]*background:\s*transparent/si);
-  assert.match(STYLES, /\.car-body\s*\{[^}]*width:\s*32px;[^}]*height:\s*48px/si);
-  assert.match(STYLES, /\.car-chassis\s*\{[^}]*fill:\s*var\(--state-bg\);[^}]*stroke:\s*var\(--state-ink\)/si);
-  assert.match(STYLES, /\.car-wheel\s*\{[^}]*fill:\s*var\(--color-surface-night\)/si);
+test('vehicle selector deterministically covers 64 combinations and the 32-file PNG catalog', () => {
+  const codes = Array.from({ length: 64 }, (_, index) => `S${String(index + 1).padStart(2, '0')}`);
+  const first = codes.map(selectCarVisual);
+  const second = codes.map(selectCarVisual);
+  assert.deepEqual(first.map(({ modelKey, liveryKey, view }) => ({ modelKey, liveryKey, view })),
+    second.map(({ modelKey, liveryKey, view }) => ({ modelKey, liveryKey, view })));
+  assert.equal(new Set(first.map(({ modelKey, liveryKey }) => `${modelKey}/${liveryKey}`)).size, 64);
+  assert.deepEqual(new Set(first.map(({ modelKey }) => modelKey)),
+    new Set(CAR_VISUAL_CATALOG.models.map(({ key }) => key)));
+  assert.deepEqual(new Set(first.map(({ liveryKey }) => liveryKey)),
+    new Set(CAR_VISUAL_CATALOG.liveries.map(({ key }) => key)));
+  assert.deepEqual(new Set(first.map(({ view }) => view)), new Set(['side', 'front', 'rear']));
+  assert.equal(new Set(first.map(({ signatureKey }) => signatureKey)).size, 8);
+  assert.deepEqual(first.slice(0, 8).map(({ modelKey }) => modelKey),
+    CAR_VISUAL_CATALOG.models.map(({ key }) => key));
+  assert.deepEqual(new Set(first.slice(0, 8).map(({ liveryKey }) => liveryKey)),
+    new Set(['center-stripe']));
+  assert.deepEqual(first.slice(8, 16).map(({ modelKey }) => modelKey),
+    CAR_VISUAL_CATALOG.models.map(({ key }) => key));
+  assert.deepEqual(new Set(first.slice(8, 16).map(({ liveryKey }) => liveryKey)),
+    new Set(['twin-stripe']));
+  assert.deepEqual(CAR_VISUAL_CATALOG.models.map(({
+    key, nativeTopNose, topCorrection,
+  }) => ({ key, nativeTopNose, topCorrection })), [
+    { key: 'coupe', nativeTopNose: 'down', topCorrection: 180 },
+    { key: 'hatchback', nativeTopNose: 'down', topCorrection: 180 },
+    { key: 'sedan', nativeTopNose: 'up', topCorrection: 0 },
+    { key: 'wagon', nativeTopNose: 'up', topCorrection: 0 },
+    { key: 'roadster', nativeTopNose: 'up', topCorrection: 0 },
+    { key: 'rally', nativeTopNose: 'down', topCorrection: 180 },
+    { key: 'fastback', nativeTopNose: 'up', topCorrection: 0 },
+    { key: 'utility', nativeTopNose: 'up', topCorrection: 0 },
+  ]);
+  assert.ok(Object.isFrozen(CAR_VISUAL_CATALOG));
+  assert.ok(Object.isFrozen(CAR_ASSET_CATALOG));
+
+  const expectedNames = [];
+  const paths = new Set();
+  for (const model of CAR_VISUAL_CATALOG.models) {
+    const family = CAR_ASSET_CATALOG[model.key];
+    assert.ok(Object.isFrozen(family));
+    assert.deepEqual(new Set(Object.keys(family)), new Set(['top', 'side', 'front', 'rear']));
+    for (const [view, asset] of Object.entries(family)) {
+      assert.ok(Object.isFrozen(asset));
+      const name = `${model.key}-${view}.png`;
+      expectedNames.push(name);
+      assert.equal(asset.path, `assets/cars/${name}`);
+      assert.equal(paths.has(asset.path), false);
+      paths.add(asset.path);
+      assert.equal(asset.width, view === 'top' ? 32 : 48);
+      assert.equal(asset.height, view === 'top' ? 48 : 32);
+      assert.doesNotMatch(asset.path, /^(?:data:|https?:)/);
+
+      const bytes = readFileSync(new URL(`../${asset.path}`, import.meta.url));
+      assert.deepEqual([...bytes.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+      assert.equal(bytes.toString('ascii', 12, 16), 'IHDR');
+      assert.equal(bytes.readUInt32BE(16), asset.width);
+      assert.equal(bytes.readUInt32BE(20), asset.height);
+      assert.equal(bytes[24], 8, `${name} uses 8-bit channels`);
+      assert.equal(bytes[25], 6, `${name} is RGBA and carries alpha`);
+      assert.equal(bytes[28], 0, `${name} is non-interlaced`);
+    }
+  }
+  assert.equal(paths.size, 32);
+  assert.deepEqual(
+    readdirSync(new URL('../assets/cars/', import.meta.url)).filter((name) => name.endsWith('.png')).sort(),
+    expectedNames.sort(),
+  );
 });
 
-test('all seven vehicle states retain upright non-color roof markings and distinct treatments', () => {
+test('session controls render generated top-down PNG cars without shrinking the accessible target', () => {
+  assert.match(RENDERER, /function makeCarImage\(documentRef, visual, view, className\)/);
+  assert.match(RENDERER, /element\(documentRef, 'img', className\)/);
+  assert.match(RENDERER, /function makeCarSilhouette\(documentRef, visual\)/);
+  assert.match(RENDERER, /makeCarImage\(documentRef, visual, 'top', 'car-sprite'\)/);
+  assert.match(RENDERER, /alt: ''/);
+  assert.match(RENDERER, /'aria-hidden': 'true'/);
+  assert.match(RENDERER, /draggable: 'false'/);
+  assert.match(STYLES, /\.session-car\s*\{[^}]*width:\s*52px;[^}]*height:\s*52px;[^}]*min-width:\s*44px;[^}]*min-height:\s*44px;[^}]*border:\s*0;[^}]*background:\s*transparent/si);
+  assert.match(STYLES, /\.car-body\s*\{[^}]*width:\s*32px;[^}]*height:\s*48px/si);
+  assert.match(STYLES, /\.car-sprite\s*\{[^}]*image-rendering:\s*pixelated/si);
+  assert.doesNotMatch(RENDERER,
+    /svgElement|appendLivery|'car-overlay'|'vehicle-preview-overlay'|'car-livery'|'vehicle-preview-livery'|'car-centerline'|'car-headlamp'/);
+  assert.doesNotMatch(STYLES,
+    /\.car-overlay|\.vehicle-preview-overlay|\.car-livery|\.vehicle-preview-livery|\.car-centerline|\.car-headlamp/);
+  assert.match(STYLES,
+    /\.car-sprite\[data-car-top-correction="180"\]\s*\{[^}]*transform:\s*rotate\(180deg\)/si);
+  assert.doesNotMatch(STYLES, /data-car-view="top"[^}]*rotate\(180deg\)/si);
+  assert.doesNotMatch(STYLES, /\.vehicle-preview-image[^}]*rotate\(180deg\)/si);
+});
+
+
+test('all seven vehicle states retain accessible status text and state colors without car overlays', () => {
   for (const [status, glyph] of Object.entries({
     active: '›',
     thinking: '…',
@@ -765,16 +843,18 @@ test('all seven vehicle states retain upright non-color roof markings and distin
     unknown: '?',
   })) {
     assert.equal(STATE_PRESENTATION[status].glyph, glyph);
+    assert.ok(STATE_PRESENTATION[status].label.length > 0);
   }
-  assert.match(STYLES, /\.car-glyph\s*\{[^}]*position:\s*absolute;[^}]*transform:\s*rotate\(calc\([^}]*--route-upright-heading[^}]*--drift-upright-yaw/si);
-  assert.match(STYLES, /\.car-code\s*\{[^}]*position:\s*absolute;[^}]*transform:\s*rotate\(calc\([^}]*--route-upright-heading[^}]*--drift-upright-yaw/si);
+  assert.doesNotMatch(RENDERER, /'car-glyph'|'car-code'/);
+  assert.doesNotMatch(STYLES, /\.car-glyph|\.car-code/);
   for (const status of [
     'active', 'thinking', 'waiting-for-permission', 'idle', 'error', 'complete', 'unknown',
   ]) {
-    assert.match(STYLES, new RegExp(`\\.state-${status} \\.car-(?:headlamp|centerline|roof|chassis)\\s*\\{`, 's'));
+    assert.match(STYLES, new RegExp(
+      `\\.state-${status}\\s*\\{[^}]*--state-bg:\\s*var\\(--color-[^)]+-bg\\);[^}]*--state-ink:\\s*var\\(--color-[^)]+-ink\\)`,
+      's',
+    ));
   }
-  assert.match(STYLES, /\.state-active\s+\.car-headlamp\s*\{[^}]*opacity:\s*1/si);
-  assert.match(STYLES, /\.state-thinking\s+\.car-roof\s*\{[^}]*stroke-dasharray/si);
 });
 
 test('route cars share deterministic touge traversal phases and inspection pauses', () => {
@@ -915,8 +995,8 @@ test('atmosphere CSS pins hierarchy, gradient, frames, stacking, and mobile redu
   assert.match(normalized, /\.car-atmosphere \{[^}]*z-index: 0;[^}]*inset: 0;[^}]*width: 100%;[^}]*height: 100%;[^}]*overflow: visible;[^}]*rotate\(var\(--route-heading, 0deg\)\)[^}]*pointer-events: none;/);
   assert.match(normalized, /\.session-car \{[^}]*z-index: 1;/);
   assert.match(normalized, /\.session-tooltip \{[^}]*z-index: 20;/);
-  assert.match(normalized, /\.car-glyph \{[^}]*z-index: 2;/);
-  assert.match(normalized, /\.car-code \{[^}]*z-index: 2;/);
+  assert.match(normalized,
+    /\.vehicle-anchor:is\(:hover, :focus-within, \[data-pinned="true"\]\), \.pit-vehicle:is\(:hover, :focus-within, \[data-pinned="true"\]\) \{ z-index: 30;/);
   assert.ok(normalized.includes(
     'radial-gradient( circle at 50% 50%, '
       + 'color-mix(in srgb, var(--state-ink) 32%, transparent) 0 18%, '
@@ -1060,8 +1140,7 @@ test('760px through 960px use compact rounded-square route controls only', () =>
     compact,
     /\.vehicle-anchor \.car-body\s*\{[^}]*width:\s*24px;[^}]*height:\s*36px/si,
   );
-  assert.match(compact, /\.vehicle-anchor \.car-glyph\s*\{[^}]*top:\s*13px;[^}]*left:\s*4px/si);
-  assert.match(compact, /\.vehicle-anchor \.car-code\s*\{[^}]*left:\s*1px;[^}]*bottom:\s*3px/si);
+  assert.doesNotMatch(compact, /\.car-glyph|\.car-code/);
   assert.match(
     compact,
     /\.vehicle-anchor \.session-car:focus-visible\s*\{[^}]*outline:\s*3px solid var\(--color-focus\);[^}]*outline-offset:\s*0;[^}]*box-shadow:\s*none/si,
@@ -1190,9 +1269,11 @@ test('computeTooltipShift keeps the tooltip inside the viewport', () => {
   assert.equal(computeTooltipShift({ carCenter: 720, tooltipWidth: 256, viewportWidth: 1440, gutter: 8 }), 0);
 });
 
-test('session-tooltip CSS defaults --tt-shift to 0 and has no edge-class remnants', () => {
+test('session-tooltip CSS defaults both clamp shifts to 0 and has no edge-class remnants', () => {
   assert.match(BASE_STYLES, /\.session-tooltip \{[^}]*--tt-shift:\s*0px;/s);
-  assert.match(BASE_STYLES, /\.session-tooltip \{[^}]*transform:\s*translate\(calc\(-50% \+ var\(--tt-shift\)\), -\.25rem\);/s);
+  assert.match(BASE_STYLES, /\.session-tooltip \{[^}]*--tt-shift-y:\s*0px;/s);
+  assert.match(BASE_STYLES, /\.session-tooltip \{[^}]*calc\(var\(--tt-shift-y\) - \.25rem\)/s);
+  assert.match(BASE_STYLES, /var\(--tt-shift-y\)/);
   assert.doesNotMatch(BASE_STYLES, /--vehicle-vw/);
   assert.doesNotMatch(BASE_STYLES, /\.edge-left|\.edge-right/);
   assert.doesNotMatch(RENDERER, /--vehicle-vw/);

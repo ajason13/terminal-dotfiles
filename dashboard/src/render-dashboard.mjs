@@ -12,46 +12,158 @@ function element(documentRef, tagName, className, text) {
   return node;
 }
 
-function svgElement(documentRef, tagName, className, attributes = {}) {
-  const node = documentRef.createElementNS('http://www.w3.org/2000/svg', tagName);
-  if (className) node.setAttribute('class', className);
-  for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, value);
-  return node;
+function deepFreeze(value) {
+  if (Array.isArray(value)) return Object.freeze(value.map(deepFreeze));
+  if (value && typeof value === 'object') {
+    return Object.freeze(Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, deepFreeze(entry)]),
+    ));
+  }
+  return value;
 }
 
-function makeCarSilhouette(documentRef) {
-  const svg = svgElement(documentRef, 'svg', 'car-silhouette', {
-    viewBox: '0 0 32 48',
+const freezeCatalog = (entries) => deepFreeze(entries);
+
+export const CAR_VISUAL_CATALOG = Object.freeze({
+  models: freezeCatalog([
+    {
+      key: 'coupe', name: 'Rounded Grand Tourer', signature: 'rounded-gt',
+      nativeTopNose: 'down', topCorrection: 180,
+    },
+    {
+      key: 'hatchback', name: 'Upright Hatch', signature: 'upright-hatch',
+      nativeTopNose: 'down', topCorrection: 180,
+    },
+    {
+      key: 'sedan', name: 'Rally Sedan', signature: 'rally-sedan',
+      nativeTopNose: 'up', topCorrection: 0,
+    },
+    {
+      key: 'wagon', name: 'Long-roof Van', signature: 'long-roof',
+      nativeTopNose: 'up', topCorrection: 0,
+    },
+    {
+      key: 'roadster', name: 'Low Sport Coupe', signature: 'low-coupe',
+      nativeTopNose: 'up', topCorrection: 0,
+    },
+    {
+      key: 'rally', name: 'High-rise Classic', signature: 'high-rise',
+      nativeTopNose: 'down', topCorrection: 180,
+    },
+    {
+      key: 'fastback', name: 'Long-hood Fastback', signature: 'long-hood',
+      nativeTopNose: 'up', topCorrection: 0,
+    },
+    {
+      key: 'utility', name: 'Boxy Liftback', signature: 'boxy-liftback',
+      nativeTopNose: 'up', topCorrection: 0,
+    },
+  ]),
+  liveries: Object.freeze([
+    Object.freeze({ key: 'center-stripe', name: 'Center stripe' }),
+    Object.freeze({ key: 'twin-stripe', name: 'Twin stripe' }),
+    Object.freeze({ key: 'chevron', name: 'Chevron' }),
+    Object.freeze({ key: 'sash', name: 'Sash' }),
+    Object.freeze({ key: 'dashes', name: 'Dashes' }),
+    Object.freeze({ key: 'checker', name: 'Checker' }),
+    Object.freeze({ key: 'crossbar', name: 'Crossbar' }),
+    Object.freeze({ key: 'edge-rails', name: 'Edge rails' }),
+  ]),
+  views: Object.freeze(['side', 'front', 'rear']),
+});
+
+const CAR_ASSET_VIEWS = Object.freeze(['top', ...CAR_VISUAL_CATALOG.views]);
+
+export const CAR_ASSET_CATALOG = deepFreeze(Object.fromEntries(
+  CAR_VISUAL_CATALOG.models.map((model) => [
+    model.key,
+    Object.fromEntries(CAR_ASSET_VIEWS.map((view) => [
+      view,
+      {
+        path: `assets/cars/${model.key}-${view}.png`,
+        width: view === 'top' ? 32 : 48,
+        height: view === 'top' ? 48 : 32,
+      },
+    ])),
+  ]),
+));
+
+function carAssetUrl(asset) {
+  return new URL(`../${asset.path}`, import.meta.url).href;
+}
+
+function stableCodeIndex(mapCode) {
+  const match = /^S(\d{2})$/.exec(String(mapCode));
+  if (match && Number(match[1]) >= 1 && Number(match[1]) <= 64) return Number(match[1]) - 1;
+  let hash = 2166136261;
+  for (const character of String(mapCode)) {
+    hash ^= character.codePointAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+export function selectCarVisual(mapCode) {
+  const index = stableCodeIndex(mapCode);
+  const model = CAR_VISUAL_CATALOG.models[index % 8];
+  const livery = CAR_VISUAL_CATALOG.liveries[Math.floor(index / 8) % 8];
+  return Object.freeze({
+    modelKey: model.key,
+    modelName: model.name,
+    liveryKey: livery.key,
+    liveryName: livery.name,
+    view: CAR_VISUAL_CATALOG.views[index % CAR_VISUAL_CATALOG.views.length],
+    signatureKey: model.signature,
+    model,
+  });
+}
+
+function makeCarImage(documentRef, visual, view, className) {
+  const asset = CAR_ASSET_CATALOG[visual.modelKey][view];
+  const image = element(documentRef, 'img', className);
+  for (const [name, value] of Object.entries({
+    src: carAssetUrl(asset),
+    width: asset.width,
+    height: asset.height,
+    alt: '',
     'aria-hidden': 'true',
-    focusable: 'false',
-  });
-  const wheels = [
-    ['3', '10'], ['25', '10'], ['3', '32'], ['25', '32'],
-  ].map(([x, y]) => svgElement(documentRef, 'rect', 'car-wheel', {
-    x, y, width: '4', height: '9', rx: '2',
-  }));
-  const chassis = svgElement(documentRef, 'path', 'car-chassis', {
-    d: 'M10 2Q16 0 22 2L25 9 27 18V38Q26 44 21 46H11Q6 44 5 38V18L7 9Z',
-  });
-  const frontGlass = svgElement(documentRef, 'path', 'car-glass car-glass-front', {
-    d: 'M9 13Q16 10 23 13L22 19H10Z',
-  });
-  const rearGlass = svgElement(documentRef, 'path', 'car-glass car-glass-rear', {
-    d: 'M10 31H22L23 36Q16 39 9 36Z',
-  });
-  const roof = svgElement(documentRef, 'path', 'car-roof', {
-    d: 'M10 20Q16 18 22 20V30H10Z',
-  });
-  const centerline = svgElement(documentRef, 'path', 'car-centerline', {
-    d: 'M12 9 16 6 20 9',
-  });
-  const lamps = [
-    ['10', '5'], ['22', '5'],
-  ].map(([cx, cy]) => svgElement(documentRef, 'circle', 'car-headlamp', {
-    cx, cy, r: '1.6',
-  }));
-  svg.append(...wheels, chassis, frontGlass, rearGlass, roof, centerline, ...lamps);
-  return svg;
+    draggable: 'false',
+    decoding: 'async',
+    'data-car-model': visual.modelKey,
+    'data-car-livery': visual.liveryKey,
+    'data-car-view': view,
+    'data-car-signature': visual.signatureKey,
+  })) image.setAttribute(name, value);
+  if (view === 'top') {
+    image.dataset.carNativeTopNose = visual.model.nativeTopNose;
+    image.dataset.carTopCorrection = String(visual.model.topCorrection);
+  }
+  return image;
+}
+
+function makeCarSilhouette(documentRef, visual) {
+  const art = element(documentRef, 'span', 'car-silhouette');
+  art.setAttribute('aria-hidden', 'true');
+  art.dataset.carModel = visual.modelKey;
+  art.dataset.carLivery = visual.liveryKey;
+  art.dataset.carView = 'top';
+  art.dataset.carSignature = visual.signatureKey;
+
+  art.append(makeCarImage(documentRef, visual, 'top', 'car-sprite'));
+  return art;
+}
+
+function makeCarPreview(documentRef, visual) {
+  const container = element(documentRef, 'span', 'vehicle-preview');
+  container.dataset.carModel = visual.modelKey;
+  container.dataset.carLivery = visual.liveryKey;
+  container.dataset.carView = visual.view;
+  container.dataset.carSignature = visual.signatureKey;
+  container.setAttribute('aria-hidden', 'true');
+
+  const image = makeCarImage(documentRef, visual, visual.view, 'vehicle-preview-image');
+  container.append(image);
+  return container;
 }
 
 function requiredMount(root, selector) {
@@ -96,10 +208,14 @@ function headingText(session, workRef) {
   return workRef.label || badgeLabel(workRef) || session.displayName;
 }
 
-function makeTooltip(documentRef, session, presentation, text, tooltipId) {
+function makeTooltip(documentRef, session, presentation, text, tooltipId, visual) {
   const tooltip = element(documentRef, 'span', 'session-tooltip');
   tooltip.id = tooltipId;
   tooltip.setAttribute('role', 'tooltip');
+  tooltip.dataset.carModel = visual.modelKey;
+  tooltip.dataset.carLivery = visual.liveryKey;
+  tooltip.dataset.carView = visual.view;
+  tooltip.dataset.carSignature = visual.model.signature;
   tooltip.append(element(documentRef, 'strong', '', headingText(session, text.workRef)));
   // The heading is the window name, so the tmux session goes on its own line -
   // otherwise the prefix that disambiguates same-named windows is invisible.
@@ -114,18 +230,28 @@ function makeTooltip(documentRef, session, presentation, text, tooltipId) {
   if (nonActivity && nonActivity !== text.details) details.append(`${nonActivity}. `);
   appendActivity(documentRef, details, text.activity);
   if (session.errorSummary) details.append(`. Error: ${session.errorSummary}`);
-  tooltip.append(details);
+  tooltip.append(
+    details,
+    makeCarPreview(documentRef, visual),
+    element(documentRef, 'span', 'visually-hidden vehicle-preview-text',
+      `Vehicle preview: ${visual.modelName}, ${visual.view} view`),
+  );
   return tooltip;
 }
 
-function replaceTooltip(documentRef, tooltip, session, text) {
+function replaceTooltip(documentRef, tooltip, session, text, visual) {
   const replacement = makeTooltip(
     documentRef,
     session,
     STATE_PRESENTATION[session.status],
     text,
     tooltip.id,
+    visual,
   );
+  tooltip.dataset.carModel = visual.modelKey;
+  tooltip.dataset.carLivery = visual.liveryKey;
+  tooltip.dataset.carView = visual.view;
+  tooltip.dataset.carSignature = visual.model.signature;
   tooltip.replaceChildren(...replacement.childNodes);
 }
 
@@ -161,8 +287,34 @@ function applyBadge(documentRef, wrapper, workRef) {
   badge.textContent = label;
 }
 
+function applyVisualMetadata(wrapper, button, visual) {
+  for (const node of [wrapper, button]) {
+    node.dataset.carModel = visual.modelKey;
+    node.dataset.carLivery = visual.liveryKey;
+    node.dataset.carView = visual.view;
+    node.dataset.carSignature = visual.signatureKey;
+  }
+}
+
+function updateCarVisual(documentRef, wrapper, button, tooltip, session) {
+  const visual = selectCarVisual(session.mapCode);
+  applyVisualMetadata(wrapper, button, visual);
+  const tooltipId = `session-details-${session.mapCode.toLowerCase()}`;
+  tooltip.id = tooltipId;
+  button.setAttribute('aria-describedby', tooltipId);
+  const body = button.querySelector('.car-body');
+  if (body.dataset.carModel !== visual.modelKey
+    || body.dataset.carLivery !== visual.liveryKey) {
+    body.replaceChildren(makeCarSilhouette(documentRef, visual));
+    body.dataset.carModel = visual.modelKey;
+    body.dataset.carLivery = visual.liveryKey;
+  }
+  return visual;
+}
+
 function makeCar(documentRef, session, placement, text, target) {
   const presentation = STATE_PRESENTATION[session.status];
+  const visual = selectCarVisual(session.mapCode);
   const wrapper = element(
     documentRef,
     'div',
@@ -182,6 +334,7 @@ function makeCar(documentRef, session, placement, text, target) {
   const button = element(documentRef, 'button', 'session-car');
   button.type = 'button';
   button.dataset.sessionId = session.id;
+  applyVisualMetadata(wrapper, button, visual);
   button.setAttribute('aria-label', text.label);
   button.setAttribute('aria-pressed', 'false');
   const tooltipId = `session-details-${session.mapCode.toLowerCase()}`;
@@ -190,18 +343,16 @@ function makeCar(documentRef, session, placement, text, target) {
   const angle = element(documentRef, 'span', 'car-angle');
   const motion = element(documentRef, 'span', 'car-motion');
   const body = element(documentRef, 'span', 'car-body');
-  const glyph = element(documentRef, 'span', 'car-glyph', presentation.glyph);
-  const code = element(documentRef, 'span', 'car-code', session.mapCode);
-  glyph.setAttribute('aria-hidden', 'true');
-  code.setAttribute('aria-hidden', 'true');
-  body.append(makeCarSilhouette(documentRef), glyph, code);
+  body.dataset.carModel = visual.modelKey;
+  body.dataset.carLivery = visual.liveryKey;
+  body.append(makeCarSilhouette(documentRef, visual));
   motion.append(body);
   angle.append(motion);
   button.append(angle);
   wrapper.append(
     atmosphere,
     button,
-    makeTooltip(documentRef, session, presentation, text, tooltipId),
+    makeTooltip(documentRef, session, presentation, text, tooltipId, visual),
   );
   applyBadge(documentRef, wrapper, text.workRef);
   return { wrapper, button };
@@ -277,6 +428,10 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
   function clampRouteTooltip(wrapper) {
     const tooltip = wrapper.querySelector('.session-tooltip');
     if (!tooltip) return;
+    // pointerover fires before :hover makes content-visibility visible. Measure
+    // the real contents synchronously while opacity/visibility still hide them,
+    // otherwise offsetHeight is only the collapsed containment placeholder.
+    tooltip.style.setProperty('content-visibility', 'visible');
     const rect = wrapper.getBoundingClientRect();
     tooltip.style.setProperty('--tt-shift', `${computeTooltipShift({
       carCenter: rect.left + rect.width / 2,
@@ -294,6 +449,19 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
     else if (roomAbove >= needed) openUp = true;
     else openUp = roomAbove > roomBelow;
     wrapper.classList.toggle('tooltip-up', openUp);
+
+    // A detail-rich tooltip can be taller than the room on either side of the
+    // car. After choosing the less crowded side, slide the whole bubble back
+    // inside the stage instead of letting its overflow-hidden edge crop it.
+    const gutter = 8;
+    const baseTop = openUp
+      ? rect.top - 9 - tooltip.offsetHeight
+      : rect.bottom + 9;
+    const minTop = stage.top + gutter;
+    const maxTop = Math.max(minTop, stage.bottom - gutter - tooltip.offsetHeight);
+    const clampedTop = Math.max(minTop, Math.min(baseTop, maxTop));
+    tooltip.style.setProperty('--tt-shift-y', `${clampedTop - baseTop}px`);
+    tooltip.style.removeProperty('content-visibility');
   }
   const clampFromEvent = (event) => {
     const wrapper = event.target.closest?.('.vehicle-anchor');
@@ -366,7 +534,8 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
     wrapper.dataset.routeSlot = String(placement.slotIndex);
     swapStateClass(wrapper, session.status);
     button.setAttribute('aria-label', text.label);
-    replaceTooltip(documentRef, tooltip, session, text);
+    const visual = updateCarVisual(documentRef, wrapper, button, tooltip, session);
+    replaceTooltip(documentRef, tooltip, session, text, visual);
     applyBadge(documentRef, wrapper, text.workRef);
   }
 
@@ -491,7 +660,8 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
             applyRouteCar(existingWrapper, button, tooltip, session, placement, text);
           } else {
             button.setAttribute('aria-label', text.label);
-            replaceTooltip(documentRef, tooltip, session, text);
+            const visual = updateCarVisual(documentRef, existingWrapper, button, tooltip, session);
+            replaceTooltip(documentRef, tooltip, session, text, visual);
             swapStateClass(existingWrapper, session.status);
             applyBadge(documentRef, existingWrapper, text.workRef);
           }

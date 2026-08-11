@@ -55,6 +55,7 @@ const CONTENT_TYPES = {
   '.js': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
+  '.png': 'image/png',
 };
 
 const staticForbidden = { status: 403, headers: {}, body: 'forbidden' };
@@ -94,7 +95,7 @@ export function createStaticFileReader({ root, token, readFile, realpath }) {
         const html = buffer.toString('utf8').split(LIVE_CONSTANTS.LIVE_TOKEN_PLACEHOLDER).join(token);
         return { status: 200, headers: { 'Content-Type': type, 'Cache-Control': 'no-store' }, body: html };
       }
-      return { status: 200, headers: { 'Content-Type': type, 'Cache-Control': 'no-store' }, body: buffer.toString('utf8') };
+      return { status: 200, headers: { 'Content-Type': type, 'Cache-Control': 'no-store' }, body: buffer };
     } catch {
       return { status: 404, headers: {}, body: 'not found' };
     }
