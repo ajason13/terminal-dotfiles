@@ -100,10 +100,13 @@ function makeTooltip(documentRef, session, presentation, text, tooltipId) {
   const tooltip = element(documentRef, 'span', 'session-tooltip');
   tooltip.id = tooltipId;
   tooltip.setAttribute('role', 'tooltip');
-  tooltip.append(
-    element(documentRef, 'strong', '', headingText(session, text.workRef)),
-    element(documentRef, 'span', '', presentation.label),
-  );
+  tooltip.append(element(documentRef, 'strong', '', headingText(session, text.workRef)));
+  // The heading is the window name, so the tmux session goes on its own line -
+  // otherwise the prefix that disambiguates same-named windows is invisible.
+  if (text.workRef.sessionName) {
+    tooltip.append(element(documentRef, 'span', 'tooltip-session', text.workRef.sessionName));
+  }
+  tooltip.append(element(documentRef, 'span', '', presentation.label));
   const refs = refLine(unusedRefs(text.workRef));
   if (refs) tooltip.append(element(documentRef, 'span', '', refs));
   const details = element(documentRef, 'span', 'tooltip-details');

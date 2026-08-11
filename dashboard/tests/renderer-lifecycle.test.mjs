@@ -96,6 +96,32 @@ test('tooltip heading is the stripped name, with one joined Jira/PR line', () =>
   assert.equal(tooltip.children[2].textContent, 'Jira: BB-228 · PR #42');
 });
 
+// The live shape: tmux session `E2E`, window `BB-76 - Track History`. The heading
+// used to keep the dash the ref left behind, and the session never rendered at all.
+test('tooltip shows the tmux session under the heading and drops the orphaned dash', () => {
+  const { root } = dashboardRoot();
+  renderDashboard(routeSnapshot([
+    routeSession('scoped', { displayName: 'E2E ▸ BB-76 - Track History' }),
+  ]), root, getTrack('ridge-pass'));
+  const tooltip = findCar(root, 'scoped').parentElement.querySelector('.session-tooltip');
+  assert.equal(tooltip.children[0].textContent, 'Track History');
+  assert.equal(tooltip.children[1].textContent, 'E2E');
+  assert.equal(tooltip.children[1].className, 'tooltip-session');
+  assert.equal(tooltip.children[2].textContent, 'Active');
+  assert.equal(tooltip.children[3].textContent, 'Jira: BB-76');
+});
+
+test('tooltip omits the session line when the name carries no session prefix', () => {
+  const { root } = dashboardRoot();
+  renderDashboard(routeSnapshot([
+    routeSession('unscoped', { displayName: 'BB-76 - Track History' }),
+  ]), root, getTrack('ridge-pass'));
+  const tooltip = findCar(root, 'unscoped').parentElement.querySelector('.session-tooltip');
+  assert.equal(tooltip.querySelector('.tooltip-session'), null);
+  assert.equal(tooltip.children[0].textContent, 'Track History');
+  assert.equal(tooltip.children[1].textContent, 'Active');
+});
+
 test('tooltip omits the ref line when the name has no tokens', () => {
   const { root } = dashboardRoot();
   renderDashboard(routeSnapshot([
@@ -162,6 +188,27 @@ test('replaceTooltip renders the new heading and ref line on a live update()', (
   const tooltip = findCar(root, 'ref').parentElement.querySelector('.session-tooltip');
   assert.equal(tooltip.children[0].textContent, 'renamed');
   assert.equal(tooltip.children[2].textContent, 'Jira: BB-305 · PR #9');
+  controller.destroy();
+});
+
+// The live poller only ever calls update(), so the session line has to appear and
+// disappear on that path too - not just on first render.
+test('replaceTooltip adds and removes the session line when a pane moves session', () => {
+  const { root } = dashboardRoot();
+  const controller = renderDashboard(routeSnapshot([
+    routeSession('moved', { displayName: 'Aoba' }),
+  ]), root, getTrack('ridge-pass'));
+  const tooltip = findCar(root, 'moved').parentElement.querySelector('.session-tooltip');
+  assert.equal(tooltip.querySelector('.tooltip-session'), null);
+  controller.update(routeSnapshot([
+    routeSession('moved', { displayName: 'E2E ▸ BB-76 - Track History' }),
+  ], '2026-07-26T17:00:05Z'));
+  assert.equal(tooltip.querySelector('.tooltip-session').textContent, 'E2E');
+  assert.equal(tooltip.children[0].textContent, 'Track History');
+  controller.update(routeSnapshot([
+    routeSession('moved', { displayName: 'BB-76 - Track History' }),
+  ], '2026-07-26T17:00:10Z'));
+  assert.equal(tooltip.querySelector('.tooltip-session'), null);
   controller.destroy();
 });
 

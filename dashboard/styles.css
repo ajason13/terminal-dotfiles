@@ -881,6 +881,15 @@ textarea {
 }
 
 .session-tooltip span { margin-top: .18rem; color: var(--color-text-muted); }
+/* The tmux session sits directly under the heading, so it reads as that heading's
+   scope rather than as one more detail line. */
+.session-tooltip .tooltip-session {
+  margin-top: .05rem;
+  color: var(--color-boundary);
+  font-size: .68rem;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
 .tooltip-up .session-tooltip { top: auto; bottom: calc(100% + 9px); }
 
 .vehicle-anchor:hover .session-tooltip,
