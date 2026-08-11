@@ -22,8 +22,9 @@ terminal backgrounds.
 - `Ctrl-Shift-Space` opens selected text paths in a tmux Neovim split, PNG
   images in Preview, and web targets in the browser.
 - WezTerm backgrounds rotate every 15 minutes by default.
-- Codex defaults to `gpt-5.6-sol` with `medium` reasoning and includes pinned role
-  profiles for research, architecture, coordination, and implementation.
+- Codex defaults to `gpt-5.6-terra` with `medium` reasoning for routine sessions
+  and includes pinned Sol role profiles for research, architecture, and
+  implementation.
 
 ## Layout
 
@@ -181,8 +182,9 @@ This symlinks:
 
 ## Codex Role Routing
 
-The normal Codex default is `gpt-5.6-sol` with `medium` reasoning, suitable for
-the Builder role. Four custom agents are also installed:
+The normal Codex default is `gpt-5.6-terra` with `medium` reasoning, suitable
+for routine inspection, coordination, documentation, and status work. Four
+custom agents are also installed for explicit role routing:
 
 | Role | Model | Reasoning |
 | --- | --- | --- |
@@ -222,6 +224,9 @@ primary role owns the outcome and consults a specialist only for a bounded
 question. A Builder usually owns implementation; a Lead Architect owns an
 ambiguous decision. Research findings and QA feedback are advisory, and the
 primary records the decision, assumptions, and verification in its handoff.
+Advisor Mode permits at most one bounded specialist, with no recursive
+delegation. Workflow coordination is a brief intake or final sync step rather
+than a persistent parallel agent.
 
 **Gated Delivery Mode** is required for new architecture, cross-module or
 public contracts, privacy, safety, security, licensing, auth, payments,
@@ -229,6 +234,15 @@ external integrations, release candidates, and explicitly requested independent
 reviews. The Lead Architect selects the gate, defines the implementation-ready
 plan, and the Builder starts only after that review passes. The Workflow
 Coordinator records state and evidence but never changes the technical decision.
+Only the roles and gates required by the task's risk should run.
+
+Subagents are useful for independent exploration, focused test or log analysis,
+and other read-heavy work that would pollute the primary thread. They are not a
+token-saving mechanism: every spawned agent performs its own model and tool
+work. The default spawned-agent pool is therefore capped at two threads and
+uses `gpt-5.6-terra` with `medium` reasoning. Use the pinned Builder for normal
+behavioral implementation, escalate to Architect or Researcher only when the
+risk requires it, and keep one chat per coherent outcome.
 
 Examples:
 

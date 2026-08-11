@@ -9,6 +9,8 @@ unavailable model or effort as an exception in the handoff.
 Use Advisor Mode for scoped, low-risk work: routine bug fixes, local tooling,
 documentation, small UI changes, and exploration. One accountable primary owns
 the task and consults only the specialist needed for a bounded question.
+Advisor Mode permits at most one specialist, and that specialist must not
+delegate recursively.
 
 - Use `builder` as primary for implementation, debugging, tests, and docs.
 - Use `lead-architect` as primary for an ambiguous decision or small spec.
@@ -16,6 +18,8 @@ the task and consults only the specialist needed for a bounded question.
 - Treat specialist output as advice, not automatic authorization. The primary
   records the decision, assumptions, and verification in the normal handoff.
 - Do not add a coordinator or independent QA gate unless the task warrants it.
+- Treat workflow coordination as a brief intake or final synchronization step,
+  not a persistent agent alongside routine implementation.
 
 ## Gated Delivery Mode
 
@@ -31,6 +35,35 @@ review. The Lead Architect selects this mode and defines the gate.
 4. `builder` implements only the approved scope and records verification.
 5. `workflow-coordinator` records status, evidence, and handoffs without
    changing technical direction.
+
+Use only the roles and gates required by the risk. Gated Delivery does not
+authorize every role to run for every task, nested delegation, or duplicate
+repository review.
+
+## Delegation And Usage Efficiency
+
+Default to a single accountable primary. Delegate only when there is a named,
+bounded question or an independent unit of work with a material quality or
+elapsed-time benefit. Subagents each perform their own model and tool work, so
+parallelism is not a token-saving mechanism.
+
+- Prefer subagents for independent exploration, focused test or log analysis,
+  and other read-heavy work that would pollute the primary thread.
+- Avoid subagents for sequential phases, small changes, routine status sync,
+  or work that requires each agent to reread the same context.
+- Use `gpt-5.6-terra` at `medium` for coordination, documentation, status,
+  routine inspection, and ordinary supporting work.
+- Use `gpt-5.6-luna` at `low` only for validated mechanical, repeatable, or
+  high-volume chores.
+- Use `gpt-5.6-sol` at `medium` for normal behavioral implementation,
+  debugging, and tests; escalate to `high` for architecture, security, public
+  contracts, ambiguous regressions, or release blockers.
+- Reserve `gpt-5.6-sol` at `xhigh` for material multi-source research.
+
+Keep one chat per coherent outcome and compact long threads. Scope prompts to
+the relevant files and sources, keep active `CONTEXT.md` files concise, nest
+project instructions near the code they govern, and disable MCP servers that
+are not needed for the current session.
 
 ## Role Boundaries
 

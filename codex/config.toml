@@ -1,4 +1,6 @@
-model = "gpt-5.6-sol"
+# Start routine sessions on the everyday workhorse. Use codex-role build,
+# architect, or research when the task requires a pinned Sol configuration.
+model = "gpt-5.6-terra"
 model_reasoning_effort = "medium"
 
 # Auto: work freely inside the active repository and route eligible boundary
@@ -40,6 +42,15 @@ hide_rate_limit_model_nudge = true
 
 [notice.model_migrations]
 "gpt-5.4" = "gpt-5.6-terra"
+
+[agents]
+# Delegation improves elapsed time and context isolation, but every spawned
+# agent consumes its own tokens. Keep the default pool intentionally small and
+# reserve explicit Sol role pins for work whose risk requires them.
+enabled = true
+max_concurrent_threads_per_session = 2
+default_subagent_model = "gpt-5.6-terra"
+default_subagent_reasoning_effort = "medium"
 
 # Per-session objective, shared with Claude Code and rendered on the tmux status
 # bar (Codex's tui.status_line takes fixed identifiers, so it cannot show this).
