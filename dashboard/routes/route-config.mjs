@@ -1,6 +1,6 @@
 export default {
   schemaVersion: 1,
-  trackOrder: ['ridge-pass', 'cypress-run'],
+  trackOrder: ['ridge-pass', 'cypress-run', 'harbor-yard-rallycross'],
   viewBox: { width: 1000, height: 760 },
   profiles: [
     { id: 'desktop', width: 1160, height: 682, targetDiameter: 52 },

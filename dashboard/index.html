@@ -25,6 +25,7 @@
             <option value="auto">Auto · workday schedule</option>
             <option value="ridge-pass">Ridge Pass</option>
             <option value="cypress-run">Cypress Run</option>
+            <option value="harbor-yard-rallycross">Harbor Yard Rallycross</option>
           </select>
           <span id="track-status" class="track-status">Active course: Ridge Pass</span>
           <span id="track-live-region" class="visually-hidden" aria-live="polite"></span>
@@ -127,6 +128,54 @@
                 <text class="label-long-arc" x="350" y="674">LONG ARC</text>
                 <text class="label-valley-gate" x="900" y="688">VALLEY GATE</text>
               </g>
+              </g>
+
+              <g id="harbor-yard-rallycross-art" class="course-art harbor-yard-rallycross-art" data-track-art="harbor-yard-rallycross">
+                <rect class="harbor-apron" x="22" y="22" width="956" height="716" rx="42" />
+                <path class="harbor-water" d="M0 0H1000V102 C900 132 820 94 700 122 C550 156 420 94 260 128 C150 152 72 118 0 150Z" />
+                <path class="harbor-water" d="M0 760V684 C120 650 210 704 330 674 C480 636 620 704 760 670 C860 646 935 680 1000 654V760Z" />
+                <g class="harbor-quay">
+                  <path d="M48 132H952 M48 658H952 M90 90V184 M910 90V184 M90 576V704 M910 576V704" />
+                </g>
+                <g class="harbor-containers">
+                  <rect x="92" y="266" width="130" height="48" rx="5" /><rect x="110" y="324" width="130" height="48" rx="5" />
+                  <rect x="726" y="146" width="138" height="48" rx="5" /><rect x="748" y="204" width="138" height="48" rx="5" />
+                  <rect x="720" y="564" width="142" height="48" rx="5" /><rect x="744" y="620" width="142" height="48" rx="5" />
+                </g>
+                <g class="harbor-cranes">
+                  <path d="M258 88V164H384 M690 88V160H826 M282 594V690H412 M620 590V692H754" />
+                  <path d="M340 164v34 M772 160v34 M370 690v-34 M706 692v-36" />
+                </g>
+                <g class="harbor-gravel">
+                  <path d="M510 160 C590 190 630 250 632 316 C634 386 604 446 554 504" />
+                  <path d="M210 494 C260 560 350 612 454 630 C560 648 660 624 722 568" />
+                </g>
+                <path class="harbor-jump" d="M658 603l48-22 48 22-48 22z" />
+                <g class="harbor-beacons">
+                  <circle cx="74" cy="212" r="8" /><circle cx="286" cy="120" r="8" /><circle cx="900" cy="286" r="8" />
+                  <circle cx="894" cy="500" r="8" /><circle cx="628" cy="684" r="8" /><circle cx="162" cy="604" r="8" />
+                </g>
+                <path id="harbor-yard-rallycross-centerline" fill="none" />
+                <g class="route-bed" filter="url(#road-glow)">
+                  <use class="road-shoulder" href="#harbor-yard-rallycross-centerline" />
+                  <use class="road-surface" href="#harbor-yard-rallycross-centerline" />
+                </g>
+                <g class="route-centerlines harbor-route-centerlines">
+                  <path class="segment-dock-start" data-route-segment-index="0" />
+                  <path class="segment-crane-sweep" data-route-segment-index="1" />
+                  <path class="segment-gravel-cut" data-route-segment-index="2" />
+                  <path class="segment-basin-loop" data-route-segment-index="3" />
+                  <path class="segment-crossover-rise" data-route-segment-index="4" />
+                  <path class="segment-yard-finish" data-route-segment-index="5" />
+                </g>
+                <g class="segment-labels">
+                  <text class="label-dock-start" x="258" y="98">DOCK START</text>
+                  <text class="label-crane-sweep" x="770" y="282">CRANE SWEEP</text>
+                  <text class="label-gravel-cut" x="520" y="302">GRAVEL CUT</text>
+                  <text class="label-basin-loop" x="330" y="482">BASIN LOOP</text>
+                  <text class="label-crossover-rise" x="708" y="652">CROSSOVER RISE</text>
+                  <text class="label-yard-finish" x="540" y="720">YARD FINISH</text>
+                </g>
               </g>
 
               <g id="cypress-run-art" class="course-art cypress-run-art" data-track-art="cypress-run">

@@ -1,11 +1,12 @@
 import { expect, test } from '@playwright/test';
 import config from '../../routes/route-config.mjs';
 import cypress from '../../routes/cypress-run.route.mjs';
+import harbor from '../../routes/harbor-yard-rallycross.route.mjs';
 import ridge from '../../routes/ridge-pass.route.mjs';
 import { compileRoutes } from '../../scripts/lib/route-compiler.mjs';
 import { getTrack } from '../../src/track-catalog.mjs';
 
-const COMPILED = compileRoutes(config, [ridge, cypress], '0'.repeat(64));
+const COMPILED = compileRoutes(config, [ridge, cypress, harbor], '0'.repeat(64));
 const TRACK_SCHEDULES = new Map(COMPILED.schedules.map((item) => [item.route.id, item]));
 const CYPRESS_TRACK = getTrack('cypress-run');
 const CYPRESS_MOBILE_HEADINGS = TRACK_SCHEDULES.get('cypress-run').mobileStaticHeadings;
@@ -798,8 +799,13 @@ test('neutral reference preconditions settle before any future capture', async (
   }
 });
 
-test('native course selection switches Ridge Pass and Cypress Run', async ({ page }) => {
+test('native course selection switches all three courses', async ({ page }) => {
   const selector = page.locator('#track-select');
+  await selector.selectOption('harbor-yard-rallycross');
+  await expect(page.locator('#dashboard-root')).toHaveAttribute('data-track-id', 'harbor-yard-rallycross');
+  await expect(page.locator('#map-heading')).toHaveText('Harbor Yard Rallycross');
+  await expect(page.locator('#track-status')).toHaveText('Active course: Harbor Yard Rallycross · Manual');
+
   await selector.selectOption('cypress-run');
   await expect(page.locator('#dashboard-root')).toHaveAttribute('data-track-id', 'cypress-run');
   await expect(page.locator('#map-heading')).toHaveText('Cypress Run');

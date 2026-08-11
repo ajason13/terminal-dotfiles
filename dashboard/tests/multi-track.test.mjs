@@ -31,10 +31,11 @@ const cloneCatalog = () => TRACK_CATALOG.map((track) => ({
   routeAnchors: track.routeAnchors.map((anchor) => ({ ...anchor })),
 }));
 
-test('catalog has exact deeply frozen two-track definitions and capacity', () => {
+test('catalog has exact deeply frozen three-track definitions and capacity', () => {
   assert.equal(DEFAULT_TRACK_ID, 'ridge-pass');
   assert.deepEqual(TRACK_CATALOG.map(({ id, title }) => [id, title]), [
     ['ridge-pass', 'Ridge Pass'], ['cypress-run', 'Cypress Run'],
+    ['harbor-yard-rallycross', 'Harbor Yard Rallycross'],
   ]);
   assert.equal(Object.isFrozen(TRACK_CATALOG), true);
   for (const track of TRACK_CATALOG) {
@@ -95,7 +96,7 @@ test('Cypress Run is a full-map mixed technical course with nineties and vertica
 
 test('catalog rejects closed-key, reference, coordinate, order, and membership failures', () => {
   const cases = [
-    (value) => { value.pop(); },
+    (value) => { value.splice(0, value.length - 1); },
     (value) => { value[0].extra = true; },
     (value) => { value[0].artId = value[1].artId; },
     (value) => { value[0].desktopAnimationName = value[1].mobileAnimationName; },
@@ -139,7 +140,7 @@ test('local workday slots change at 08:30 and 12:30 without after-hours churn', 
     return autoTrackAt(new Date(2026, 6, day, index % 2 === 0 ? 8 : 12, 30)).id;
   });
   assert.equal(slots.every((id, index) => index === 0 || id !== slots[index - 1]), true);
-  assert.deepEqual(new Set(slots), new Set(['ridge-pass', 'cypress-run']));
+  assert.deepEqual(new Set(slots), new Set(['ridge-pass', 'cypress-run', 'harbor-yard-rallycross']));
 });
 
 test('next boundary targets only opening or midpoint across exact boundaries and rollover', () => {
@@ -578,7 +579,7 @@ test('static SVG/CSS references are unique, scoped, and API protected boundaries
   assert.match(INDEX, /data-track-id="ridge-pass"/);
   assert.equal((INDEX.match(/id="track-select"/g) ?? []).length, 1);
   assert.deepEqual([...INDEX.matchAll(/<option value="([^"]+)"/g)].map((match) => match[1]), [
-    'auto', 'ridge-pass', 'cypress-run',
+    'auto', 'ridge-pass', 'cypress-run', 'harbor-yard-rallycross',
   ]);
   assert.doesNotMatch(SOURCES, /localStorage|sessionStorage|document\.cookie|requestAnimationFrame|requestIdleCallback|serviceWorker|history\.(?:push|replace)State/);
   // The one permitted fetch() call site is the opt-in, token-gated live snapshot poll.
@@ -588,7 +589,7 @@ test('static SVG/CSS references are unique, scoped, and API protected boundaries
   assert.equal((SOURCES.match(/setTimeoutFn\(/g) ?? []).length, 1);
 });
 
-test('both tracks keep sixteen mobile anchors separated and generated schedules have fixed counts', () => {
+test('all tracks keep sixteen mobile anchors separated and generated schedules have fixed counts', () => {
   for (const track of TRACK_CATALOG) {
     for (let left = 0; left < track.routeAnchors.length; left += 1) {
       for (let right = left + 1; right < track.routeAnchors.length; right += 1) {

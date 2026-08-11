@@ -283,11 +283,13 @@ validation, source lifecycle, allocation, and rendering are separate modules.
 Tests inject filesystem, process, file-reader, timer, and renderer behavior; the
 test suite never contacts the user's real/default tmux server.
 
-The browser-local catalog contains exactly two original continuous courses:
+The browser-local catalog contains three original continuous courses:
 **Ridge Pass**, from upper-left High Moor through Pass Ladder, Cedar Chain,
 Cloud Ridge, and Long Arc to lower-right Valley Gate; and **Cypress Run**, from
 Launch Line through North Nineties, East Hairpin, Drop Chute, South Hairpin,
-and West Switchback. Each course uses 2/3/3/3/3/2 route slots in traversal order
+and West Switchback. **Harbor Yard Rallycross** is a mixed-surface night docklands
+course, passing containers, quay walls, cranes, a gravel cut, and a crossover
+rise. Each course uses 2/3/3/3/3/2 route slots in traversal order
 and has independent static SVG art plus responsive motion schedules. Ridge Pass
 retains its mountain terrain language. Cypress Run is a purpose-built paved
 night mixed technical drift course that fills all four quadrants with
@@ -303,7 +305,7 @@ stable catalog order. It recomputes only at startup, its one boundary timeout,
 visible `visibilitychange`, `pageshow`, or window focus. At exactly 08:30 the
 first slot begins; at exactly 12:30 the second begins; at exactly 16:30 the
 dashboard is after-hours and the next automatic change is the following local
-day at 08:30. Manual Ridge Pass or Cypress Run selection immediately clears the
+day at 08:30. Manual course selection immediately clears the
 timeout. Course switching never rereads or mutates fixture/live session data,
 and preserves session button identity, focus, and pin state.
 

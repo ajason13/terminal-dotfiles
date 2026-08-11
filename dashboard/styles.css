@@ -352,7 +352,8 @@ textarea {
 
 .course-art { display: none; }
 .dashboard-root[data-track-id="ridge-pass"] [data-track-art="ridge-pass"],
-.dashboard-root[data-track-id="cypress-run"] [data-track-art="cypress-run"] {
+.dashboard-root[data-track-id="cypress-run"] [data-track-art="cypress-run"],
+.dashboard-root[data-track-id="harbor-yard-rallycross"] [data-track-art="harbor-yard-rallycross"] {
   display: inline;
 }
 
@@ -440,6 +441,14 @@ textarea {
   stroke-width: 3;
   opacity: .9;
 }
+.harbor-apron { fill: #14222b; stroke: #46606a; stroke-width: 3; opacity: .95; }
+.harbor-water { fill: #102b39; opacity: .58; }
+.harbor-quay { fill: none; stroke: #78929b; stroke-width: 8; stroke-dasharray: 3 12; opacity: .42; }
+.harbor-containers { fill: #273a42; stroke: #69818a; stroke-width: 2; opacity: .8; }
+.harbor-cranes { fill: none; stroke: #b49b6f; stroke-width: 5; stroke-linecap: round; opacity: .68; }
+.harbor-gravel { fill: none; stroke: #b9a77d; stroke-width: 3; stroke-dasharray: 2 10; opacity: .45; }
+.harbor-jump { fill: #6d7b77; stroke: #c5d0c9; stroke-width: 2; opacity: .8; }
+.harbor-beacons { fill: #dc9d72; opacity: .78; }
 .segment-labels text {
   fill: var(--color-text-muted);
   font-family: ui-sans-serif, system-ui, sans-serif;
@@ -499,6 +508,19 @@ textarea {
 .label-drop-chute { fill: #91c69e !important; }
 .label-south-hairpin { fill: #be9bc8 !important; }
 .label-west-switchback { fill: #a9b9c9 !important; }
+
+.segment-dock-start { stroke: #d8bd7d; stroke-width: 5 !important; }
+.segment-crane-sweep { stroke: #84b6c9; }
+.segment-gravel-cut { stroke: #e29b78; stroke-width: 5 !important; }
+.segment-basin-loop { stroke: #91c69e; }
+.segment-crossover-rise { stroke: #be9bc8; stroke-width: 5 !important; }
+.segment-yard-finish { stroke: #a9b9c9; }
+.label-dock-start { fill: #d8bd7d !important; }
+.label-crane-sweep { fill: #84b6c9 !important; }
+.label-gravel-cut { fill: #e29b78 !important; }
+.label-basin-loop { fill: #91c69e !important; }
+.label-crossover-rise { fill: #be9bc8 !important; }
+.label-yard-finish { fill: #a9b9c9 !important; }
 
 .segment-labels text {
   font-size: 11px;
