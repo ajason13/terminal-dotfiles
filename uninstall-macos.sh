@@ -104,6 +104,7 @@ targets=(
   "$HOME/.local/bin/sf-lease"
   "$HOME/.claude/statusline.sh"
   "$HOME/.claude/commands/objective.md"
+  "$HOME/.claude/hooks/track-crm-org.sh"
   "$HOME/.claude/hooks/sf-lease-guard.sh"
   "$HOME/.claude/hooks/sf-lease-post.sh"
   "$HOME/.claude/hooks/sf-lease-end.sh"

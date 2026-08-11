@@ -51,47 +51,63 @@ read_env_key() {
 }
 
 resolve_crm_org() {
-  local root="$1"
-  [ -z "$root" ] && return
-  # TEST_ENV picks .env.<TEST_ENV>; otherwise the session default is .env
-  local envfile=".env"
-  [ -n "$TEST_ENV" ] && envfile=".env.$TEST_ENV"
-  local path="$root/$envfile"
-  [ -f "$path" ] || return
-  # relevance gate: silent unless this project's env exposes SF org identity keys
-  grep -qE '^[[:space:]]*(SF_BASE_URL|AM_SANDBOX_NAME|SF_ORG_ALIAS|SF_SCRATCH_POOL)=' "$path" 2>/dev/null || return
+  local root="$1" sess="$2"
+  local id="" is_prod=0
 
-  local alias baseurl sandbox pool host id
-  alias=$(read_env_key "$path" SF_ORG_ALIAS)
-  baseurl=$(read_env_key "$path" SF_BASE_URL)
-  sandbox=$(read_env_key "$path" AM_SANDBOX_NAME)
-  pool=$(read_env_key "$path" SF_SCRATCH_POOL)
-
-  host=""
-  if [ -n "$baseurl" ]; then
-    host="${baseurl#*://}"; host="${host%%/*}"; host="${host%%.*}"
+  # Per-session override: the org of the last test command this session ran,
+  # recorded by the track-crm-org PreToolUse hook. Authoritative over the default,
+  # because it reflects what the session actually targeted (prod, a scratch org...).
+  local store="${SESSION_ORG_HOME:-$HOME/.local/state/session-orgs}"
+  if [ -n "$sess" ] && [ -f "$store/$sess" ]; then
+    local line flag
+    line=$(cat "$store/$sess" 2>/dev/null)
+    flag=${line%%$'\t'*}
+    if [ "$flag" != default ] && [ "$line" != "$flag" ]; then
+      id=${line#*$'\t'}
+      [ "$flag" = prod ] && is_prod=1
+    fi
   fi
 
-  if [ -n "$alias" ]; then id="$alias"
-  elif [ -n "$host" ]; then id="$host"
-  elif [ -n "$sandbox" ]; then
-    id="$sandbox"
-    # compact email-style sandbox logins (user+orgtag@domain) to the org tag
-    case "$id" in *@*) id="${id%@*}"; case "$id" in *+*) id="${id##*+}";; esac ;; esac
-  elif [ -n "$pool" ]; then id="scratch-pool"
-  else id="${TEST_ENV:-sf}"
+  # Otherwise the session default, from the env file the suite would load.
+  if [ -z "$id" ] && [ -n "$root" ]; then
+    local envfile=".env"
+    [ -n "$TEST_ENV" ] && envfile=".env.$TEST_ENV"
+    local path="$root/$envfile"
+    # relevance gate: silent unless this project's env exposes SF org identity keys
+    if [ -f "$path" ] && grep -qE '^[[:space:]]*(SF_BASE_URL|AM_SANDBOX_NAME|SF_ORG_ALIAS|SF_SCRATCH_POOL)=' "$path" 2>/dev/null; then
+      local alias baseurl sandbox pool host
+      alias=$(read_env_key "$path" SF_ORG_ALIAS)
+      baseurl=$(read_env_key "$path" SF_BASE_URL)
+      sandbox=$(read_env_key "$path" AM_SANDBOX_NAME)
+      pool=$(read_env_key "$path" SF_SCRATCH_POOL)
+
+      host=""
+      if [ -n "$baseurl" ]; then
+        host="${baseurl#*://}"; host="${host%%/*}"; host="${host%%.*}"
+      fi
+
+      if [ -n "$alias" ]; then id="$alias"
+      elif [ -n "$host" ]; then id="$host"
+      elif [ -n "$sandbox" ]; then
+        id="$sandbox"
+        # compact email-style sandbox logins (user+orgtag@domain) to the org tag
+        case "$id" in *@*) id="${id%@*}"; case "$id" in *+*) id="${id##*+}";; esac ;; esac
+      elif [ -n "$pool" ]; then id="scratch-pool"
+      else id="${TEST_ENV:-sf}"
+      fi
+
+      # PROD when TEST_ENV says so, or a base URL lacks sandbox/scratch/dev markers
+      case "$TEST_ENV" in *[Pp][Rr][Oo][Dd]*) is_prod=1;; esac
+      if [ "$is_prod" -eq 0 ] && [ -n "$host" ]; then
+        case "$baseurl" in
+          *sandbox*|*scratch*|*develop*|*--*) : ;;
+          *) is_prod=1 ;;
+        esac
+      fi
+    fi
   fi
 
-  # PROD when TEST_ENV says so, or an explicit base URL lacks sandbox/scratch/dev markers
-  local is_prod=0
-  case "$TEST_ENV" in *[Pp][Rr][Oo][Dd]*) is_prod=1;; esac
-  if [ "$is_prod" -eq 0 ] && [ -n "$host" ]; then
-    case "$baseurl" in
-      *sandbox*|*scratch*|*develop*|*--*) : ;;
-      *) is_prod=1 ;;
-    esac
-  fi
-
+  [ -z "$id" ] && return
   if [ "$is_prod" -eq 1 ]; then
     printf '\033[1;31msf:⚠PROD %s\033[0m' "$id"
   else
@@ -109,6 +125,43 @@ if [ -z "$BRANCH" ] && [ -n "$CWD" ]; then
   BRANCH=$(git -C "$CWD" rev-parse --abbrev-ref HEAD 2>/dev/null)
 fi
 
+# --- GitHub PR status (background-refreshed; never blocks statusline render) ---
+# Shows the branch's PR number colored by state. gh runs in the background on a
+# short TTL so rendering stays instant even when gh/network is slow; we always
+# render whatever the cache holds (empty = checked, no PR for this branch).
+PR_STATUS=""
+if [ -n "$BRANCH" ] && [ -n "$CWD" ] && command -v gh >/dev/null 2>&1; then
+  pr_cache_dir="${TMPDIR:-/tmp}/claude-pr-status"
+  mkdir -p "$pr_cache_dir" 2>/dev/null
+  pr_key=$(printf '%s' "$CWD|$BRANCH" | cksum | cut -d' ' -f1)
+  pr_file="$pr_cache_dir/$pr_key"
+
+  pr_fresh=0
+  if [ -f "$pr_file" ]; then
+    pr_mtime=$(stat -f %m "$pr_file" 2>/dev/null || stat -c %Y "$pr_file" 2>/dev/null || echo 0)
+    [ $(( $(date +%s) - pr_mtime )) -lt 15 ] && pr_fresh=1
+  fi
+  if [ "$pr_fresh" -eq 0 ]; then
+    ( cd "$CWD" && gh pr view --json number,state,isDraft \
+        --jq '(.number|tostring) + "|" + (if .isDraft then "DRAFT" else .state end)' \
+        >"$pr_file.tmp" 2>/dev/null && mv "$pr_file.tmp" "$pr_file" 2>/dev/null \
+        || : >"$pr_file" ) >/dev/null 2>&1 &
+    disown 2>/dev/null
+  fi
+
+  if [ -s "$pr_file" ]; then
+    pr_info=$(cat "$pr_file" 2>/dev/null)
+    pr_num="${pr_info%%|*}"
+    pr_state="${pr_info##*|}"
+    case "$pr_state" in
+      OPEN)   PR_STATUS=$(printf '\033[1;32mPR #%s\033[0m' "$pr_num") ;;
+      DRAFT)  PR_STATUS=$(printf '\033[1;33mPR #%s draft\033[0m' "$pr_num") ;;
+      MERGED) PR_STATUS=$(printf '\033[1;35mPR #%s merged\033[0m' "$pr_num") ;;
+      CLOSED) PR_STATUS=$(printf '\033[1;31mPR #%s closed\033[0m' "$pr_num") ;;
+    esac
+  fi
+fi
+
 # --- Current dir, relative to worktree/project root ---
 ROOT=$(echo "$input" | jq -r '.worktree.path // .workspace.project_dir // empty')
 RELPATH=""
@@ -122,8 +175,9 @@ if [ -n "$CWD" ] && [ -n "$ROOT" ]; then
   fi
 fi
 
-# --- CRM org (which Salesforce org this session's default run targets) ---
-CRM_ORG=$(resolve_crm_org "${ROOT:-$CWD}")
+# --- CRM org (the org this session is using: last test run's target, else default) ---
+SESSION_ID=$(echo "$input" | jq -r '.session_id // empty')
+CRM_ORG=$(resolve_crm_org "${ROOT:-$CWD}" "$SESSION_ID")
 
 # --- Rate limits (5-hour / 7-day usage) ---
 FIVE_H=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
@@ -138,7 +192,6 @@ fi
 
 # --- Session objective (what this pane is doing) ---
 # An explicit /rename wins; otherwise fall back to the captured objective.
-SESSION_ID=$(echo "$input" | jq -r '.session_id // empty')
 OBJECTIVE=$(echo "$input" | jq -r '.session_name // empty')
 if [ -z "$OBJECTIVE" ] && [ -n "$SESSION_ID" ]; then
   OBJECTIVE=$("$HOME/.local/bin/session-objective" read "$SESSION_ID" 2>/dev/null)
@@ -150,6 +203,7 @@ SEGMENTS=()
 [ -n "$CRM_ORG" ] && SEGMENTS+=("$CRM_ORG")
 [ -n "$MODEL" ] && SEGMENTS+=("$MODEL")
 [ -n "$BRANCH" ] && SEGMENTS+=("$BRANCH")
+[ -n "$PR_STATUS" ] && SEGMENTS+=("$PR_STATUS")
 [ -n "$RELPATH" ] && SEGMENTS+=("$RELPATH")
 [ -n "$LIMITS" ] && SEGMENTS+=("$LIMITS")
 

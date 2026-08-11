@@ -136,6 +136,10 @@ print_hooks_notice() {
   printf '  SessionStart       -> ~/.claude/hooks/sf-lease-table.sh\n'
   printf 'They stay inert until you export SF_LEASE_ENABLE=1 - register them first,\n'
   printf 'confirm sessions still behave, and arm them only after that (see README).\n'
+  printf '\n'
+  printf 'Separately, for the statusline org indicator (never blocks, always exits 0):\n'
+  printf '  PreToolUse  (Bash) -> ~/.claude/hooks/track-crm-org.sh\n'
+  printf 'Without it the statusline still works, falling back to the env default.\n'
 }
 
 fetch_backgrounds() {
@@ -174,6 +178,7 @@ if [[ "$mode" == "link" ]]; then
   link_path "$root_dir/bin/sf-lease" "$HOME/.local/bin/sf-lease"
   link_path "$root_dir/claude/statusline.sh" "$HOME/.claude/statusline.sh"
   link_path "$root_dir/claude/commands/objective.md" "$HOME/.claude/commands/objective.md"
+  link_path "$root_dir/claude/hooks/track-crm-org.sh" "$HOME/.claude/hooks/track-crm-org.sh"
   link_path "$root_dir/claude/hooks/sf-lease-guard.sh" "$HOME/.claude/hooks/sf-lease-guard.sh"
   link_path "$root_dir/claude/hooks/sf-lease-post.sh" "$HOME/.claude/hooks/sf-lease-post.sh"
   link_path "$root_dir/claude/hooks/sf-lease-end.sh" "$HOME/.claude/hooks/sf-lease-end.sh"
@@ -218,6 +223,7 @@ install_file "$root_dir/bin/sf-org-resolve" "$HOME/.local/bin/sf-org-resolve" 07
 install_file "$root_dir/bin/sf-lease" "$HOME/.local/bin/sf-lease" 0755
 install_file "$root_dir/claude/statusline.sh" "$HOME/.claude/statusline.sh" 0755
 install_file "$root_dir/claude/commands/objective.md" "$HOME/.claude/commands/objective.md"
+install_file "$root_dir/claude/hooks/track-crm-org.sh" "$HOME/.claude/hooks/track-crm-org.sh" 0755
 install_file "$root_dir/claude/hooks/sf-lease-guard.sh" "$HOME/.claude/hooks/sf-lease-guard.sh" 0755
 install_file "$root_dir/claude/hooks/sf-lease-post.sh" "$HOME/.claude/hooks/sf-lease-post.sh" 0755
 install_file "$root_dir/claude/hooks/sf-lease-end.sh" "$HOME/.claude/hooks/sf-lease-end.sh" 0755
