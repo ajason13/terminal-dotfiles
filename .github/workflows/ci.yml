@@ -10,6 +10,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The org-lease scripts get a syntax gate here but no shellcheck gate and no
+      # behavioural run: their suites use BSD `stat -f` and macOS `touch -A`, so
+      # they cannot run on ubuntu, and shellcheck flags the hooks' `'~/'*` case
+      # patterns as unexpanded tildes. Both are follow-up, not silence.
+      - name: Check org-lease shell syntax
+        run: bash -n bin/sf-org-resolve bin/sf-lease claude/hooks/sf-lease-guard.sh claude/hooks/sf-lease-post.sh claude/hooks/sf-lease-end.sh claude/hooks/sf-lease-table.sh scripts/test-sf-org-resolve.sh scripts/test-sf-lease.sh scripts/test-sf-lease-hooks.sh
+
+      - name: Check org-lease scripts are executable
+        run: |
+          test -x bin/sf-org-resolve
+          test -x bin/sf-lease
+          test -x claude/hooks/sf-lease-guard.sh
+          test -x claude/hooks/sf-lease-post.sh
+          test -x claude/hooks/sf-lease-end.sh
+          test -x claude/hooks/sf-lease-table.sh
+          test -x scripts/test-sf-org-resolve.sh
+          test -x scripts/test-sf-lease.sh
+          test -x scripts/test-sf-lease-hooks.sh
+
       - name: Check shell syntax
         run: bash -n install-macos.sh uninstall-macos.sh bin/session-objective tmux/tmux-llm-status scripts/background-bundles.sh scripts/check-background-assets.sh scripts/check-background-inbox.sh scripts/test-check-background-inbox.sh scripts/list-background-inbox.sh scripts/test-list-background-inbox.sh scripts/check-manifest-paths.sh scripts/test-check-manifest-paths.sh scripts/publish-backgrounds.sh scripts/test-publish-backgrounds.sh scripts/fetch-backgrounds.sh scripts/test-fetch-backgrounds.sh scripts/test-backgrounds-lua.sh scripts/test-links-lua.sh scripts/test-nvim.sh scripts/test-session-objective.sh scripts/test-tmux-llm-status.sh
 
