@@ -172,11 +172,18 @@ const PR_RE = /\bPR\s*#?\s*(\d+)/i;
 // hand-authored snapshots still carry it, and the heading must stay the window
 // name the operator chose either way.
 const PANE_SUFFIX_RE = /\s*·\s*pane\s+\d+\s*$/i;
-// The `<session> ▸ ` prefix sanitizeDisplayName prepends. Stripped for the same
-// reason as the pane suffix: the heading is the window name, not its location.
+// The `<session> ▸ ` prefix sanitizeDisplayName prepends. Split off so the heading
+// stays the window name while `sessionName` carries the tmux session separately.
 // The class excludes ▸ so only the first one is consumed - that is the delimiter,
 // since sanitizeDisplayName strips ▸ out of both segments it joins.
-const SESSION_PREFIX_RE = /^[^▸]*▸\s*/u;
+const SESSION_PREFIX_RE = /^([^▸]*)▸\s*/u;
+// Separators operators put between a ref and the rest of a window name
+// (`BB-76 - Track History`, `BB-76: Track History`). Stripping the ref orphans one.
+const SEPARATOR = '·\\-–—:|';
+const EDGE_SEPARATOR_RE = new RegExp(`^[\\s${SEPARATOR}]+|[\\s${SEPARATOR}]+$`, 'g');
+// Only a run of 2+ separators collapses, so a hyphen inside a word (`e2e-automation`)
+// is left alone - it is adjacency to another separator that marks one as orphaned.
+const SEPARATOR_RUN_RE = new RegExp(`([${SEPARATOR}])(?:\\s*[${SEPARATOR}])+`, 'g');
 
 // Parse the Jira key and/or PR number out of a session displayName (the tmux
 // window name). Strips both tokens and the ` · pane <N>` suffix; `label` is '' when
@@ -185,6 +192,8 @@ export function parseWorkRef(name) {
   const source = typeof name === 'string' ? name : '';
   // Match tokens on the window name alone. A session named after a ticket would
   // otherwise hijack the ref for every window inside it.
+  const prefixMatch = source.match(SESSION_PREFIX_RE);
+  const sessionName = prefixMatch ? prefixMatch[1].trim() || null : null;
   const scoped = source.replace(SESSION_PREFIX_RE, '');
   const ticketMatch = scoped.match(TICKET_RE);
   const prMatch = scoped.match(PR_RE);
@@ -196,11 +205,13 @@ export function parseWorkRef(name) {
   // Token removal orphans separators (`BB-325` alone reduces to `·`). An empty
   // label is a valid result - the renderer falls back to the ref itself.
   label = label.replace(/\s+/g, ' ');
-  // Only collapse `·` runs when a token was actually stripped - an untouched
-  // name like `foo·bar` must not have its own separator mangled.
-  if (ticketMatch || prMatch) label = label.replace(/(?:·\s*)+/g, '· ');
-  label = label.replace(/^[\s·]+|[\s·]+$/g, '');
-  return { ticketKey, prNumber, label };
+  // Only drop separators when a token was actually stripped - an untouched
+  // name like `foo·bar` or `Rate-limit retry` must keep its own punctuation.
+  if (ticketMatch || prMatch) {
+    label = label.replace(SEPARATOR_RUN_RE, '$1').replace(EDGE_SEPARATOR_RE, '');
+  }
+  label = label.trim();
+  return { ticketKey, prNumber, label, sessionName };
 }
 
 export function buildAccessibleText(session, placement, generatedAt, timestampOptions = {}) {

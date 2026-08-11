@@ -234,25 +234,25 @@ test('exact timestamps are deterministic under fixed UTC and use state-specific 
 
 test('parseWorkRef extracts a ticket-only name', () => {
   assert.deepEqual(parseWorkRef('BB-228 route tooltip'), {
-    ticketKey: 'BB-228', prNumber: null, label: 'route tooltip',
+    ticketKey: 'BB-228', prNumber: null, label: 'route tooltip', sessionName: null,
   });
 });
 
 test('parseWorkRef extracts a PR-only name and leaves ticketKey null', () => {
   assert.deepEqual(parseWorkRef('PR#57 live adapter'), {
-    ticketKey: null, prNumber: 57, label: 'live adapter',
+    ticketKey: null, prNumber: 57, label: 'live adapter', sessionName: null,
   });
 });
 
 test('parseWorkRef extracts both a ticket and a PR', () => {
   assert.deepEqual(parseWorkRef('BB-228 PR#42 route tooltip'), {
-    ticketKey: 'BB-228', prNumber: 42, label: 'route tooltip',
+    ticketKey: 'BB-228', prNumber: 42, label: 'route tooltip', sessionName: null,
   });
 });
 
 test('parseWorkRef returns nulls and the full name when neither token is present', () => {
   assert.deepEqual(parseWorkRef('Aoba'), {
-    ticketKey: null, prNumber: null, label: 'Aoba',
+    ticketKey: null, prNumber: null, label: 'Aoba', sessionName: null,
   });
 });
 
@@ -265,32 +265,32 @@ test('parseWorkRef tolerates PR spacing variants', () => {
 
 test('parseWorkRef strips the pane suffix from the label', () => {
   assert.deepEqual(parseWorkRef('verifying BB-511 output · pane 2'), {
-    ticketKey: 'BB-511', prNumber: null, label: 'verifying output',
+    ticketKey: 'BB-511', prNumber: null, label: 'verifying output', sessionName: null,
   });
 });
 
 test('parseWorkRef yields an empty label when the name is only tokens', () => {
   assert.deepEqual(parseWorkRef('BB-228 PR#42'), {
-    ticketKey: 'BB-228', prNumber: 42, label: '',
+    ticketKey: 'BB-228', prNumber: 42, label: '', sessionName: null,
   });
 });
 
 test('parseWorkRef yields an empty label for a bare ref with a pane suffix', () => {
   assert.deepEqual(parseWorkRef('BB-325 · pane 1'), {
-    ticketKey: 'BB-325', prNumber: null, label: '',
+    ticketKey: 'BB-325', prNumber: null, label: '', sessionName: null,
   });
 });
 
 test('parseWorkRef strips the pane suffix from a name with no tokens', () => {
   assert.deepEqual(parseWorkRef('Synthetic active · pane 1'), {
-    ticketKey: null, prNumber: null, label: 'Synthetic active',
+    ticketKey: null, prNumber: null, label: 'Synthetic active', sessionName: null,
   });
 });
 
 test('parseWorkRef keeps the no-separator "Pane <N>" fallback name intact', () => {
   // sanitizeDisplayName emits `Pane 3` (no separator) for an empty window name.
   assert.deepEqual(parseWorkRef('Pane 3'), {
-    ticketKey: null, prNumber: null, label: 'Pane 3',
+    ticketKey: null, prNumber: null, label: 'Pane 3', sessionName: null,
   });
 });
 
@@ -304,9 +304,37 @@ test('parseWorkRef leaves an untouched separator alone when no token matched', (
   assert.equal(parseWorkRef('foo·bar').label, 'foo·bar');
 });
 
+// `BB-76 - Track History` is the operator's real window-naming convention, and a
+// dash orphaned by the ref left the heading reading `- Track History`.
+test('parseWorkRef drops a dash, colon or pipe orphaned by token removal', () => {
+  assert.equal(parseWorkRef('E2E ▸ BB-76 - Track History').label, 'Track History');
+  assert.equal(parseWorkRef('E2E ▸ PR #521 - Fix Project Flag').label, 'Fix Project Flag');
+  assert.equal(parseWorkRef('BB-76: Track History').label, 'Track History');
+  assert.equal(parseWorkRef('BB-76 — Track History').label, 'Track History');
+  assert.equal(parseWorkRef('BB-76 | Track History').label, 'Track History');
+  assert.equal(parseWorkRef('Track History - BB-76').label, 'Track History');
+  assert.equal(parseWorkRef('left - BB-228 - right').label, 'left - right');
+});
+
+// Only separator adjacency marks one as orphaned, so a hyphen doing real work
+// inside a word survives the collapse.
+test('parseWorkRef keeps a hyphen that is part of a word', () => {
+  assert.equal(parseWorkRef('BB-76 Rate-limit retry').label, 'Rate-limit retry');
+  assert.equal(parseWorkRef('e2e-automation - BB-76').label, 'e2e-automation');
+  assert.equal(parseWorkRef('Rate-limit retry').label, 'Rate-limit retry');
+});
+
+test('parseWorkRef returns the tmux session so the tooltip can show it', () => {
+  assert.equal(parseWorkRef('E2E ▸ BB-76 - Track History').sessionName, 'E2E');
+  assert.equal(parseWorkRef('Workflow ▸ Cross Talk').sessionName, 'Workflow');
+  assert.equal(parseWorkRef('Aoba').sessionName, null);
+  // sanitizeDisplayName omits the prefix entirely for an unnamed session.
+  assert.equal(parseWorkRef(' ▸ Cross Talk').sessionName, null);
+});
+
 test('parseWorkRef strips the session prefix so the heading stays the window name', () => {
   assert.deepEqual(parseWorkRef('E2E ▸ BB-325 · pane 1'), {
-    ticketKey: 'BB-325', prNumber: null, label: '',
+    ticketKey: 'BB-325', prNumber: null, label: '', sessionName: 'E2E',
   });
   assert.equal(parseWorkRef('E2E ▸ verifying BB-511 output · pane 2').label, 'verifying output');
   assert.equal(parseWorkRef('API ▸ Aoba').label, 'Aoba');
@@ -323,14 +351,14 @@ test('buildAccessibleText exposes the parsed work-ref for the renderer', () => {
   const data = normalized([session('ref', 'active', { displayName: 'BB-228 PR#42 route tooltip' })]);
   const placement = allocateSessions(data.sessions)[0];
   const text = buildAccessibleText(data.sessions[0], placement, data.generatedAt);
-  assert.deepEqual(text.workRef, { ticketKey: 'BB-228', prNumber: 42, label: 'route tooltip' });
+  assert.deepEqual(text.workRef, { ticketKey: 'BB-228', prNumber: 42, label: 'route tooltip', sessionName: null });
 });
 
 test('buildAccessibleText work-ref is null when the name has no tokens', () => {
   const data = normalized([session('plain', 'active', { displayName: 'Aoba' })]);
   const placement = allocateSessions(data.sessions)[0];
   const text = buildAccessibleText(data.sessions[0], placement, data.generatedAt);
-  assert.deepEqual(text.workRef, { ticketKey: null, prNumber: null, label: 'Aoba' });
+  assert.deepEqual(text.workRef, { ticketKey: null, prNumber: null, label: 'Aoba', sessionName: null });
 });
 
 test('buildAccessibleText omits permission text for every permission state', () => {
