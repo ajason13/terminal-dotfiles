@@ -100,8 +100,14 @@ targets=(
   "$HOME/.codex/builder.config.toml"
   "$HOME/.local/bin/codex-role"
   "$HOME/.local/bin/session-objective"
+  "$HOME/.local/bin/sf-org-resolve"
+  "$HOME/.local/bin/sf-lease"
   "$HOME/.claude/statusline.sh"
   "$HOME/.claude/commands/objective.md"
+  "$HOME/.claude/hooks/sf-lease-guard.sh"
+  "$HOME/.claude/hooks/sf-lease-post.sh"
+  "$HOME/.claude/hooks/sf-lease-end.sh"
+  "$HOME/.claude/hooks/sf-lease-table.sh"
 )
 
 for target in "${targets[@]}"; do
@@ -115,3 +121,16 @@ if [[ "$restore_latest" == "true" ]]; then
 fi
 
 printf '\nUninstall complete.\n'
+# Removing the scripts does not unregister them: a settings.json entry pointing at
+# a hook that no longer exists is a per-Bash-call error, so unregister first.
+printf 'If the sf-lease hooks were registered, remove their ~/.claude/settings.json\n'
+printf 'entries and unset SF_LEASE_ENABLE too - this script does not edit settings.json.\n'
+# Left in place on purpose: it may hold a live lease belonging to another running
+# session, and this script only removes what it installed. Named plainly because
+# it is the one place this feature wrote real org identities to disk.
+if [[ -d "${SF_LEASE_HOME:-$HOME/.local/state/sf-leases}" ]]; then
+  printf '\nThe lease store was NOT removed: %s\n' "${SF_LEASE_HOME:-$HOME/.local/state/sf-leases}"
+  printf 'It holds any still-live leases, and hook.log there records real org\n'
+  printf 'identities and Claude session ids. To delete both: rm -rf %s\n' \
+    "${SF_LEASE_HOME:-$HOME/.local/state/sf-leases}"
+fi

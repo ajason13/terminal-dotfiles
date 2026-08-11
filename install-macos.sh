@@ -121,6 +121,23 @@ link_path() {
   printf 'Linked %s -> %s\n' "$target" "$source"
 }
 
+# The hook SCRIPTS are installed; registering them is deliberately manual. A
+# PreToolUse hook can block or stall every Bash call in every live session,
+# including the one you would fix it from, so registering and arming are two
+# separate human steps - and settings.json is merged by hand because a
+# `jq '.[0] * .[1]'` merge REPLACES arrays, dropping whatever hooks are already
+# registered there.
+print_hooks_notice() {
+  printf 'Claude Code hooks are installed but NOT registered. Add to ~/.claude/settings.json\n'
+  printf '(merge by hand - do not overwrite an existing hooks entry):\n'
+  printf '  PreToolUse  (Bash) -> ~/.claude/hooks/sf-lease-guard.sh\n'
+  printf '  PostToolUse (Bash) -> ~/.claude/hooks/sf-lease-post.sh\n'
+  printf '  SessionEnd         -> ~/.claude/hooks/sf-lease-end.sh\n'
+  printf '  SessionStart       -> ~/.claude/hooks/sf-lease-table.sh\n'
+  printf 'They stay inert until you export SF_LEASE_ENABLE=1 - register them first,\n'
+  printf 'confirm sessions still behave, and arm them only after that (see README).\n'
+}
+
 fetch_backgrounds() {
   local dest="$1"
 
@@ -153,14 +170,20 @@ if [[ "$mode" == "link" ]]; then
   link_path "$root_dir/codex/agents" "$HOME/.codex/agents"
   link_path "$root_dir/codex/bin/codex-role" "$HOME/.local/bin/codex-role"
   link_path "$root_dir/bin/session-objective" "$HOME/.local/bin/session-objective"
+  link_path "$root_dir/bin/sf-org-resolve" "$HOME/.local/bin/sf-org-resolve"
+  link_path "$root_dir/bin/sf-lease" "$HOME/.local/bin/sf-lease"
   link_path "$root_dir/claude/statusline.sh" "$HOME/.claude/statusline.sh"
   link_path "$root_dir/claude/commands/objective.md" "$HOME/.claude/commands/objective.md"
+  link_path "$root_dir/claude/hooks/sf-lease-guard.sh" "$HOME/.claude/hooks/sf-lease-guard.sh"
+  link_path "$root_dir/claude/hooks/sf-lease-post.sh" "$HOME/.claude/hooks/sf-lease-post.sh"
+  link_path "$root_dir/claude/hooks/sf-lease-end.sh" "$HOME/.claude/hooks/sf-lease-end.sh"
+  link_path "$root_dir/claude/hooks/sf-lease-table.sh" "$HOME/.claude/hooks/sf-lease-table.sh"
   for profile in "$root_dir"/codex/profiles/*.config.toml; do
     link_path "$profile" "$HOME/.codex/$(basename "$profile")"
   done
 
   printf '\nLinked WezTerm, tmux, Neovim, Codex, and Claude Code config for local editing.\n'
-  printf 'Claude Code hooks are NOT installed; add them to ~/.claude/settings.json by hand (see README).\n'
+  print_hooks_notice
   printf 'Edit files in %s and reload WezTerm with Cmd-r if needed.\n' "$root_dir"
   printf 'Reload tmux with: Ctrl-a r\n'
   fetch_backgrounds "$root_dir/wezterm/assets/backgrounds"
@@ -191,8 +214,14 @@ install_file "$root_dir/codex/config.toml" "$HOME/.codex/config.toml" 0600
 install_file "$root_dir/codex/AGENTS.md" "$HOME/.codex/AGENTS.md"
 install_file "$root_dir/codex/bin/codex-role" "$HOME/.local/bin/codex-role" 0755
 install_file "$root_dir/bin/session-objective" "$HOME/.local/bin/session-objective" 0755
+install_file "$root_dir/bin/sf-org-resolve" "$HOME/.local/bin/sf-org-resolve" 0755
+install_file "$root_dir/bin/sf-lease" "$HOME/.local/bin/sf-lease" 0755
 install_file "$root_dir/claude/statusline.sh" "$HOME/.claude/statusline.sh" 0755
 install_file "$root_dir/claude/commands/objective.md" "$HOME/.claude/commands/objective.md"
+install_file "$root_dir/claude/hooks/sf-lease-guard.sh" "$HOME/.claude/hooks/sf-lease-guard.sh" 0755
+install_file "$root_dir/claude/hooks/sf-lease-post.sh" "$HOME/.claude/hooks/sf-lease-post.sh" 0755
+install_file "$root_dir/claude/hooks/sf-lease-end.sh" "$HOME/.claude/hooks/sf-lease-end.sh" 0755
+install_file "$root_dir/claude/hooks/sf-lease-table.sh" "$HOME/.claude/hooks/sf-lease-table.sh" 0755
 
 for agent in "$root_dir"/codex/agents/*.toml; do
   install_file "$agent" "$HOME/.codex/agents/$(basename "$agent")"
@@ -209,5 +238,5 @@ printf 'Installed %s\n' "$HOME/.config/nvim"
 fetch_backgrounds "$HOME/.config/wezterm/assets/backgrounds"
 
 printf '\nInstalled WezTerm, tmux, Neovim, Codex, and Claude Code config for macOS.\n'
-printf 'Claude Code hooks are NOT installed; add them to ~/.claude/settings.json by hand (see README).\n'
+print_hooks_notice
 printf 'Reload WezTerm, then reload tmux with: Ctrl-a r\n'

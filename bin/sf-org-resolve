@@ -1,0 +1,213 @@
+#!/usr/bin/env bash
+# Answers "which shared Salesforce org would this command touch?" by reading the
+# same configuration the run itself reads. Resolution logic is derived from
+# ~/.claude/hooks/track-crm-org.sh; that hook observes, this one is also used to
+# gate leases, so it must resolve the default .env rather than a sentinel.
+# Different repos name the same org differently (a hostname here, an org id or
+# npm script name there), so the raw identity is canonicalized through a local
+# map (${SF_ORG_MAP:-$HOME/.config/sf-org-identity/map}) before it is emitted.
+#
+# Emits ONLY a normalized identity. It reads .env files and package.json and
+# must never print any other field from them.
+#
+# Usage: sf-org-resolve <cwd> <command>
+#   rc 0 + identity  - this command would touch a shared org
+#   rc 1 + no output - not a test command, or the run provisions its own org
+#   rc 3 + stderr    - this IS a test command, but the configuration it resolves
+#                      through is present and unusable (an unreadable org map or
+#                      env file, a map entry that is not a usable identity). Its
+#                      own code because rc 1 made it indistinguishable from "not
+#                      a test command": callers fail open on both, so leasing
+#                      could be off for weeks and look exactly like the flake it
+#                      exists to explain.
+#
+# Depends on jq (for package.json script lookup) in addition to bash/grep/sed/awk.
+set -uo pipefail
+
+cwd="${1:-}"
+cmd="${2:-}"
+[[ -n "$cwd" && -n "$cmd" ]] || exit 1
+
+# React only to test invocations; everything else is a no-op.
+#
+# The match must START a command segment - the beginning of the string, or just
+# after `&&`, `||`, `;` or `|` (grep is line-oriented, so a newline is already a
+# `^`). Matching the command TEXT anywhere blocked `git commit -m "fix the npx
+# playwright test flake"` outright once a rival held the org, and a false block
+# is the worst outcome this design has. A segment may still be prefixed by
+# `VAR=value` assignments, which is how TEST_ENV= and SF_ORG_ALIAS= arrive.
+seg_start='(^|[;&|])[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*'
+# The first word of a segment is the command, so it may carry a path prefix
+# (./node_modules/.bin/playwright). It can never cross whitespace, which is what
+# keeps a quoted mention inside someone else's argument list out.
+word='[^[:space:]]*'
+test_re="${seg_start}${word}(playwright[[:space:]]+test"
+test_re="${test_re}|npx[[:space:]]+playwright"
+test_re="${test_re}|vitest[[:space:]]+run"
+test_re="${test_re}|npm[[:space:]]+run[[:space:]]+test(:[A-Za-z0-9._:-]+)?([[:space:]]|\$))"
+# Script-name form, which any runner may invoke (`yarn test:last-failed`), so
+# one leading command word is allowed here - still only at a segment start.
+test_re="${test_re}|${seg_start}([^[:space:]]+[[:space:]]+)?(run[[:space:]]+)?test:last-failed"
+printf '%s' "$cmd" | grep -qE "$test_re" || exit 1
+
+# Pull an inline "KEY=value" env prefix out of the command string.
+arg() {
+  printf '%s' "$cmd" \
+    | grep -oE "(^|[[:space:]])$1=[^[:space:]]+" | tail -n1 | sed -E "s/.*$1=//"
+}
+
+# Reads one key from an env file. Emits the raw value; callers must normalize it
+# into an identity and never echo it. Strips a quoted value at its closing
+# quote, or an inline "# ..." comment and trailing whitespace on an unquoted
+# one - an env line's comment text must never reach stdout.
+read_env_key() {
+  [[ -f "$1" ]] || return 1
+  local line value
+  line="$(grep -E "^[[:space:]]*$2=" "$1" 2>/dev/null | tail -n1)"
+  [[ -n "$line" ]] || return 1
+  value="${line#*=}"
+  case "$value" in
+    \"*) value="${value#\"}"; value="${value%%\"*}" ;;
+    \'*) value="${value#\'}"; value="${value%%\'*}" ;;
+    *) value="${value%%#*}" ;;
+  esac
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "$value"
+}
+
+# Host -> identity. Salesforce sandbox hosts embed the sandbox after '--'; take
+# the last such segment so two repos naming one org differently still collide.
+identity_from_url() {
+  local host="${1#*://}"
+  host="${host%%/*}"
+  host="${host%%.*}"
+  [[ "$host" == *--* ]] && host="${host##*--}"
+  printf '%s' "$host" | tr '[:upper:]' '[:lower:]'
+}
+
+# someone+orgtag@example.com -> orgtag
+identity_from_login() {
+  local id="$1"
+  id="${id%@*}"
+  [[ "$id" == *+* ]] && id="${id##*+}"
+  printf '%s' "$id" | tr '[:upper:]' '[:lower:]'
+}
+
+# Translates a raw identity to its canonical name via a local two-column map
+# (raw, canonical; '#' comments; first match wins). Absent map: pass through
+# unchanged - a repo with no map at all behaves exactly as before. A map that
+# exists but can't be read is a hard error (rc 3), not a miss - never dilute it
+# to "no entry", or one repo canonicalizes while another leases the raw value and
+# the collision goes undetected.
+canonicalize() {
+  local raw="$1" map_file="${SF_ORG_MAP:-${HOME:-}/.config/sf-org-identity/map}" hit
+  [[ -f "$map_file" ]] || { printf '%s' "$raw"; return 0; }
+  if [[ ! -r "$map_file" ]]; then
+    printf 'sf-org-resolve: %s exists but is not readable\n' "$map_file" >&2
+    return 1
+  fi
+  hit="$(awk -v r="$raw" '$0 !~ /^[[:space:]]*#/ && NF >= 2 && $1 == r { print $2; exit }' "$map_file")" \
+    || { printf 'sf-org-resolve: failed to read %s\n' "$map_file" >&2; return 1; }
+  printf '%s' "${hit:-$raw}"
+}
+
+# Emits the canonicalized identity, but only if it is safe to use as a
+# lease-store filename later - no path separators, no "..", no surprises.
+emit() {
+  [[ -n "${1:-}" ]] || return 1
+  # A path separator in the RAW value is bad input - an alias typo or a traversal
+  # attempt - not a broken configuration, so it stays rc 1. The charset gate runs
+  # on the map's OUTPUT, because normalizing an otherwise-unusable raw value is
+  # exactly what the map is for.
+  case "$1" in */*|..) exit 1 ;; esac
+  local id
+  id="$(canonicalize "$1")" || exit 3
+  # Config present but unusable: the resolved identity cannot be a lease-store
+  # name. Same class as an unreadable map - loud, not silent.
+  [[ "$id" =~ ^[A-Za-z0-9._:-]{1,64}$ ]] || {
+    printf 'sf-org-resolve: resolved identity is not usable as a lease name\n' >&2
+    exit 3
+  }
+  printf '%s\n' "$id"
+  exit 0
+}
+
+alias_arg="$(arg SF_ORG_ALIAS)"
+baseurl_arg="$(arg SF_BASE_URL)"
+tenv_arg="$(arg TEST_ENV)"
+pool_arg="$(arg SF_SCRATCH_POOL)"
+
+# A pooled run claims its own scratch org and locks it independently, so it needs
+# no lease. An ALLOWLIST, matching SF_LEASE_ENABLE for the same reason: as a
+# denylist, `SF_SCRATCH_POOL=no` read as "yes, pooled" and the run went unleased.
+# An unrecognised value must leave the safe behaviour - taking a lease - in place.
+case "$pool_arg" in
+  1|on|On|ON|true|True|TRUE|yes|Yes|YES) exit 1 ;;
+esac
+
+[[ -n "$alias_arg" ]] && emit "$(printf '%s' "$alias_arg" | tr '[:upper:]' '[:lower:]')"
+[[ -n "$baseurl_arg" ]] && emit "$(identity_from_url "$baseurl_arg")"
+
+# Checks SF_BASE_URL, then AM_SANDBOX_NAME, then SFDC_ORG_ID in one env file.
+# Org ids are case-sensitive in Salesforce, so unlike the url/login helpers this
+# does not lowercase.
+try_env_file() {
+  local file="$1" url login orgid
+  # Present but unreadable is the same silent-disablement shape as an unreadable
+  # map: without rc 3 it reads as "not a test command" and leasing is just off.
+  if [[ -e "$file" && ! -r "$file" ]]; then
+    printf 'sf-org-resolve: %s exists but is not readable\n' "$file" >&2
+    exit 3
+  fi
+  url="$(read_env_key "$file" SF_BASE_URL || true)"
+  [[ -n "$url" ]] && emit "$(identity_from_url "$url")"
+  login="$(read_env_key "$file" AM_SANDBOX_NAME || true)"
+  [[ -n "$login" ]] && emit "$(identity_from_login "$login")"
+  orgid="$(read_env_key "$file" SFDC_ORG_ID || true)"
+  [[ -n "$orgid" ]] && emit "$orgid"
+}
+
+# npm scripts (e.g. canary) often pick their own env file with a `dotenv -e
+# <file>` flag baked into package.json, rather than a TEST_ENV= prefix on the
+# invoking command. When that is how this cwd works, its own script definition
+# is more authoritative than guessing a TEST_ENV-shaped default - it is the file
+# the run would actually load - so it is tried first and no other env file is
+# even considered when the named script does not exist at all.
+npm_script="$(printf '%s' "$cmd" \
+  | grep -oE 'npm[[:space:]]+run[[:space:]]+[^[:space:]]+' | tail -n1 \
+  | sed -E 's/^npm[[:space:]]+run[[:space:]]+//')"
+
+if [[ -n "$npm_script" && -f "$cwd/package.json" ]]; then
+  script_body="$(jq -r --arg s "$npm_script" '.scripts[$s] // empty' "$cwd/package.json" 2>/dev/null)"
+  if [[ -n "$script_body" ]]; then
+    script_env="$(printf '%s' "$script_body" \
+      | grep -oE 'dotenv[[:space:]]+-e[[:space:]]+[^[:space:]]+' | tail -n1 \
+      | sed -E 's/^dotenv[[:space:]]+-e[[:space:]]+//')"
+    if [[ -n "$script_env" ]]; then
+      # The script declares its own file - authoritative and exclusive. If it
+      # is missing, or has nothing resolvable, do NOT fall back to $cwd/.env:
+      # that may be a different org entirely (e.g. a "staging" file used as a
+      # false default for a "prod" script whose own file doesn't exist yet).
+      try_env_file "$cwd/$script_env"
+    else
+      # No dotenv flag at all: fall back to whatever a bare invocation in this
+      # cwd would load.
+      env_file="$cwd/.env"
+      [[ -n "$tenv_arg" ]] && env_file="$cwd/.env.$tenv_arg"
+      try_env_file "$env_file"
+    fi
+    # Nothing resolved from either the declared or default file: last resort,
+    # the script name itself.
+    emit "$npm_script"
+  fi
+  # The script is not defined at all - nothing would actually run, so there is
+  # nothing to resolve. Do not guess from an unrelated file in this cwd.
+  exit 1
+fi
+
+# Otherwise the org comes from the env file the run would load.
+env_file="$cwd/.env"
+[[ -n "$tenv_arg" ]] && env_file="$cwd/.env.$tenv_arg"
+try_env_file "$env_file"
+
+exit 1

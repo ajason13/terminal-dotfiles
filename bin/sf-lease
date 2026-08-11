@@ -1,0 +1,599 @@
+#!/usr/bin/env bash
+# Advisory, single-machine lease over an opaque Salesforce-org identity, so two
+# concurrent test runs against the same org collide on a lease instead of on
+# shared org data. Knows nothing about Salesforce; sf-org-resolve owns that.
+#
+# Usage:
+#   sf-lease claim <identity> <session> <cmd>   # rc 0 held (incl. re-entrant), rc 1 refused
+#   sf-lease release <identity> <session>       # rc 0 released or nothing to do
+#   sf-lease release-session <session>          # releases every lease that session holds
+#   sf-lease holder <identity>                  # "session=<s> age=<N>m cmd=<c>", or nothing
+#   sf-lease list                                # human table; silent when there is nothing to show
+#   sf-lease sweep <identity>                   # drop the lease if it is stale
+#   sf-lease unwedge [--force]                   # clear a genuinely dead claim mutex
+#
+# Exit codes:
+#   0   the request was carried out (held, released, nothing to do)
+#   1   refused - another session holds the lease
+#   64  bad invocation: missing/empty identity or session, unknown subcommand,
+#       or a non-numeric / out-of-range value in one of the SF_LEASE_* numeric
+#       knobs. Two causes, one code - callers must name both when they report it.
+#   70  sf-lease aborted before deciding anything. Never a grant - see the
+#       LEASE_EXIT_OK backstop below for why this code has to exist at all.
+#   75  the store was busy or wedged: nothing was read, decided, or changed.
+#       Distinct from rc 1 on purpose - "come back later" is not "org taken",
+#       and a release that returns 75 has NOT released anything.
+#   130/143  killed by SIGINT/SIGTERM inside its critical section. The mutation
+#       did NOT complete; the handler releases the mutex and exits rather than
+#       resuming outside the critical section.
+#
+# State: ${SF_LEASE_HOME:-$HOME/.local/state/sf-leases}/sf-<identity>.lease/meta
+# (a directory, so mkdir is the claim gate; meta is TAB key<TAB>value lines).
+# Every mutating subcommand (claim, release, release-session, sweep) runs its
+# read-modify-write under a single store-wide mutex (.claiming/, which holds an
+# `owner` token identifying the process that took it). holder and list never
+# take it - they are read-only reporters and never delete a stale lease.
+set -uo pipefail
+
+SF_LEASE_HOME="${SF_LEASE_HOME:-$HOME/.local/state/sf-leases}"
+
+# --- "did we actually finish?" ------------------------------------------------
+#
+# bash 3.2 exits 0 when `set -u` kills the shell from inside a function. So any
+# fatal abort in the claim path - an unbound variable, an arithmetic error -
+# reads to the caller as "you hold the org", which is the exact false grant
+# this tool exists to prevent. The variables that could trigger it are
+# validated below, but validation only covers the holes we know about: this
+# flag is the class-wide backstop, so the NEXT one is a loud failure instead.
+#
+# Every deliberate exit goes through finish(); anything that reaches the EXIT
+# trap without it aborted, and reports 70 (EX_SOFTWARE) rather than success.
+LEASE_EXIT_OK=0
+finish() { LEASE_EXIT_OK=1; exit "$1"; }
+
+# --- store-wide claim mutex ---------------------------------------------------
+#
+# Earlier attempts (an atomic mv-aside, then inode fingerprinting) each tried
+# to make one step of "decide stale, then act" atomic. Both are themselves a
+# check-then-use race one level up: something can change between the check
+# and the act no matter how atomic the act is. The only fix is to serialize
+# the entire read-modify-write, store-wide, behind the one atomic test-and-set
+# POSIX shell actually gives you: mkdir.
+#
+# This is deliberately NOT auto-recoverable. A per-lease TTL exists because a
+# lease is held for minutes and its owner can die mid-run. The mutex is held
+# for milliseconds and never waits on anything, so a process dying inside the
+# critical section is vanishingly unlikely - and any age-check-then-remove
+# "fix" for it would recreate the exact race this mutex exists to close, one
+# level down. A wedged mutex is handled loudly instead.
+#
+# The governing rule for everything below: NOTHING removes a lock it has not
+# proven it owns. The mutex therefore carries an ownership token, and every
+# path that can delete it (the exit trap, unwedge, the abandon-on-error paths)
+# checks that token, an explicit liveness proof, or a human's --force first.
+# Three earlier attempts at this file failed by deleting a lock on the strength
+# of "something is at this path" rather than "the thing I put at this path".
+MUTEX_DIR=""
+MUTEX_TOKEN=""
+EX_BUSY=75   # EX_TEMPFAIL: the store was busy; nothing was decided or changed.
+
+# Every numeric knob is used in arithmetic, where a non-numeric value is fatal
+# under set -u and a value like "5s" or "2000ms" - the obvious mistake with a
+# variable named _MS - silently makes `(( ))` always false, spinning forever.
+# An infinite spin inside a PreToolUse hook hangs the session rather than
+# failing it, so these are rejected up front, loudly, rather than defaulted
+# silently. Leading zeros are rejected too: bash reads them as octal, so "08"
+# is an arithmetic error rather than eight.
+#
+# A regex is NOT enough, and that is the lesson of six separate instances on this
+# branch: every one of them was a value that PASSED validation and then failed
+# toward a hang or a false success. So every knob also carries LITERAL bounds,
+# and this is the one comparison in the file that knows how to apply them.
+#
+# rc 0 when $1 is greater than $2. bash 3.2 wraps at int64 - 2^63 reads NEGATIVE
+# and 2^64 reads 0 - so digit COUNT decides first and the arithmetic compare only
+# ever sees a value bash can hold. Callers reject leading zeros, so for equal
+# digit counts the numeric compare is exact and more digits means bigger.
+int_exceeds() {
+  (( ${#1} > ${#2} )) && return 0
+  (( ${#1} < ${#2} )) && return 1
+  (( $1 > $2 ))
+}
+
+# name, value, literal maximum, optional literal minimum (default 1). The maximum
+# is NOT optional: a knob with no literal bound is how each of those six
+# instances happened, so there is no way to add one here without picking one.
+require_positive_int() {
+  local name="$1" value="$2" max="$3" min="${4:-1}"
+  if ! [[ "$value" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'sf-lease: %s must be a positive integer (got "%s")\n' "$name" "$value" >&2
+    finish 64
+  fi
+  if int_exceeds "$value" "$max" || int_exceeds "$min" "$value"; then
+    printf 'sf-lease: %s must be between %s and %s (got "%s")\n' \
+      "$name" "$min" "$max" "$value" >&2
+    finish 64
+  fi
+  return 0
+}
+
+# Age past which a mutex may be a corpse rather than a live claim: list warns
+# past it, unwedge refuses to touch anything younger. A real claim holds the
+# mutex for tens of milliseconds, so anything this old is genuinely anomalous.
+MUTEX_WEDGE_SECONDS="${SF_LEASE_MUTEX_WEDGE_SECONDS:-60}"
+MUTEX_TIMEOUT_MS="${SF_LEASE_MUTEX_TIMEOUT_MS:-5000}"
+LEASE_TTL_MINUTES="${SF_LEASE_TTL_MINUTES:-120}"
+
+# The bounds, and why these numbers:
+#   TTL     1..1440 minutes. It drives the only multiplication in the file
+#           (ttl * 60). 200000000000000000 wrapped that to a NEGATIVE number, so
+#           every lease read stale and a rival took an org its real holder was
+#           still running against - a genuine false grant. A day is already far
+#           past any suite; nothing legitimate needs more.
+#   WEDGE   30..86400 seconds, a FLOOR as much as a ceiling. unwedge refuses to
+#           clear a mutex younger than this, so a small value (or one wrapped
+#           negative past int64) let unwedge delete a live, mid-stamp mutex with
+#           no --force - the exact thing the ownership rules exist to refuse. A
+#           real claim holds it for tens of milliseconds, so 30s is generous.
+TTL_MINUTES_MAX=1440
+WEDGE_SECONDS_MIN=30
+WEDGE_SECONDS_MAX=86400
+require_positive_int SF_LEASE_MUTEX_WEDGE_SECONDS "$MUTEX_WEDGE_SECONDS" \
+  "$WEDGE_SECONDS_MAX" "$WEDGE_SECONDS_MIN"
+require_positive_int SF_LEASE_TTL_MINUTES "$LEASE_TTL_MINUTES" "$TTL_MINUTES_MAX"
+
+# The third knob is bounded by the same comparison, but it CLAMPS instead of
+# refusing - deliberately, and this is the one asymmetry here. It sits on the
+# PreToolUse hot path, where a too-long wait is a stall rather than a wrong
+# answer, so clamping keeps leasing WORKING where rc 64 would switch it off over
+# a typo. A regex was no protection here either: 20000 made one Bash call's guard
+# take 26s, and 86400000, the milliseconds-per-day typo, was still spinning at
+# 30s. Both are valid positive integers. So this knob may only ever LOWER the
+# wait, which is what makes the documented worst case (~5s per claim on a wedged
+# store) true for every value of it. acquire_mutex bounds its own spin counter to
+# match, independently, because a value past int64 wraps and no clamp survives
+# that.
+MUTEX_SPIN_MAX=100   # 100 x 50ms = the same 5s, as a bound on OUR counter.
+# A day in milliseconds. Everything above the 5000ms ceiling below is clamped, but
+# a value past THIS is not a mistaken wait, it is a number that got into the wrong
+# variable - so it is refused like the other two knobs, and the arithmetic never
+# sees a value bash cannot hold even if the clamp is one day removed. Validation
+# deliberately sits ABOVE the clamp so a mutation run can strip one without the
+# other.
+MUTEX_TIMEOUT_HARD_MAX_MS=86400000
+require_positive_int SF_LEASE_MUTEX_TIMEOUT_MS "$MUTEX_TIMEOUT_MS" "$MUTEX_TIMEOUT_HARD_MAX_MS"
+MUTEX_TIMEOUT_MAX_MS=5000
+if int_exceeds "$MUTEX_TIMEOUT_MS" "$MUTEX_TIMEOUT_MAX_MS"; then
+  printf 'sf-lease: SF_LEASE_MUTEX_TIMEOUT_MS=%s is past the %sms ceiling; using %sms instead. Every Bash call in every session waits this out on a wedged store, so it cannot be raised.\n' \
+    "$MUTEX_TIMEOUT_MS" "$MUTEX_TIMEOUT_MAX_MS" "$MUTEX_TIMEOUT_MAX_MS" >&2
+  MUTEX_TIMEOUT_MS="$MUTEX_TIMEOUT_MAX_MS"
+fi
+
+# Removes the mutex only while the token on disk is still the one we wrote. If
+# it is not, our mutex was force-cleared and this path now belongs to someone
+# else who is inside their critical section: deleting it would un-protect them
+# and every claim after them. Say so, return non-zero, touch nothing.
+release_mutex() {
+  [[ -n "$MUTEX_DIR" ]] || return 0
+  local dir="$MUTEX_DIR" token="$MUTEX_TOKEN" on_disk
+  MUTEX_DIR=""
+  MUTEX_TOKEN=""
+  on_disk="$(cat "$dir/owner" 2>/dev/null)"
+  if [[ -n "$token" && "$on_disk" == "$token" ]]; then
+    rm -rf "$dir" 2>/dev/null
+    return 0
+  fi
+  printf 'sf-lease: the claim mutex at %s is no longer ours - it was cleared from under us mid-operation. Leaving it alone; this run may have mutated the store unprotected.\n' "$dir" >&2
+  return 1
+}
+
+# Releasing without exiting would let an interrupted mutation resume OUTSIDE
+# the critical section and still report success, so the signal handlers exit.
+on_exit() {
+  release_mutex
+  [[ "$LEASE_EXIT_OK" == 1 ]] && return 0
+  printf 'sf-lease: aborted before reaching a decision - reporting failure, not a grant. This is a bug in sf-lease; do not treat it as holding the org.\n' >&2
+  exit 70
+}
+trap on_exit EXIT
+trap 'release_mutex; finish 130' INT
+trap 'release_mutex; finish 143' TERM
+
+# Retries briefly (SF_LEASE_MUTEX_TIMEOUT_MS, default and hard ceiling 5000) then
+# refuses out loud. Refusing is the safe direction, but the caller must be able
+# to tell it apart from "org taken", hence the stderr line plus EX_BUSY.
+acquire_mutex() {
+  local mutex="$SF_LEASE_HOME/.claiming" timeout_ms="$MUTEX_TIMEOUT_MS" waited_ms=0 spins=0 token
+  mkdir -p "$SF_LEASE_HOME"
+  # $$ alone is not an identity - PIDs are recycled, so a stale token could
+  # match an unrelated live process. The nonce is what makes it ours.
+  token="$$:$RANDOM$RANDOM:$(date +%s)"
+  while ! mkdir "$mutex" 2>/dev/null; do
+    # Two independent bounds. The first honours the knob; the second is a literal
+    # ceiling on a counter this function owns, and it holds even when the knob's
+    # value is unusable in arithmetic - which is how every hang on this path so
+    # far happened, each time to a value that passed validation.
+    if (( waited_ms >= timeout_ms )) || [[ "$spins" -ge "$MUTEX_SPIN_MAX" ]]; then
+      printf 'sf-lease: store busy - the claim mutex %s was still held after %sms. Another sf-lease is mid-mutation, or it is wedged; check with: sf-lease list\n' "$mutex" "$waited_ms" >&2
+      return 1
+    fi
+    sleep 0.05
+    waited_ms=$(( waited_ms + 50 ))
+    spins=$(( spins + 1 ))
+  done
+  # noclobber, so this is create-or-fail rather than truncate: the mkdir above
+  # is a fact about the past, and after a --force clear the path could already
+  # belong to a rival whose token this would otherwise overwrite.
+  if ! ( set -C; printf '%s\n' "$token" > "$mutex/owner" ) 2>/dev/null; then
+    if [[ -e "$mutex/owner" ]]; then
+      # Someone else stamped it between our mkdir and our write. Theirs, not
+      # ours - do not delete it, do not claim it.
+      printf 'sf-lease: the claim mutex %s was taken by another process while we were stamping it\n' "$mutex" >&2
+      return 1
+    fi
+    # Genuinely unwritable. We own it (the mkdir proved that), and an
+    # unstampable mutex is one nothing downstream could prove ownership of.
+    rm -rf "$mutex" 2>/dev/null
+    printf 'sf-lease: could not write the ownership token into %s; refusing to hold an unprovable mutex\n' "$mutex" >&2
+    return 1
+  fi
+  # Prove ownership against the current state, not against the mkdir.
+  if [[ "$(cat "$mutex/owner" 2>/dev/null)" != "$token" ]]; then
+    printf 'sf-lease: the claim mutex %s does not carry our token after stamping it; leaving it for whoever holds it\n' "$mutex" >&2
+    return 1
+  fi
+  MUTEX_DIR="$mutex"
+  MUTEX_TOKEN="$token"
+  return 0
+}
+
+# TAB-separated key/value lookup in a lease's meta file.
+field() {
+  awk -F'\t' -v k="$2" '$1 == k { print $2; exit }' "$1" 2>/dev/null
+}
+
+# Rejects an empty/missing value with a distinct exit code (I6): a malformed
+# invocation - Task 3 feeds these straight from hook JSON, where a jq miss
+# yields "" - must be distinguishable from a legitimate refusal (rc 1). Always
+# called as a bare statement, never inside a substitution, so this exit
+# actually terminates the script (and fires the mutex-release trap above)
+# rather than just a subshell.
+require_nonempty() {
+  local v
+  for v in "$@"; do
+    [[ -n "$v" ]] || { printf 'sf-lease: missing or empty required argument\n' >&2; finish 64; }
+  done
+}
+
+# Resolves an identity to its lease directory, or fails (never exits itself -
+# it is called inside command substitutions, where exit would only kill the
+# subshell). This is the one checkpoint every subcommand's rm -rf ultimately
+# passes through (M11), so the charset guard here is what keeps a `sweep`
+# call from being handed a path-traversal identity.
+lease_dir() {
+  [[ "$1" =~ ^[A-Za-z0-9._:-]{1,64}$ ]] || return 1
+  printf '%s/sf-%s.lease' "$SF_LEASE_HOME" "$1"
+}
+
+# identity from "sf-<identity>.lease" - a plain suffix/prefix strip, not a
+# glob, so it is safe even when the identity itself contains a dot.
+identity_of_dir() {
+  local base="${1##*/}"
+  base="${base%.lease}"
+  printf '%s' "${base#sf-}"
+}
+
+# Writes meta via temp-file + mv - never directly into a freshly-mkdir'd
+# lease dir - and re-reads it afterward to confirm the write landed and still
+# names this session (C2). The mutex is what makes this race-free now; this
+# re-read remains useful for catching a genuine write failure (full disk,
+# permissions), not a rival.
+write_meta() {
+  local dir="$1" session="$2" started="$3" runcmd="$4" tmp
+  tmp="$(mktemp "$SF_LEASE_HOME/.meta.XXXXXX" 2>/dev/null)" || return 1
+  if ! printf 'session\t%s\nstarted\t%s\ncmd\t%s\n' "$session" "$started" "$runcmd" > "$tmp" 2>/dev/null; then
+    rm -f "$tmp"
+    return 1
+  fi
+  if ! mv "$tmp" "$dir/meta" 2>/dev/null; then
+    rm -f "$tmp"
+    return 1
+  fi
+  [[ "$(field "$dir/meta" session)" == "$session" ]]
+}
+
+# True (rc 0) if the lease at $1 is stale: TTL-expired metadata, or
+# metadata-less (or metadata with an unparseable `started`) and older than
+# 60s - a claim interrupted between mkdir and the meta mv (C3: never treat a
+# corrupt/absent meta as instantly expired). Pure read, no side effects, so
+# both the mutating sweep and the read-only reporters can use it.
+lease_is_stale() {
+  local dir="$1" now ttl_minutes started mtime
+  now=$(date +%s)
+  ttl_minutes="$LEASE_TTL_MINUTES"
+  if [[ -f "$dir/meta" ]]; then
+    started="$(field "$dir/meta" started)"
+    # No leading zeros: bash reads "08" as OCTAL, so the arithmetic below errors
+    # instead of comparing. Treated as unparseable, which falls through to the
+    # 60s mtime rule below rather than guessing at an age.
+    if [[ "$started" =~ ^(0|[1-9][0-9]*)$ ]]; then
+      (( now - started >= ttl_minutes * 60 )) && return 0
+      return 1
+    fi
+  fi
+  mtime="$(stat -f %m "$dir" 2>/dev/null)" || mtime="$now"
+  (( now - mtime > 60 ))
+}
+
+# Drops a lease if it is stale. Only ever called from inside the mutex
+# (claim, sweep) - there is no concurrent actor to race against here, so this
+# needs no atomicity of its own beyond holding the mutex.
+sweep_one() {
+  local identity="$1" dir
+  dir="$(lease_dir "$identity")" || finish 64
+  [[ -d "$dir" ]] || return 0
+  lease_is_stale "$dir" && rm -rf "$dir"
+  return 0
+}
+
+# Core release logic, mutex-free: only ever called from cmd_release and
+# cmd_release_session, both of which already hold the mutex themselves before
+# calling this. Kept separate from cmd_release so the loop in
+# cmd_release_session does not try to acquire the mutex a second time from
+# inside itself - mkdir is not a recursive lock, and a second acquire attempt
+# by the same process would just spin until its own timeout and silently
+# release nothing.
+release_if_owned() {
+  local identity="$1" session="$2" dir
+  dir="$(lease_dir "$identity")" || return 1
+  if [[ -d "$dir" && -f "$dir/meta" && "$(field "$dir/meta" session)" == "$session" ]]; then
+    rm -rf "$dir"
+  fi
+  return 0
+}
+
+cmd_claim() {
+  local identity="${1:-}" session="${2:-}" runcmd="${3:-}" dir
+  require_nonempty "$session"
+  dir="$(lease_dir "$identity")" || finish 64
+
+  acquire_mutex || return "$EX_BUSY"
+
+  sweep_one "$identity"
+  if mkdir "$dir" 2>/dev/null; then
+    if write_meta "$dir" "$session" "$(date +%s)" "$runcmd"; then
+      return 0
+    fi
+    # Metadata never landed - do not leave a zombie lease standing; an honest
+    # failure beats a session that believes it holds an org that holder/list
+    # cannot see (C2). Still prove it is ours before removing it: if our mutex
+    # was force-cleared, a rival's meta could be sitting here by now.
+    if [[ ! -f "$dir/meta" || "$(field "$dir/meta" session)" == "$session" ]]; then
+      rm -rf "$dir" 2>/dev/null
+    fi
+    return 1
+  fi
+  if [[ -f "$dir/meta" && "$(field "$dir/meta" session)" == "$session" ]]; then
+    # Re-entrant: refresh started so a live holder cannot be evicted at a TTL
+    # boundary by whoever's claim happens to run sweep_one first (I7) - this
+    # turns a per-PreToolUse claim into a liveness heartbeat. Best-effort: if
+    # the refresh write fails, ownership was already confirmed above, so
+    # still honor the claim rather than falsely refusing our own session.
+    write_meta "$dir" "$session" "$(date +%s)" "$runcmd" || true
+    return 0
+  fi
+  return 1
+}
+
+cmd_release() {
+  local identity="${1:-}" session="${2:-}"
+  require_nonempty "$session"
+  lease_dir "$identity" >/dev/null || finish 64
+  # NOT `|| return 0`: this is the SessionEnd cleanup path, and reporting
+  # success for a release that never happened leaks the org for a full TTL.
+  acquire_mutex || return "$EX_BUSY"
+  release_if_owned "$identity" "$session"
+  return 0
+}
+
+cmd_release_session() {
+  local session="${1:-}" dir identity
+  require_nonempty "$session"
+  acquire_mutex || return "$EX_BUSY"
+  for dir in "$SF_LEASE_HOME"/sf-*.lease; do
+    [[ -d "$dir" ]] || continue
+    identity="$(identity_of_dir "$dir")"
+    # A store entry whose name doesn't survive the round trip (foreign or
+    # hand-made, not something a valid claim ever produces) would otherwise
+    # make release_if_owned's own lease_dir guard fail here for just that
+    # entry - which is fine (it already returns 1, not exit) - but skip it
+    # explicitly so glob order never matters.
+    lease_dir "$identity" >/dev/null 2>&1 || continue
+    release_if_owned "$identity" "$session"
+  done
+  return 0
+}
+
+# Read-only: computes and displays what holder sees, deletes nothing. A stale
+# lease shown with its age is more useful than one silently removed by a read
+# command, and it keeps the SessionStart hook off the write path entirely.
+cmd_holder() {
+  local identity="${1:-}" dir
+  dir="$(lease_dir "$identity")" || finish 64
+  [[ -d "$dir" && -f "$dir/meta" ]] || return 0
+  local session started runcmd now
+  session="$(field "$dir/meta" session)"
+  started="$(field "$dir/meta" started)"
+  runcmd="$(field "$dir/meta" cmd)"
+  now=$(date +%s)
+  # An unparseable `started` (tampered meta, a leading zero bash reads as octal)
+  # gets `age=?`, not a number. Substituting 0 printed the epoch in minutes, and
+  # "08" errored out of bash's arithmetic - onto the stderr of a hook.
+  if [[ "$started" =~ ^(0|[1-9][0-9]*)$ ]]; then
+    printf 'session=%s age=%sm cmd=%s\n' "$session" "$(( (now - started) / 60 ))" "$runcmd"
+  else
+    printf 'session=%s age=? cmd=%s\n' "$session" "$runcmd"
+  fi
+}
+
+# Read-only: same non-deletion contract as holder. Silence contract for an
+# empty store is unchanged; the wedge warning below is the one thing allowed
+# to break it, since a stuck mutex blocking every claim is exactly the kind
+# of thing worth speaking up about even on an otherwise clean session start.
+cmd_list() {
+  local dir identity org_rows="" org_count=0
+  for dir in "$SF_LEASE_HOME"/sf-*.lease; do
+    [[ -d "$dir" ]] || continue
+    identity="$(identity_of_dir "$dir")"
+    lease_dir "$identity" >/dev/null 2>&1 || continue
+    [[ -f "$dir/meta" ]] || continue
+    local session started runcmd now age
+    session="$(field "$dir/meta" session)"
+    started="$(field "$dir/meta" started)"
+    runcmd="$(field "$dir/meta" cmd)"
+    now=$(date +%s)
+    # Same as holder: an unparseable `started` shows as `?`, not as a number
+    # computed from a substituted 0 and not as a bash arithmetic error.
+    age='?'
+    [[ "$started" =~ ^(0|[1-9][0-9]*)$ ]] && age="$(( (now - started) / 60 ))m"
+    org_rows+="$(printf '%-16s %-12s %5s  %s' "$identity" "$session" "$age" "$runcmd")"$'\n'
+    org_count=$((org_count + 1))
+  done
+
+  local mutex="$SF_LEASE_HOME/.claiming" mutex_warn=""
+  if [[ -d "$mutex" ]]; then
+    local mtime now2 age_s
+    now2=$(date +%s)
+    mtime="$(stat -f %m "$mutex" 2>/dev/null)" || mtime="$now2"
+    age_s=$(( now2 - mtime ))
+    if (( age_s > MUTEX_WEDGE_SECONDS )); then
+      mutex_warn="$(printf 'WARNING: sf-lease claim mutex has been held for %sm. Run: sf-lease unwedge - it will refuse unless the owning process is genuinely gone.' "$(( age_s / 60 ))")"$'\n'
+    fi
+  fi
+
+  [[ $org_count -eq 0 && -z "$mutex_warn" ]] && return 0
+
+  [[ -n "$mutex_warn" ]] && printf '%s' "$mutex_warn"
+
+  if [[ $org_count -gt 0 ]]; then
+    printf 'ORG LEASES\n'
+    printf '%-16s %-12s %5s  %s\n' IDENTITY SESSION AGE CMD
+    printf '%s' "$org_rows"
+
+    # Surfaced only for context, and only alongside an active org lease. This
+    # is a separate, pre-existing lock directory belonging to another repo's
+    # scratch-org pool: read-only, never claimed/released/reclaimed here.
+    local pool_dir="${SCRATCH_POOL_LOCK_DIR:-/tmp/e2e-scratch-pool}" f pool_rows="" pool_count=0
+    for f in "$pool_dir"/*.lock; do
+      [[ -e "$f" ]] || continue
+      pool_rows+="  $(basename "$f")"$'\n'
+      pool_count=$((pool_count + 1))
+    done
+    if [[ $pool_count -gt 0 ]]; then
+      printf 'SCRATCH POOL (separate e2e-automation pool; sf-lease does not manage these)\n'
+      printf '%s' "$pool_rows"
+    fi
+  fi
+  return 0
+}
+
+cmd_sweep() {
+  local identity="${1:-}"
+  lease_dir "$identity" >/dev/null || finish 64
+  acquire_mutex || return "$EX_BUSY"
+  sweep_one "$identity"
+  return 0
+}
+
+# Manual recovery for the one gap this design accepts: a SIGKILL inside the
+# mutex's critical section. It bypasses acquire_mutex - a genuinely wedged
+# mutex would just time out the same way every other caller already is - which
+# makes it the single most dangerous thing in this file: an unguarded unwedge
+# deletes a LIVE mutex, and the operator cannot tell a live one from a corpse
+# by looking (a real claim's mutex is ~45ms old, so list's >60s warning never
+# fires for one). So it proves death twice - age past the wedge threshold AND
+# a recorded pid that is gone - prints what it found either way, and leaves
+# --force as the only way past a case it cannot prove.
+cmd_unwedge() {
+  local force=0 mutex="$SF_LEASE_HOME/.claiming"
+  case "${1:-}" in
+    --force) force=1 ;;
+    '') ;;
+    *) printf 'usage: sf-lease unwedge [--force]\n' >&2; finish 64 ;;
+  esac
+
+  if [[ ! -d "$mutex" ]]; then
+    printf 'sf-lease: no claim mutex is held; nothing to unwedge\n'
+    return 0
+  fi
+
+  local now mtime age_s owner pid alive
+  now=$(date +%s)
+  mtime="$(stat -f %m "$mutex" 2>/dev/null)" || mtime="$now"
+  age_s=$(( now - mtime ))
+  owner="$(cat "$mutex/owner" 2>/dev/null)"
+  pid="${owner%%:*}"
+  alive=unknown
+  if [[ "$pid" =~ ^[0-9]+$ ]]; then
+    # ps, not kill -0: kill reports EPERM as failure for another user's live
+    # process, which would read as "dead" - the wrong direction to guess in.
+    if ps -p "$pid" >/dev/null 2>&1; then alive=yes; else alive=no; fi
+  else
+    pid=''
+  fi
+
+  printf 'sf-lease: claim mutex %s\n' "$mutex"
+  printf '  held for: %ss (a live claim takes ~0s; wedge threshold %ss)\n' "$age_s" "$MUTEX_WEDGE_SECONDS"
+  printf '  owner:    %s\n' "${owner:-<no token recorded>}"
+  printf '  pid:      %s (still running: %s)\n' "${pid:-<unknown>}" "$alive"
+
+  if [[ $force -eq 1 ]]; then
+    printf 'sf-lease: --force: clearing it regardless. If a claim IS in flight this un-protects its critical section, and the SAME ORG CAN BE GRANTED TO TWO SESSIONS AT ONCE - including sessions that claim after this one.\n' >&2
+    rm -rf "$mutex" 2>/dev/null
+    printf 'sf-lease: cleared the mutex (forced)\n'
+    return 0
+  fi
+
+  if (( age_s <= MUTEX_WEDGE_SECONDS )); then
+    printf 'sf-lease: REFUSING - %ss old is well inside what a live claim takes, and a live claim looks exactly like this. Wait a moment and re-check with: sf-lease list\n' "$age_s" >&2
+    printf 'sf-lease: if you are certain it is dead: sf-lease unwedge --force (can grant one org to two sessions)\n' >&2
+    return "$EX_BUSY"
+  fi
+  if [[ "$alive" == yes ]]; then
+    printf 'sf-lease: REFUSING - pid %s is still running, so this mutex is held, not wedged.\n' "$pid" >&2
+    printf 'sf-lease: if you are certain it is dead: sf-lease unwedge --force (can grant one org to two sessions)\n' >&2
+    return "$EX_BUSY"
+  fi
+  # Past the threshold with no live owner. Two shapes, both clearable without
+  # --force: a token whose pid is gone, and no token at all - a live acquire
+  # stamps its token microseconds after the mkdir, so nothing that could still
+  # be running left this behind. Refusing here would be worse than useless: it
+  # would teach the operator that --force's warning routinely does not apply
+  # to them, which is exactly how --force becomes a reflex.
+  rm -rf "$mutex" 2>/dev/null
+  if [[ "$alive" == unknown ]]; then
+    printf 'sf-lease: cleared a wedged mutex (held %ss, no ownership token - a claim killed between taking the mutex and stamping it)\n' "$age_s"
+  else
+    printf 'sf-lease: cleared a wedged mutex (held %ss, owning pid %s is gone)\n' "$age_s" "$pid"
+  fi
+  return 0
+}
+
+# Every path out of here goes through finish(), so falling off the end without
+# one means the shell died mid-subcommand and the EXIT trap reports 70.
+subcmd="${1:-}"
+rc=0
+case "$subcmd" in
+  claim)           shift; cmd_claim "$@" || rc=$? ;;
+  release)         shift; cmd_release "$@" || rc=$? ;;
+  release-session) shift; cmd_release_session "$@" || rc=$? ;;
+  holder)          shift; cmd_holder "$@" || rc=$? ;;
+  list)            cmd_list || rc=$? ;;
+  sweep)           shift; cmd_sweep "$@" || rc=$? ;;
+  unwedge)         shift; cmd_unwedge "$@" || rc=$? ;;
+  *)
+    printf 'usage: sf-lease claim|release|release-session|holder|list|sweep|unwedge [--force] ...\n' >&2
+    finish 64
+    ;;
+esac
+finish "$rc"
