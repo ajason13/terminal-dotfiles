@@ -1390,6 +1390,22 @@ test('Unassigned appears only when it holds a placed car', () => {
   assert.deepEqual(allocatePitBays(data.sessions), []);
 });
 
+test('an overflowed car with no session prefix does not spawn a phantom Unassigned bay', () => {
+  const named = Array.from({ length: PIT_CAPACITY }, (_, index) => session(
+    `n${String(index).padStart(2, '0')}`,
+    'idle',
+    {
+      displayName: `E2E ▸ w${index}`,
+      // Newest to oldest, all younger than the unprefixed car below, so they fill
+      // every slot and the unprefixed one is the sole overflow.
+      lastActivityAt: `2026-07-19T20:${String(39 - index).padStart(2, '0')}:00Z`,
+    },
+  ));
+  const bare = session('bare', 'idle', { lastActivityAt: '2026-07-19T20:00:00Z' });
+  const data = normalized([...named, bare]);
+  assert.deepEqual(allocatePitBays(data.sessions).map((bay) => bay.key), ['E2E']);
+});
+
 test('bay assignment and roster ignore input order', () => {
   const sessions = normalized([
     session('a', 'idle', { displayName: 'E2E ▸ a', lastActivityAt: '2026-07-19T20:20:00Z' }),

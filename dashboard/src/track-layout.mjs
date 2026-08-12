@@ -98,9 +98,8 @@ export function allocateSessions(sessions, track = RIDGE_PASS) {
   return Object.freeze(sessions.map((session) => byId.get(session.id)));
 }
 
-// Ordered pit bays. Separate from allocateSessions because that function's frozen
-// flat-array return is indexed positionally across the suite. Re-runs allocation so
-// the Unassigned rule reads real placements rather than a second capacity guess.
+// Separate from allocateSessions since its return is indexed positionally across the suite.
+// Re-runs allocation (not a second capacity guess) so Unassigned reflects real placements.
 export function allocatePitBays(sessions, track = RIDGE_PASS) {
   const placed = allocateSessions(sessions, track);
   const hasUnassignedCar = placed.some((item) => (
