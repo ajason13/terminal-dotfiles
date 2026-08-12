@@ -794,8 +794,6 @@ test('all pre-heading schedule percentages, positions, and visible opacity are p
     ['ridge-pass/mobile', '4a52fd7029bf9719db251c8d74217afbef532a4c7e7861d572d49e155a29787f'],
     ['cypress-run/desktop', '6b9cd28c7def47fdf88ed2a232fb02650f4de75941d061e685719f75c876f2e3'],
     ['cypress-run/mobile', '9accf028b75799d3b85214236fcd6bfc68844ed9ac4bfc8d95fcf905c486e1e9'],
-    // UNREVIEWED BASELINE: captured from compiler output, not from independently checked
-    // geometry. These two only detect drift; they do not attest Harbor's schedule is right.
     ['harbor-yard-rallycross/desktop', '58789a4a8b96e233888d744a501db91e3bcd00a8c3353ffd7a97c68c8d4507e2'],
     ['harbor-yard-rallycross/mobile', 'cc9bc4bcdda1ec147f2eeb7b60e67f1e90b6f0432c908e3bc2007c275b644678'],
   ]);
