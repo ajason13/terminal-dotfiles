@@ -1436,3 +1436,23 @@ test('capacity stays global: the oldest pit car overflows regardless of bay', ()
   const overflowed = allocateSessions(normalized(sessions).sessions).filter((item) => item.overflow);
   assert.deepEqual(overflowed.map((item) => item.id), [`p${PIT_CAPACITY}`]);
 });
+
+test('route placements and overflowed pit placements never gain bayKey or bayRank', () => {
+  const pitSessions = Array.from({ length: PIT_CAPACITY + 1 }, (_, index) => session(
+    `p${String(index).padStart(2, '0')}`,
+    'idle',
+    { lastActivityAt: `2026-07-19T20:${String(40 - index).padStart(2, '0')}:00Z` },
+  ));
+  const routeSession = session('on-route', 'active', { progress: 0.5 });
+  const placements = allocateSessions(normalized([...pitSessions, routeSession]).sessions);
+  const routePlacement = placements.find((item) => item.id === 'on-route');
+  const overflowedPitPlacement = placements.find((item) => item.overflow);
+  assert.equal(routePlacement.pool, 'route');
+  assert.equal(overflowedPitPlacement.pool, 'pit');
+  // The renderer gates on pool === 'pit' && !overflow before reading bayKey/bayRank,
+  // so these fields must be absent (not merely undefined) outside that gate.
+  for (const placement of [routePlacement, overflowedPitPlacement]) {
+    assert.equal(Object.hasOwn(placement, 'bayKey'), false);
+    assert.equal(Object.hasOwn(placement, 'bayRank'), false);
+  }
+});
