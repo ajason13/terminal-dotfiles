@@ -4,6 +4,11 @@ on:
   push:
   pull_request:
 
+# CI only needs to read this repository. Keep the default token constrained even
+# if a later action is added to this workflow.
+permissions:
+  contents: read
+
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -88,3 +93,31 @@ jobs:
         run: |
           ./scripts/test-backgrounds-lua.sh
           ./scripts/test-links-lua.sh
+
+  dashboard:
+    name: Dashboard verification
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install locked dashboard test tooling
+        run: npm ci
+
+      - name: Verify generated assets, syntax, and unit tests
+        run: npm run verify
+
+      - name: Install Chromium for browser regression tests
+        run: npx playwright install --with-deps chromium
+
+      - name: Run browser regression tests
+        run: npm run test:browser

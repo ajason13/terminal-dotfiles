@@ -154,6 +154,13 @@ Run all dependency-free tests:
 node --test dashboard/tests/*.test.mjs
 ```
 
+For the same fast production gate used by CI (generated-route drift, JavaScript
+syntax, and the complete unit suite), run:
+
+```sh
+npm --prefix dashboard run verify
+```
+
 Install the dashboard-local browser-test tooling once, including its Chromium
 binary, then run the fixture-only browser suite:
 
@@ -172,7 +179,8 @@ directories; intentional manual reference screenshots remain tracked.
 Build, lint, and type-check commands are **N/A**. The browser-native app still
 has no framework, runtime dependency, generated bundle, or build toolchain.
 `dashboard/package.json` is dev-only browser-test tooling and is never loaded
-by the dashboard.
+by the dashboard. GitHub Actions runs the fast verification gate and the
+Chromium regression suite on every push and pull request.
 
 ## Reproduce browser verification
 

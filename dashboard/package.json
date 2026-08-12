@@ -5,7 +5,9 @@
   "scripts": {
     "routes:write": "node scripts/compile-routes.mjs --write",
     "routes:check": "node scripts/compile-routes.mjs --check",
+    "check:syntax": "node --check serve-live.mjs && node --check collect-tmux.mjs && node --check export-tmux.mjs && node --check src/*.mjs && node --check scripts/*.mjs && node --check routes/*.route.mjs",
     "test:unit": "node --test tests/*.test.mjs",
+    "verify": "npm run routes:check && npm run check:syntax && npm run test:unit",
     "test:browser": "playwright test"
   },
   "devDependencies": {
