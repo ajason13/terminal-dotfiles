@@ -906,9 +906,8 @@ textarea {
   gap: 10px;
   padding: 8px 14px;
   min-width: 0;
-  /* The lane is the `auto` row of .dashboard-root, so an uncapped pit shrinks the
-     stage. Cap it and scroll inside instead; do not add a floor to that row's
-     minmax(0, 1fr), which is what prevents vertical page overflow when short. */
+  /* Cap and scroll inside instead of letting an uncapped pit shrink the stage row.
+     Do not add a floor to .dashboard-root's minmax(0, 1fr); that 0 stops overflow. */
   max-height: var(--pit-lane-max);
   overflow: hidden auto;
   overscroll-behavior: contain;
@@ -1049,9 +1048,8 @@ textarea {
   text-align: center;
 }
 
-/* The lane scrolls now, so an in-flow bubble opening upward past its top edge would
-   be clipped. Fixed positioning leaves that overflow entirely and docks every pit
-   tooltip to one rect above the lane. */
+/* The lane scrolls now; fixed positioning is what lets the tooltip escape being
+   clipped by it, docking every pit tooltip to one rect above the lane. */
 .pit-vehicle .session-tooltip {
   position: fixed;
   top: auto;
@@ -1062,6 +1060,8 @@ textarea {
   transform: none;
 }
 
+/* Not dead code: the generic show rule's (0,3,0) selector beats the base pit rule's
+   (0,2,0) and would reapply translate(-50%, ...), knocking the tooltip off-viewport. */
 .pit-vehicle:hover .session-tooltip,
 .pit-vehicle:focus-within .session-tooltip,
 .pit-vehicle[data-pinned="true"] .session-tooltip {
