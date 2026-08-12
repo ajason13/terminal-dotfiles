@@ -22,6 +22,8 @@ import {
   PIT_CAPACITY,
   ROUTE_ANCHORS,
   SEGMENTS,
+  UNASSIGNED_BAY_LABEL,
+  allocatePitBays,
   allocateSessions,
   fnv1a32,
   preferredRouteIndex,
@@ -1330,4 +1332,91 @@ test('README documents the work-ref naming convention and auto-rename requiremen
   assert.match(README, /automatic-rename off/);
   assert.match(README, /PR#\d+|PR#42/);
   assert.match(README, /BB-\d+|[A-Z]{2,}-\d+/);
+});
+
+test('pit placements carry a bay key and a within-bay recency rank', () => {
+  const data = normalized([
+    session('e-new', 'idle', { displayName: 'E2E ▸ newer', lastActivityAt: '2026-07-19T20:20:00Z' }),
+    session('e-old', 'idle', { displayName: 'E2E ▸ older', lastActivityAt: '2026-07-19T20:10:00Z' }),
+    session('w-one', 'idle', { displayName: 'Workflow ▸ only', lastActivityAt: '2026-07-19T20:15:00Z' }),
+  ]);
+  const byId = new Map(allocateSessions(data.sessions).map((item) => [item.id, item]));
+  // slotIndex is global recency; bayRank counts only within the bay.
+  assert.deepEqual(['e-new', 'w-one', 'e-old'].map((id) => {
+    const placement = byId.get(id);
+    return [placement.bayKey, placement.bayRank, placement.slotIndex];
+  }), [['E2E', 0, 0], ['Workflow', 0, 1], ['E2E', 1, 2]]);
+});
+
+test('pit location label names the bay and counts within it', () => {
+  const data = normalized([
+    session('a', 'idle', { displayName: 'E2E ▸ newer', lastActivityAt: '2026-07-19T20:20:00Z' }),
+    session('b', 'idle', { displayName: 'E2E ▸ older', lastActivityAt: '2026-07-19T20:10:00Z' }),
+  ]);
+  const placements = allocateSessions(data.sessions);
+  assert.equal(placements[0].locationLabel, 'Pit, E2E bay, position 1');
+  assert.equal(placements[1].locationLabel, 'Pit, E2E bay, position 2');
+});
+
+test('a session with no session prefix lands in the Unassigned bay', () => {
+  const [placement] = allocateSessions(normalized([session('bare', 'idle')]).sessions);
+  assert.equal(placement.bayKey, null);
+  assert.equal(placement.locationLabel, 'Pit, Unassigned bay, position 1');
+});
+
+test('bays sort case-insensitively and Unassigned comes last', () => {
+  const data = normalized([
+    session('w', 'idle', { displayName: 'Workflow ▸ w' }),
+    session('c', 'idle', { displayName: 'canary ▸ c' }),
+    session('e', 'idle', { displayName: 'E2E ▸ e' }),
+    session('bare', 'idle'),
+    session('d', 'idle', { displayName: 'dotfiles ▸ d' }),
+  ]);
+  const bays = allocatePitBays(data.sessions);
+  assert.deepEqual(bays.map((bay) => bay.key), ['canary', 'dotfiles', 'E2E', 'Workflow', null]);
+  assert.deepEqual(bays.at(-1).label, UNASSIGNED_BAY_LABEL);
+});
+
+test('an all-on-track session still gets a bay so it can render Clear', () => {
+  const data = normalized([
+    session('running', 'active', { displayName: 'E2E ▸ busy', progress: 0.5 }),
+    session('parked', 'idle', { displayName: 'canary ▸ waiting' }),
+  ]);
+  assert.deepEqual(allocatePitBays(data.sessions).map((bay) => bay.key), ['canary', 'E2E']);
+});
+
+test('Unassigned appears only when it holds a placed car', () => {
+  const data = normalized([session('bare', 'active', { progress: 0 })]);
+  assert.deepEqual(allocatePitBays(data.sessions), []);
+});
+
+test('bay assignment and roster ignore input order', () => {
+  const sessions = normalized([
+    session('a', 'idle', { displayName: 'E2E ▸ a', lastActivityAt: '2026-07-19T20:20:00Z' }),
+    session('b', 'idle', { displayName: 'canary ▸ b', lastActivityAt: '2026-07-19T20:15:00Z' }),
+    session('c', 'idle', { displayName: 'E2E ▸ c', lastActivityAt: '2026-07-19T20:10:00Z' }),
+  ]).sessions;
+  const digest = (items) => Object.fromEntries(
+    allocateSessions(items).map((item) => [item.id, `${item.bayKey}:${item.bayRank}`]),
+  );
+  const reversed = [...sessions].reverse();
+  assert.deepEqual(digest(reversed), digest(sessions));
+  assert.deepEqual(
+    allocatePitBays(reversed).map((bay) => bay.key),
+    allocatePitBays(sessions).map((bay) => bay.key),
+  );
+});
+
+test('capacity stays global: the oldest pit car overflows regardless of bay', () => {
+  const sessions = Array.from({ length: PIT_CAPACITY + 1 }, (_, index) => session(
+    `p${String(index).padStart(2, '0')}`,
+    'idle',
+    {
+      displayName: `${index % 2 === 0 ? 'E2E' : 'canary'} ▸ w${index}`,
+      // index 0 is newest, each later one a minute older, so the last one overflows.
+      lastActivityAt: `2026-07-19T20:${String(40 - index).padStart(2, '0')}:00Z`,
+    },
+  ));
+  const overflowed = allocateSessions(normalized(sessions).sessions).filter((item) => item.overflow);
+  assert.deepEqual(overflowed.map((item) => item.id), [`p${PIT_CAPACITY}`]);
 });

@@ -1,4 +1,4 @@
-import { STATE_PRESENTATION } from './session-contract.mjs';
+import { STATE_PRESENTATION, parseWorkRef } from './session-contract.mjs';
 import { getTrack } from './track-catalog.mjs';
 
 const RIDGE_PASS = getTrack('ridge-pass');
@@ -22,6 +22,12 @@ export function preferredRouteIndex(session) {
 
 export const PIT_CAPACITY = 18;
 
+export const UNASSIGNED_BAY_LABEL = 'Unassigned';
+
+// The tmux session a window belongs to, parsed off the `<session> ▸ <window>` display
+// name. null means the name carried no prefix (fixtures, imported snapshots).
+const bayKeyOf = (session) => parseWorkRef(session.displayName).sessionName;
+
 const poolOf = (session) => STATE_PRESENTATION[session.status].pool;
 
 function routePlacement(session, anchor, slotIndex) {
@@ -32,11 +38,11 @@ function routePlacement(session, anchor, slotIndex) {
   });
 }
 
-function pitPlacement(session, slotIndex) {
+function pitPlacement(session, slotIndex, bayKey, bayRank) {
   return Object.freeze({
     id: session.id, mapCode: session.mapCode, pool: 'pit', poolLabel: 'Pit',
-    locationLabel: `Pit position ${slotIndex + 1}`,
-    x: null, y: null, angle: null, slotIndex, overflow: false,
+    locationLabel: `Pit, ${bayKey ?? UNASSIGNED_BAY_LABEL} bay, position ${bayRank + 1}`,
+    x: null, y: null, angle: null, slotIndex, bayKey, bayRank, overflow: false,
   });
 }
 
@@ -75,11 +81,42 @@ export function allocateSessions(sessions, track = RIDGE_PASS) {
     const delta = Date.parse(r.lastActivityAt) - Date.parse(l.lastActivityAt);
     return delta !== 0 ? delta : l.id.localeCompare(r.id);
   });
+  // Global recency restricted to one bay's members is that bay's recency order, so a
+  // single pass assigns the global slotIndex and the per-bay bayRank together.
+  const bayFill = new Map();
   orderedPit.forEach((session, rank) => {
-    byId.set(session.id, rank < PIT_CAPACITY
-      ? pitPlacement(session, rank)
-      : overflowPlacement(session, 'pit', 'Pit'));
+    if (rank >= PIT_CAPACITY) {
+      byId.set(session.id, overflowPlacement(session, 'pit', 'Pit'));
+      return;
+    }
+    const bayKey = bayKeyOf(session);
+    const bayRank = bayFill.get(bayKey) ?? 0;
+    bayFill.set(bayKey, bayRank + 1);
+    byId.set(session.id, pitPlacement(session, rank, bayKey, bayRank));
   });
 
   return Object.freeze(sessions.map((session) => byId.get(session.id)));
+}
+
+// Ordered pit bays. Separate from allocateSessions because that function's frozen
+// flat-array return is indexed positionally across the suite. Re-runs allocation so
+// the Unassigned rule reads real placements rather than a second capacity guess.
+export function allocatePitBays(sessions, track = RIDGE_PASS) {
+  const placed = allocateSessions(sessions, track);
+  const hasUnassignedCar = placed.some((item) => (
+    item.pool === 'pit' && !item.overflow && item.bayKey === null
+  ));
+  // Named bays come from every session, route included, so a session whose windows are
+  // all on-track still gets a bay to render Clear in.
+  const named = new Set();
+  for (const session of sessions) {
+    const key = bayKeyOf(session);
+    if (key !== null) named.add(key);
+  }
+  const bays = [...named]
+    .sort((left, right) => left.localeCompare(right))
+    .map((key) => ({ key, label: key }));
+  // Unassigned is not a real tmux session, so it earns a bay only by holding a car.
+  if (hasUnassignedCar) bays.push({ key: null, label: UNASSIGNED_BAY_LABEL });
+  return Object.freeze(bays.map((bay) => Object.freeze(bay)));
 }
