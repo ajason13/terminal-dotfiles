@@ -52,6 +52,9 @@ import {
 import { LEGACY_ROUTE_MIGRATION } from './fixtures/legacy-route-migration.mjs';
 
 const clone = (value) => structuredClone(value);
+// Negative cases must supply one source per trackOrder entry, or the arity guard fires
+// first and swallows the boundary actually under test.
+const mutableSources = () => [clone(ridge), clone(cypress), clone(harbor)];
 const ROUTES = [ridge, cypress, harbor];
 let cachedCompilation;
 const compile = () => {
@@ -88,7 +91,7 @@ test('closed schema rejects missing and extra keys at every source depth', () =>
     (cfg, routes) => { delete routes[0].segments[0].anchors[0].at; },
   ]) {
     const cfg = clone(config);
-    const routes = [clone(ridge), clone(cypress)];
+    const routes = mutableSources();
     mutate(cfg, routes);
     assert.throws(() => validateSources(cfg, routes), /unsupported or missing keys/);
   }
@@ -107,14 +110,14 @@ test('identity, uniqueness, primitive, locator, and fixed mapping boundaries fai
     (cfg, routes) => { routes[0].segments[0].anchors[1].at = 0; },
   ]) {
     const cfg = clone(config);
-    const routes = [clone(ridge), clone(cypress)];
+    const routes = mutableSources();
     mutate(cfg, routes);
     assert.throws(() => validateSources(cfg, routes));
   }
 });
 
 test('segment cssClass references are unique across the complete catalog', () => {
-  const routes = [clone(ridge), clone(cypress)];
+  const routes = mutableSources();
   routes[1].segments[0].cssClass = routes[0].segments[0].cssClass;
   assert.throws(() => validateSources(clone(config), routes), /segments\[0\] is duplicated/);
 });
@@ -137,14 +140,18 @@ test('closed source graph rejects hidden, symbolic, accessor, prototype, and pri
   ];
   for (const mutate of cases) {
     const cfg = clone(config);
-    const routes = [clone(ridge), clone(cypress)];
+    const routes = mutableSources();
     mutate(cfg, routes);
     assert.throws(() => validateSources(cfg, routes));
   }
 });
 
 test('route filename set rejects missing and orphan sources', () => {
-  const current = ['cypress-run.route.mjs', 'ridge-pass.route.mjs'];
+  const current = [
+    'cypress-run.route.mjs',
+    'harbor-yard-rallycross.route.mjs',
+    'ridge-pass.route.mjs',
+  ];
   assert.doesNotThrow(() => validateRouteFileNames(config.trackOrder, current));
   assert.throws(() => validateRouteFileNames(config.trackOrder, current.slice(1)), /missing or extra/);
   assert.throws(() => validateRouteFileNames(
@@ -787,7 +794,11 @@ test('all pre-heading schedule percentages, positions, and visible opacity are p
     ['ridge-pass/mobile', '4a52fd7029bf9719db251c8d74217afbef532a4c7e7861d572d49e155a29787f'],
     ['cypress-run/desktop', '6b9cd28c7def47fdf88ed2a232fb02650f4de75941d061e685719f75c876f2e3'],
     ['cypress-run/mobile', '9accf028b75799d3b85214236fcd6bfc68844ed9ac4bfc8d95fcf905c486e1e9'],
+    ['harbor-yard-rallycross/desktop', '58789a4a8b96e233888d744a501db91e3bcd00a8c3353ffd7a97c68c8d4507e2'],
+    ['harbor-yard-rallycross/mobile', 'cc9bc4bcdda1ec147f2eeb7b60e67f1e90b6f0432c908e3bc2007c275b644678'],
   ]);
+  // A track with no pin would otherwise compare against undefined only once it is reached.
+  assert.equal(expected.size, compile().schedules.length * 2);
   for (const item of compile().schedules) {
     for (const profileName of ['desktop', 'mobile']) {
       const frames = item[profileName].frames.map((frame, index, all) => [
@@ -804,14 +815,21 @@ test('all pre-heading schedule percentages, positions, and visible opacity are p
 
 test('generated anchors preserve IDs, capacities, labels, angle and migration tolerance', () => {
   const output = compile();
-  output.trackInput.forEach((track, trackIndex) => {
-    const legacy = LEGACY_ROUTE_MIGRATION.anchors[track.id];
+  // Only the two pre-compiler tracks have a hand-placed baseline to hold tolerance against.
+  // Pinning the set stops a newly migrated track from silently skipping the comparison.
+  assert.deepEqual(
+    Object.keys(LEGACY_ROUTE_MIGRATION.anchors).sort(),
+    ['cypress-run', 'ridge-pass'],
+  );
+  output.trackInput.forEach((track) => {
     assert.deepEqual(track.routeAnchors.map(({ id }) => id),
       Array.from({ length: 16 }, (_, index) => `R${String(index + 1).padStart(2, '0')}`));
     assert.deepEqual(track.segments.map((segment) => (
       track.routeAnchors.filter(({ poolLabel }) => poolLabel === segment).length
     )), [2, 3, 3, 3, 3, 2]);
     assert.equal(track.routeAnchors.every(({ angle }) => angle === 0), true);
+    const legacy = LEGACY_ROUTE_MIGRATION.anchors[track.id];
+    if (!legacy) return;
     track.routeAnchors.forEach((anchor, index) => {
       assert.ok(Math.hypot(
         anchor.x - legacy[index][0],
@@ -1005,14 +1023,21 @@ test('generated serialization is deterministic, owned, precise and reset-stable'
   assert.doesNotMatch(`${first.mjs}${first.css}`, /Users\/|timestamp|sourceMappingURL|https?:\/\//);
   assert.equal(first.mjs.endsWith('\n'), true);
   assert.equal(first.css.endsWith('\n'), true);
-  assert.equal((first.css.match(/99\.2% \{/g) ?? []).length, 4);
-  assert.equal((first.css.match(/99\.6% \{/g) ?? []).length, 4);
-  assert.equal((first.css.match(/100% \{/g) ?? []).length, 4);
-  assert.equal((first.css.match(/vehicle-anchor\[data-route-slot="\d+"\]/g) ?? []).length, 64);
+  // Cross-check the emitted CSS against the structured schedules rather than magic totals,
+  // so adding a track cannot leave these counts asserting the wrong catalog size.
+  const blocks = first.schedules.length * 2; // one keyframes block per track per profile
+  const frameStops = first.schedules.reduce((sum, item) => (
+    sum + item.desktop.frames.length + item.mobile.frames.length
+  ), 0);
+  const resetStops = blocks * 3; // the 99.2/99.6/100% reset tail each block closes with
+  const slotRules = blocks * 16; // renderStaticHeadings emits exactly 16 slots per profile
+  assert.equal((first.css.match(/99\.2% \{/g) ?? []).length, blocks);
+  assert.equal((first.css.match(/99\.6% \{/g) ?? []).length, blocks);
+  assert.equal((first.css.match(/100% \{/g) ?? []).length, blocks);
+  assert.equal((first.css.match(/vehicle-anchor\[data-route-slot="\d+"\]/g) ?? []).length, slotRules);
   assert.equal((first.css.match(/--route-heading:/g) ?? []).length,
-    2 * (527 + 533 + 3 + 3) + 64);
-  assert.equal((first.css.match(/--drift-yaw:/g) ?? []).length,
-    2 * (527 + 533 + 3 + 3));
+    frameStops + resetStops + slotRules);
+  assert.equal((first.css.match(/--drift-yaw:/g) ?? []).length, frameStops + resetStops);
   assert.doesNotMatch(first.css, /@property\s+--/);
   for (const item of first.schedules) {
     for (const profileName of ['desktop', 'mobile']) {

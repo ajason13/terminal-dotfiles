@@ -818,8 +818,8 @@ test('session controls render generated top-down PNG cars without shrinking the 
   assert.match(RENDERER, /alt: ''/);
   assert.match(RENDERER, /'aria-hidden': 'true'/);
   assert.match(RENDERER, /draggable: 'false'/);
-  assert.match(STYLES, /\.session-car\s*\{[^}]*width:\s*52px;[^}]*height:\s*52px;[^}]*min-width:\s*44px;[^}]*min-height:\s*44px;[^}]*border:\s*0;[^}]*background:\s*transparent/si);
-  assert.match(STYLES, /\.car-body\s*\{[^}]*width:\s*32px;[^}]*height:\s*48px/si);
+  assert.match(STYLES, /\.session-car\s*\{[^}]*width:\s*calc\(52 \* var\(--car-unit\)\);[^}]*height:\s*calc\(52 \* var\(--car-unit\)\);[^}]*min-width:\s*44px;[^}]*min-height:\s*44px;[^}]*border:\s*0;[^}]*background:\s*transparent/si);
+  assert.match(STYLES, /\.car-body\s*\{[^}]*width:\s*calc\(32 \* var\(--car-unit\)\);[^}]*height:\s*calc\(48 \* var\(--car-unit\)\)/si);
   assert.match(STYLES, /\.car-sprite\s*\{[^}]*image-rendering:\s*pixelated/si);
   assert.doesNotMatch(RENDERER,
     /svgElement|appendLivery|'car-overlay'|'vehicle-preview-overlay'|'car-livery'|'vehicle-preview-livery'|'car-centerline'|'car-headlamp'/);
@@ -831,6 +831,21 @@ test('session controls render generated top-down PNG cars without shrinking the 
   assert.doesNotMatch(STYLES, /\.vehicle-preview-image[^}]*rotate\(180deg\)/si);
 });
 
+
+test('route car art scales with the stretched track while pit cars stay at reference size', () => {
+  const rootRule = STYLES.match(/^:root\s*\{([^}]*)\}/ms)?.[1] ?? '';
+  // Pit cars sit outside the stage container, so the inherited default must stay 1px.
+  assert.match(rootRule, /--car-unit:\s*1px/);
+  assert.match(rootRule, /--car-reference-stretch:\s*1\.2/);
+  assert.match(STYLES, /\.map-stage\s*\{[^}]*container-type:\s*size/si);
+
+  const anchorRule = STYLES.match(/\.vehicle-anchor\s*\{([^}]*)\}/s)?.[1] ?? '';
+  assert.match(anchorRule, /--car-unit:\s*clamp\(\s*1px,/si);
+  assert.match(anchorRule, /100cqw \/ var\(--map-width\) \+ 100cqh \/ var\(--map-height\)/si);
+  assert.match(anchorRule, /\/ var\(--car-reference-stretch\)/si);
+  assert.match(anchorRule, /width:\s*calc\(52 \* var\(--car-unit\)\)/si);
+  assert.doesNotMatch(anchorRule, /width:\s*52px/si);
+});
 
 test('all seven vehicle states retain accessible status text and state colors without car overlays', () => {
   for (const [status, glyph] of Object.entries({
@@ -1090,8 +1105,8 @@ test('reduced-motion policy disables car animation and nonessential transitions'
 
 test('CSS and document preserve 44px targets and map-first responsive behavior', () => {
   const carRule = STYLES.match(/\.session-car\s*\{([^}]*)\}/s)?.[1] ?? '';
-  assert.match(carRule, /width:\s*52px/);
-  assert.match(carRule, /height:\s*52px/);
+  assert.match(carRule, /width:\s*calc\(52 \* var\(--car-unit\)\)/);
+  assert.match(carRule, /height:\s*calc\(52 \* var\(--car-unit\)\)/);
   assert.match(carRule, /min-width:\s*44px/);
   assert.match(carRule, /min-height:\s*44px/);
 
