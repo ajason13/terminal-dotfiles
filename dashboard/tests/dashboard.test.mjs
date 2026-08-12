@@ -1136,7 +1136,7 @@ test('CSS and document preserve 44px targets and map-first responsive behavior',
   assert.match(mobile, /\.vehicle-anchor \.car-body\s*\{[^}]*width:\s*24px;[^}]*height:\s*36px/si);
   assert.ok(INDEX.indexOf('id="map-stage"') < INDEX.indexOf('id="pit-lane"'));
   assert.match(STYLES, /overflow-x:\s*hidden/);
-  assert.match(STYLES, /\.pit-mount\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fill,\s*52px\)/si);
+  assert.match(STYLES, /\.pit-bay-mount\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fill,\s*52px\)/si);
   assert.doesNotMatch(STYLES, /status-rail|session-list|rail-item/);
 });
 
@@ -1313,8 +1313,8 @@ test('car-badge fades out while its tooltip is open, for both car types', () => 
 });
 
 test('pit grid reserves row room so a below-car badge clears the next row', () => {
-  assert.match(BASE_STYLES, /\.pit-mount \{[^}]*gap:\s*1\.15rem \.55rem;/s);
-  assert.match(BASE_STYLES, /\.pit-mount \{[^}]*padding-bottom:\s*16px;/s);
+  assert.match(BASE_STYLES, /\.pit-bay-mount \{[^}]*gap:\s*1\.15rem \.55rem;/s);
+  assert.match(BASE_STYLES, /\.pit-bay-mount \{[^}]*padding-bottom:\s*16px;/s);
 });
 
 test('fixtures cover every badge/tooltip work-ref state', () => {

@@ -86,6 +86,9 @@ textarea {
   grid-template-rows: auto minmax(0, 1fr) auto; /* bar, stage, pit lane */
   min-height: 100vh;
   min-height: 100dvh;
+  /* Single source of truth for the pit lane cap; the docked tooltip's bottom offset
+     must agree with it, so both reference this instead of repeating the literal. */
+  --pit-lane-max: min(32vh, 16rem);
 }
 
 .dashboard-bar {
@@ -903,7 +906,12 @@ textarea {
   gap: 10px;
   padding: 8px 14px;
   min-width: 0;
-  overflow: visible;
+  /* The lane is the `auto` row of .dashboard-root, so an uncapped pit shrinks the
+     stage. Cap it and scroll inside instead; do not add a floor to that row's
+     minmax(0, 1fr), which is what prevents vertical page overflow when short. */
+  max-height: var(--pit-lane-max);
+  overflow: hidden auto;
+  overscroll-behavior: contain;
   border-top: 2px dashed var(--color-boundary);
 }
 
@@ -976,7 +984,53 @@ textarea {
 
 .on-track-label { overflow-wrap: anywhere; }
 
-.pit-mount {
+.pit-bays {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  gap: .75rem;
+}
+
+.pit-bay {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  gap: .3rem;
+  /* two 52px car columns plus the grid gap, so a one-car bay is not a sliver */
+  min-width: 116px;
+  padding: .35rem .45rem;
+  border: 1px solid var(--color-boundary);
+  border-radius: .5rem;
+}
+
+.pit-bay-name {
+  display: flex;
+  align-items: baseline;
+  gap: .3rem;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: .64rem;
+  font-weight: 700;
+}
+
+/* Truncate rather than wrap: one long tmux session name must not stretch the row. */
+.pit-bay-label {
+  overflow: hidden;
+  max-width: 12ch;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pit-bay-count {
+  flex: none;
+  padding: 0 .25rem;
+  border-radius: .25rem;
+  background: var(--color-idle-bg);
+  color: var(--color-idle-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.pit-bay-mount {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
   grid-auto-rows: 52px;
@@ -986,7 +1040,7 @@ textarea {
   min-height: 52px;
 }
 
-.pit-mount:empty::after {
+.pit-bay-mount:empty::after {
   content: "Clear";
   grid-column: 1 / -1;
   align-self: center;
@@ -995,20 +1049,29 @@ textarea {
   text-align: center;
 }
 
-/* Pit is the bottom lane, so tooltips open upward. Left-aligned so the left
-   column (including the newest, top-left car) never clips off the left edge. */
+/* The lane scrolls now, so an in-flow bubble opening upward past its top edge would
+   be clipped. Fixed positioning leaves that overflow entirely and docks every pit
+   tooltip to one rect above the lane. */
 .pit-vehicle .session-tooltip {
+  position: fixed;
   top: auto;
-  bottom: calc(100% + 9px);
-  left: 0;
+  bottom: calc(var(--pit-lane-max) + 14px);
+  left: 1rem;
   right: auto;
-  transform: translate(0, -.25rem);
+  width: min(28rem, calc(100vw - 2rem));
+  transform: none;
 }
 
 .pit-vehicle:hover .session-tooltip,
 .pit-vehicle:focus-within .session-tooltip,
 .pit-vehicle[data-pinned="true"] .session-tooltip {
-  transform: translate(0, 0);
+  transform: none;
+}
+
+/* One shared rect means two visible tooltips would overlap, so once a car is pinned
+   only the pinned one may show. */
+.pit-lane:has(.pit-vehicle[data-pinned="true"]) .pit-vehicle:not([data-pinned="true"]) .session-tooltip {
+  visibility: hidden;
 }
 
 .pit-overflow {
@@ -1318,34 +1381,18 @@ details[open] > .overflow-toggle::before {
     width: 24px;
     height: 36px;
   }
-  .pit-mount { grid-template-columns: repeat(auto-fill, 52px); }
+  .pit-bay-mount { grid-template-columns: repeat(auto-fill, 52px); }
+  .pit-bay { flex: 1 1 100%; }
   .route-centerlines path { stroke-width: 6; }
   .segment-labels text { font-size: 13px; }
 
-  /* The pit grid runs edge-to-edge on mobile, so a per-car left-aligned bubble
-     overflows the viewport for every column past the first couple. Dock the
-     tooltip to the viewport instead of the individual car so it can never clip. */
+  /* Mobile docks to a full-width rect below the header instead of above the lane. */
   .pit-vehicle .session-tooltip {
-    position: fixed;
     top: 4rem;
     bottom: auto;
     left: 1rem;
     right: 1rem;
     width: auto;
-    transform: none;
-  }
-
-  .pit-vehicle:hover .session-tooltip,
-  .pit-vehicle:focus-within .session-tooltip,
-  .pit-vehicle[data-pinned="true"] .session-tooltip {
-    transform: none;
-  }
-
-  /* All pit tooltips dock to the same fixed rect above, so once one car is pinned,
-     focusing a different car would show two overlapping tooltips. Only the pinned
-     one may show; a later focus elsewhere is suppressed until the pin is cleared. */
-  .pit-lane:has(.pit-vehicle[data-pinned="true"]) .pit-vehicle:not([data-pinned="true"]) .session-tooltip {
-    visibility: hidden;
   }
 }
 
