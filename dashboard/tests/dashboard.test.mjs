@@ -181,7 +181,7 @@ test('document removes the status rail and declares the exact ordered pit stack'
   }
   assert.match(RENDERER, /placement\.pool === 'route' \? 'route' : 'pit'/);
   assert.match(RENDERER, /vehicleLayer\.append\(car\.wrapper\)/);
-  assert.match(RENDERER, /pitMount\.append\(entry\.wrapper\)/);
+  assert.match(RENDERER, /bay\.mount\.append\(item\.wrapper\)/);
   assert.match(RENDERER, /for \(const status of \['active', 'thinking'\]\)/);
   assert.match(RENDERER, /aria-label', `\$\{count\} \$\{presentation\.label\.toLowerCase\(\)\} sessions on track`/);
   const summarySource = RENDERER.slice(

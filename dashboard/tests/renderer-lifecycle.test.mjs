@@ -63,6 +63,13 @@ function findCar(root, id) {
   return root.querySelectorAll('.session-car').find((button) => button.dataset.sessionId === id);
 }
 
+// Pit cars now live in per-session bay mounts, so read them bay by bay in DOM order.
+const pitIds = (root) => root.querySelectorAll('.pit-bay-mount')
+  .flatMap((mount) => mount.children.map((el) => el.dataset.sessionId));
+
+const bayLabels = (root) => root.querySelectorAll('.pit-bay-label')
+  .map((el) => el.textContent);
+
 function descendants(node) {
   return node.children.flatMap((child) => (
     child instanceof FakeElement ? [child, ...descendants(child)] : []
@@ -627,7 +634,7 @@ test('update() re-sorts the pit so a freshly active session moves to the front',
     ],
   });
   const view = renderDashboard(build(t(10)), root, getTrack('ridge-pass'));
-  const idsAt = () => root.querySelector('#pit').children.map((el) => el.dataset.sessionId);
+  const idsAt = () => pitIds(root);
   assert.deepEqual(idsAt(), ['run', 'mid', 'old']); // newest-first at mount
 
   view.update(build(t(45))); // 'old' fires a fresh response and jumps to newest
@@ -646,14 +653,14 @@ test('update() re-sort keeps a pinned pit car pinned', () => {
     ],
   });
   const view = renderDashboard(build(t(10)), root, getTrack('ridge-pass'));
-  const idsAt = () => root.querySelector('#pit').children.map((el) => el.dataset.sessionId);
+  const idsAt = () => pitIds(root);
   assert.deepEqual(idsAt(), ['b', 'a']);              // b newest at mount
 
   findCar(root, 'b').dispatchEvent(keydown('Enter')); // pin b
   view.update(build(t(30)));                          // a jumps ahead of b
   assert.deepEqual(idsAt(), ['a', 'b']);               // re-sorted AND b's pin survives the move
 
-  const pinned = root.querySelector('#pit').children.filter((el) => el.dataset.pinned === 'true');
+  const pinned = root.querySelectorAll('.pit-vehicle').filter((el) => el.dataset.pinned === 'true');
   assert.equal(pinned.length, 1);
   assert.equal(pinned[0].dataset.sessionId, 'b');
 });
@@ -970,4 +977,122 @@ test('opt-in Go-live control stays inert without a real live token and wires up 
   } finally {
     Object.assign(globalThis, realTimers);
   }
+});
+
+test('the pit renders one bay per tmux session, alphabetically, Unassigned last', () => {
+  const { root } = dashboardRoot();
+  renderDashboard(routeSnapshot([
+    pitSession('w', 'idle', { displayName: 'Workflow ▸ w' }),
+    pitSession('c', 'idle', { displayName: 'canary ▸ c' }),
+    pitSession('bare', 'idle', { displayName: 'no prefix' }),
+    pitSession('e', 'idle', { displayName: 'E2E ▸ e' }),
+  ]), root, getTrack('ridge-pass'));
+  assert.deepEqual(bayLabels(root), ['canary', 'E2E', 'Workflow', 'Unassigned']);
+});
+
+test('a session whose windows are all on-track gets an empty bay', () => {
+  const { root } = dashboardRoot();
+  renderDashboard(routeSnapshot([
+    routeSession('busy', { displayName: 'dotfiles ▸ busy' }),
+    pitSession('parked', 'idle', { displayName: 'canary ▸ parked' }),
+  ]), root, getTrack('ridge-pass'));
+  assert.deepEqual(bayLabels(root), ['canary', 'dotfiles']);
+  const bays = root.querySelectorAll('.pit-bay');
+  const dotfiles = bays.find((bay) => bay.dataset.bayKey === 'dotfiles');
+  assert.equal(dotfiles.querySelector('.pit-bay-mount').children.length, 0);
+  assert.equal(dotfiles.querySelector('.pit-bay-count').textContent, '0');
+});
+
+test('cars sit in their own bay, newest-first within it', () => {
+  const { root } = dashboardRoot();
+  const t = (m) => `2026-07-26T16:${String(m).padStart(2, '0')}:00Z`;
+  renderDashboard(routeSnapshot([
+    pitSession('e-old', 'idle', { displayName: 'E2E ▸ old', lastActivityAt: t(10) }),
+    pitSession('c-mid', 'idle', { displayName: 'canary ▸ mid', lastActivityAt: t(20) }),
+    pitSession('e-new', 'idle', { displayName: 'E2E ▸ new', lastActivityAt: t(30) }),
+  ]), root, getTrack('ridge-pass'));
+  // canary bay first (alphabetical), then E2E newest-first inside its own bay.
+  assert.deepEqual(pitIds(root), ['c-mid', 'e-new', 'e-old']);
+});
+
+test('each bay header carries its own parked count', () => {
+  const { root } = dashboardRoot();
+  renderDashboard(routeSnapshot([
+    pitSession('a', 'idle', { displayName: 'E2E ▸ a' }),
+    pitSession('b', 'error', { displayName: 'E2E ▸ b' }),
+    pitSession('c', 'idle', { displayName: 'canary ▸ c' }),
+  ]), root, getTrack('ridge-pass'));
+  assert.deepEqual(
+    root.querySelectorAll('.pit-bay-count').map((el) => el.textContent),
+    ['1', '2'],
+  );
+});
+
+test('a pit car aria-label names its bay and its position inside it', () => {
+  const { root } = dashboardRoot();
+  renderDashboard(routeSnapshot([
+    pitSession('only', 'idle', { displayName: 'E2E ▸ only' }),
+  ]), root, getTrack('ridge-pass'));
+  assert.match(findCar(root, 'only').getAttribute('aria-label'), /Pit, E2E bay, position 1/);
+});
+
+test('update() adds a bay when a new tmux session appears and drops it when it goes', () => {
+  const { root } = dashboardRoot();
+  const build = (sessions) => routeSnapshot(sessions);
+  const view = renderDashboard(build([
+    pitSession('c', 'idle', { displayName: 'canary ▸ c' }),
+  ]), root, getTrack('ridge-pass'));
+  assert.deepEqual(bayLabels(root), ['canary']);
+
+  view.update(build([
+    pitSession('c', 'idle', { displayName: 'canary ▸ c' }),
+    pitSession('e', 'idle', { displayName: 'E2E ▸ e' }),
+  ]));
+  assert.deepEqual(bayLabels(root), ['canary', 'E2E']);
+
+  view.update(build([pitSession('e', 'idle', { displayName: 'E2E ▸ e' })]));
+  assert.deepEqual(bayLabels(root), ['E2E']);
+  assert.deepEqual(pitIds(root), ['e']);
+});
+
+test('update() keeps a pinned pit car pinned and focused across a bay roster change', () => {
+  const { root, documentRef } = dashboardRoot();
+  const build = (sessions) => routeSnapshot(sessions);
+  const view = renderDashboard(build([
+    pitSession('keep', 'idle', { displayName: 'E2E ▸ keep' }),
+  ]), root, getTrack('ridge-pass'));
+  const button = findCar(root, 'keep');
+  button.focus();
+  button.dispatchEvent(keydown(' '));
+  const wrapper = button.parentElement;
+  assert.equal(wrapper.dataset.pinned, 'true');
+
+  // A brand new bay sorts BEFORE E2E, so the roster reorders around the pinned car.
+  view.update(build([
+    pitSession('keep', 'idle', { displayName: 'E2E ▸ keep' }),
+    pitSession('fresh', 'idle', { displayName: 'canary ▸ fresh' }),
+  ]));
+  assert.deepEqual(bayLabels(root), ['canary', 'E2E']);
+  assert.equal(findCar(root, 'keep'), button, 'the pinned car element was not recreated');
+  assert.equal(button.parentElement.dataset.pinned, 'true');
+  assert.equal(button.getAttribute('aria-pressed'), 'true');
+  assert.equal(documentRef.activeElement, button, 'focus survived the bay reorder');
+});
+
+test('update() moves a car to a new bay when its tmux session is renamed', () => {
+  const { root } = dashboardRoot();
+  const view = renderDashboard(routeSnapshot([
+    pitSession('moved', 'idle', { displayName: 'canary ▸ work' }),
+  ]), root, getTrack('ridge-pass'));
+  assert.deepEqual(bayLabels(root), ['canary']);
+
+  view.update(routeSnapshot([
+    pitSession('moved', 'idle', { displayName: 'E2E ▸ work' }),
+  ]));
+  assert.deepEqual(bayLabels(root), ['E2E']);
+  const bay = root.querySelectorAll('.pit-bay').find((item) => item.dataset.bayKey === 'E2E');
+  assert.deepEqual(
+    bay.querySelector('.pit-bay-mount').children.map((el) => el.dataset.sessionId),
+    ['moved'],
+  );
 });

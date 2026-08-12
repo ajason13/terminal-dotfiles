@@ -1,5 +1,5 @@
 import { STATE_PRESENTATION, buildAccessibleText } from './session-contract.mjs';
-import { allocateSessions } from './track-layout.mjs';
+import { allocatePitBays, allocateSessions } from './track-layout.mjs';
 import { getTrack } from './track-catalog.mjs';
 
 const ROUTE_LAP_SECONDS = 64;
@@ -398,6 +398,53 @@ function renderOverflowNotice(documentRef, notice, entries, label, capacity) {
   notice.append(details);
 }
 
+// Reconciles bay elements against the roster. Bays are reused and reordered with
+// append() (a move) rather than rebuilt, because rebuilding one would destroy a pinned
+// descendant car's focus and data-pinned, and dom-fake has no insertBefore.
+function syncPitBays(documentRef, pitMount, roster, bays) {
+  const live = new Set();
+  for (const bay of roster) {
+    const id = bay.key ?? '';
+    live.add(id);
+    let entry = bays.get(id);
+    if (!entry) {
+      const section = element(documentRef, 'section', 'pit-bay');
+      section.dataset.bayKey = id;
+      section.setAttribute('aria-label', `${bay.label} bay`);
+      const heading = element(documentRef, 'h3', 'pit-bay-name');
+      const count = element(documentRef, 'span', 'pit-bay-count', '0');
+      heading.append(element(documentRef, 'span', 'pit-bay-label', bay.label), count);
+      const mount = element(documentRef, 'div', 'pit-bay-mount');
+      section.append(heading, mount);
+      entry = { section, mount, count };
+      bays.set(id, entry);
+    }
+    pitMount.append(entry.section);
+  }
+  for (const [id, entry] of [...bays]) {
+    if (live.has(id)) continue;
+    entry.section.remove();
+    bays.delete(id);
+  }
+}
+
+// Appends every pit car into its bay's mount in bayRank order. Runs on first render and
+// on every update(), so a car whose tmux session was renamed changes bays for free.
+function appendPitCars(entries, bays) {
+  const byBay = new Map();
+  for (const entry of entries) {
+    const id = entry.placement.bayKey ?? '';
+    if (!byBay.has(id)) byBay.set(id, []);
+    byBay.get(id).push(entry);
+  }
+  for (const [id, bay] of bays) {
+    const items = (byBay.get(id) ?? [])
+      .sort((left, right) => left.placement.bayRank - right.placement.bayRank);
+    for (const item of items) bay.mount.append(item.wrapper);
+    bay.count.textContent = String(items.length);
+  }
+}
+
 export function renderDashboard(snapshot, root = document, initialTrack = getTrack('ridge-pass')) {
   const renderController = new AbortController();
   const { signal } = renderController;
@@ -481,6 +528,7 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
   const buttonsById = new Map();
   const tooltipsById = new Map();
   const overflows = new Map();
+  const bays = new Map();
 
   let pinnedId = null;
 
@@ -556,11 +604,10 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
     tooltipsById.set(session.id, car.wrapper.querySelector('.session-tooltip'));
     attachCarInteractions(session.id);
     if (target === 'route') vehicleLayer.append(car.wrapper);
-    else pitEntries.push({ wrapper: car.wrapper, slotIndex: placement.slotIndex });
+    else pitEntries.push({ wrapper: car.wrapper, placement });
   }
-  for (const entry of pitEntries.sort((a, b) => a.slotIndex - b.slotIndex)) {
-    pitMount.append(entry.wrapper);
-  }
+  syncPitBays(documentRef, pitMount, allocatePitBays(snapshot.sessions, track), bays);
+  appendPitCars(pitEntries, bays);
 
   summary.textContent = summaryText(snapshot);
   for (const [pool, entries] of overflows) {
@@ -667,8 +714,8 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
           }
         } else {
           const car = makeCar(documentRef, session, placement, text, target);
+          // Pit cars are parented by appendPitCars below, once their bay exists.
           if (target === 'route') vehicleLayer.append(car.wrapper);
-          else pitMount.append(car.wrapper);
           carsById.set(session.id, car.wrapper);
           buttonsById.set(session.id, car.button);
           tooltipsById.set(session.id, car.wrapper.querySelector('.session-tooltip'));
@@ -684,20 +731,18 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
         placementsById.delete(id);
       }
 
-      // Re-append surviving pit cars in recency (slotIndex) order so the newest
-      // stays first across the live refresh. append() MOVES an existing node
-      // without recreating it, so element identity, listeners, and pinned state
-      // survive. Route cars are absolutely positioned, so their order is irrelevant.
-      const pitOrder = [];
+      // Re-append every pit car into its bay each tick: that single pass fixes ordering,
+      // absorbs bay renames, and moves cars into bays created this tick. append() MOVES
+      // an existing node, so element identity, listeners, and pinned state survive.
+      const pitEntries = [];
       for (const [id, wrapper] of carsById) {
         const placement = nextPlacementsById.get(id);
         if (placement && !placement.overflow && placement.pool === 'pit') {
-          pitOrder.push({ wrapper, slotIndex: placement.slotIndex });
+          pitEntries.push({ wrapper, placement });
         }
       }
-      for (const entry of pitOrder.sort((a, b) => a.slotIndex - b.slotIndex)) {
-        pitMount.append(entry.wrapper);
-      }
+      syncPitBays(documentRef, pitMount, allocatePitBays(nextSnapshot.sessions, track), bays);
+      appendPitCars(pitEntries, bays);
 
       mapOverflow.replaceChildren();
       mapOverflow.hidden = true;
