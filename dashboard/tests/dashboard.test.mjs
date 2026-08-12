@@ -1117,8 +1117,11 @@ test('CSS and document preserve 44px targets and map-first responsive behavior',
   assert.match(rootLayout, /grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\)\s+auto\b/);
   const pitLaneRule = STYLES.match(/\.pit-lane\s*\{([^}]*)\}/s)?.[1] ?? '';
   assert.match(pitLaneRule, /display:\s*grid/);
-  assert.match(pitLaneRule, /overflow:\s*visible/);
-  assert.doesNotMatch(pitLaneRule, /overflow:\s*auto/);
+  assert.match(pitLaneRule, /overflow:\s*hidden auto/);
+  assert.doesNotMatch(pitLaneRule, /overflow:\s*visible/);
+  // A scrolling lane only stays safe because the pit tooltip escapes via fixed
+  // positioning; assert the pair together so they cannot drift apart.
+  assert.match(STYLES, /\.pit-vehicle \.session-tooltip\s*\{[^}]*position:\s*fixed/s);
 
   const mobileStart = STYLES.indexOf('@media (max-width: 759px)');
   const mobileEnd = STYLES.indexOf('@media (max-width: 420px)', mobileStart);
