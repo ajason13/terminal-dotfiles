@@ -23,6 +23,10 @@
   --color-unknown-ink: #eef3fb;
   --map-width: 1000;
   --map-height: 760;
+  /* Mean viewBox stretch of the 1440x900 desktop stage the car art was hand-sized against;
+     --car-unit is the px-per-art-unit multiplier, overridden per route car below. */
+  --car-reference-stretch: 1.2;
+  --car-unit: 1px;
   --route-lap-duration: 64s;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
@@ -319,6 +323,8 @@ textarea {
   position: relative;
   min-height: 0; /* allow the grid row to bound it */
   width: 100%;
+  /* Size container so route cars can be measured against the stretched track, not the viewport. */
+  container-type: size;
   isolation: isolate;
   overflow: hidden;
   background: var(--color-surface-night);
@@ -542,12 +548,20 @@ textarea {
   --route-upright-heading: 0deg;
   --drift-yaw: 0deg;
   --drift-upright-yaw: 0deg;
+  /* The route SVG stretches its viewBox to fill the stage, so the track widens with the
+     stage while px-sized art would not. Grow with the mean stretch, never below reference. */
+  --car-unit: clamp(
+    1px,
+    (100cqw / var(--map-width) + 100cqh / var(--map-height)) / 2
+      / var(--car-reference-stretch),
+    2.5px
+  );
   position: absolute;
   z-index: 3;
   left: var(--vehicle-x);
   top: var(--vehicle-y);
-  width: 52px;
-  height: 52px;
+  width: calc(52 * var(--car-unit));
+  height: calc(52 * var(--car-unit));
   transform: translate(-50%, -50%);
   pointer-events: auto;
 }
@@ -567,8 +581,8 @@ textarea {
   position: relative;
   z-index: 1;
   display: grid;
-  width: 52px;
-  height: 52px;
+  width: calc(52 * var(--car-unit));
+  height: calc(52 * var(--car-unit));
   min-width: 44px;
   min-height: 44px;
   margin: 0;
@@ -614,7 +628,7 @@ textarea {
   content: "";
   position: absolute;
   left: 50%;
-  top: calc(50% + 20px);
+  top: calc(50% + 20 * var(--car-unit));
   border-radius: 50%;
   background: radial-gradient(
     circle at 50% 50%,
@@ -629,9 +643,9 @@ textarea {
 .car-body {
   position: relative;
   display: block;
-  width: 32px;
-  height: 48px;
-  filter: drop-shadow(0 6px 5px rgb(0 0 0 / .62));
+  width: calc(32 * var(--car-unit));
+  height: calc(48 * var(--car-unit));
+  filter: drop-shadow(0 calc(6 * var(--car-unit)) calc(5 * var(--car-unit)) rgb(0 0 0 / .62));
 }
 
 .car-silhouette {
