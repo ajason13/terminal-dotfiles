@@ -964,6 +964,50 @@ test('breakpoint pairs preserve phased focus clearance and target separation', a
   expect(geometryFailures, JSON.stringify(geometryFailures)).toEqual([]);
 });
 
+// Long status text once wrapped per character inside the nowrap bar, growing it to ~300px
+// and squeezing the stage until route focus rings overflowed it. Text length is driven
+// here rather than through a snapshot so the bound holds regardless of font metrics.
+test('header status text cannot grow the bar or squeeze route clearance', async ({ page }) => {
+  if (page.viewportSize().width < 1000) return;
+  for (const width of [960, 1100, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const course of BREAKPOINT_COURSES) {
+      await page.locator('#track-select').selectOption(course);
+      const measure = () => page.evaluate(() => {
+        const stage = document.querySelector('#map-stage').getBoundingClientRect();
+        let clearance = Infinity;
+        for (const wrapper of document.querySelectorAll('.vehicle-anchor')) {
+          const box = wrapper.querySelector('.session-car').getBoundingClientRect();
+          clearance = Math.min(
+            clearance,
+            box.left - stage.left, stage.right - box.right,
+            box.top - stage.top, stage.bottom - box.bottom,
+          );
+        }
+        return {
+          bar: document.querySelector('.dashboard-bar').getBoundingClientRect().height,
+          clearance,
+        };
+      });
+
+      const baseline = await measure();
+      await page.evaluate(() => {
+        document.querySelector('#source-age').textContent = 'observed 240 minutes ago '.repeat(16);
+        document.querySelector('#source-notice').textContent = 'Live snapshot rejected; showing fixtures. '.repeat(16);
+        document.querySelector('#source-label').textContent = 'Live · one-shot tmux observation '.repeat(8);
+      });
+      const flooded = await measure();
+
+      const context = `${width}/${course}`;
+      expect(flooded.bar, `${context} bar height`).toBeCloseTo(baseline.bar, 1);
+      // 3px is the focus-ring expansion the breakpoint audit holds route targets to.
+      expect(flooded.clearance, `${context} route clearance`).toBeGreaterThanOrEqual(3);
+      await page.reload();
+      await page.waitForSelector('.vehicle-anchor');
+    }
+  }
+});
+
 test('mobile Cypress scale switches without replacing focused pinned route controls', async ({
   page,
 }) => {
