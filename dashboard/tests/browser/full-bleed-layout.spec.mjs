@@ -64,7 +64,11 @@ test('the pit divides into tmux-session bays, newest-first inside each', async (
 test('an all-on-track session shows an empty bay rather than vanishing', async ({ page }) => {
   const dotfiles = page.locator('#pit .pit-bay', { has: page.locator('.pit-bay-label', { hasText: 'dotfiles' }) });
   await expect(dotfiles.locator('.pit-vehicle')).toHaveCount(0);
-  await expect(dotfiles.locator('.pit-bay-mount')).toBeVisible();
+  const mount = dotfiles.locator('.pit-bay-mount');
+  await expect(mount).toBeVisible();
+  // The generated ::after content is what actually reads "Clear" to a sighted user.
+  const generated = await mount.evaluate((el) => getComputedStyle(el, '::after').content);
+  expect(generated).toContain('Clear');
 });
 
 test('parked (pit) cars mount inside a pit bay, not on the stage', async ({ page }) => {

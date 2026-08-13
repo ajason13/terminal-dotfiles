@@ -497,8 +497,7 @@ playwright-cli -s=dashboard-live run-code "async page => {
 
 For each transition, inspect source and age labels, actual input
 `disabled`/`aria-busy` settlement, duplicate-node absence, and cleared pinned
-state. For live mode assert three rendered unknown cars, one explicit
-Unclassified-hold overflow, and a visible distinct dashed `?` region.
+state. For live mode assert three rendered unknown cars.
 
 Fold/unfold the legend and confirm the car tooltip tracks focus:
 
@@ -538,10 +537,8 @@ Geometry assertions at 1440x900:
   High Moor -> Pass Ladder -> Cedar Chain -> Cloud Ridge -> Long Arc
   -> Valley Gate direction while cars remain centered over the roadway;
 - distinct session controls do not overlap at the canonical starting phases;
-- the full-bleed `#map-stage`, the bottom `#pit-lane` bays, the Unclassified
-  hold, tooltips, and the corner `#overflow-notice` pill all remain inside
-  their intended bounds;
-- the Unclassified hold bottom remains inside the viewport;
+- the full-bleed `#map-stage`, the bottom `#pit-lane` bays, tooltips, and the
+  corner `#overflow-notice` pill all remain inside their intended bounds;
 - `#pit-lane` sits below `#map-stage` as a row of per-tmux-session bays (one
   per session plus `Unassigned`, not one per status), and the header bar's
   source controls remain secondary to the stage.
@@ -826,7 +823,6 @@ and 390x844 using files freshly produced in a `mktemp` directory:
   and zero visible controls outside the map (128 samples across 12 route cars);
 - desktop route controls measured 52px and mobile route controls measured the
   accessible 44px minimum; horizontal overflow was zero;
-- the desktop Unclassified hold bottom was 879.09px within the 900px viewport;
 - source controls measured 44px, and keyboard focus on the real file input
   produced a solid 3px outline on its visible label;
 - focus, hover, and pinning each paused traversal with zero sampled movement;
