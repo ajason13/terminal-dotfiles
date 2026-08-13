@@ -1260,6 +1260,12 @@ details[open] > .overflow-toggle::before {
     min-height: 580px;
   }
 
+  /* Bar wraps to two rows and bays stack full-width here, so the desktop cap would push
+     the page past the viewport; keep the lane's own scroll from ever forcing page scroll. */
+  .dashboard-root {
+    --pit-lane-max: min(32vh, 6rem);
+  }
+
   .dashboard-bar {
     flex-wrap: wrap;
     gap: 6px 10px;
