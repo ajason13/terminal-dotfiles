@@ -1123,6 +1123,16 @@ test('CSS and document preserve 44px targets and map-first responsive behavior',
   // positioning; assert the pair together so they cannot drift apart.
   assert.match(STYLES, /\.pit-vehicle \.session-tooltip\s*\{[^}]*position:\s*fixed/s);
 
+  // The docked bubble must shrink to its content and dock off the lane's measured top.
+  // A `width: min(a, b)` resolves to a fixed length, and --pit-lane-max is a cap the
+  // lane usually does not reach; each shipped as visible dead space once before.
+  const pitTooltipRule = STYLES.match(/\.pit-vehicle \.session-tooltip\s*\{([^}]*)\}/s)?.[1] ?? '';
+  assert.match(pitTooltipRule, /width:\s*max-content/);
+  assert.match(pitTooltipRule, /max-width:\s*min\(28rem,\s*calc\(100vw - 2rem\)\)/);
+  assert.doesNotMatch(pitTooltipRule, /^\s*width:\s*min\(/m);
+  assert.match(pitTooltipRule, /bottom:\s*calc\(var\(--pit-dock-offset,\s*var\(--pit-lane-max\)\) \+ 14px\)/);
+  assert.match(RENDERER, /setProperty\('--pit-dock-offset'/);
+
   const mobileStart = STYLES.indexOf('@media (max-width: 759px)');
   const mobileEnd = STYLES.indexOf('@media (max-width: 420px)', mobileStart);
   const mobile = STYLES.slice(mobileStart, mobileEnd);

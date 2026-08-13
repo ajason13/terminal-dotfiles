@@ -348,3 +348,93 @@ test('a docked pit tooltip is fully in-viewport and unclipped by the scrolling l
   expect(box.y).toBeLessThan(laneTop);
   await expect(tooltip).toHaveCSS('position', 'fixed');
 });
+
+// Deriving the dock offset from --pit-lane-max (a cap the lane usually does not reach)
+// left the bubble floating 55.8px above the lane. Measure at more than one lane height:
+// the offset was right only while the lane happened to sit pinned at its cap.
+test('the docked pit tooltip stays 14px above the lane at any lane height', async ({ page }) => {
+  test.skip(page.viewportSize().width <= 759, 'mobile docks below the header, not above the lane');
+  const gapAtCurrentHeight = () => page.evaluate(() => {
+    const wrapper = document.querySelector('#pit .pit-vehicle');
+    const car = wrapper.querySelector('.session-car');
+    car.focus();
+    const tip = wrapper.querySelector('.session-tooltip').getBoundingClientRect();
+    const lane = document.querySelector('#pit-lane').getBoundingClientRect();
+    car.blur();
+    return { gap: lane.top - tip.bottom, laneHeight: lane.height, tipTop: tip.top };
+  });
+
+  const asRendered = await gapAtCurrentHeight();
+  expect(asRendered.gap, JSON.stringify(asRendered)).toBeCloseTo(14, 0);
+  expect(asRendered.laneHeight).toBeLessThan(
+    await page.locator('#pit-lane').evaluate((el) => parseFloat(getComputedStyle(el).maxHeight)),
+  ); // the regression only shows up while the lane is short of its cap
+
+  // Shrink the lane, then grow it past its cap, and re-measure each time.
+  await page.evaluate(() => {
+    document.querySelectorAll('#pit .pit-bay .pit-vehicle').forEach((v, i) => { if (i > 0) v.remove(); });
+  });
+  const shrunk = await gapAtCurrentHeight();
+  expect(shrunk.laneHeight, 'lane must actually have shrunk').toBeLessThan(asRendered.laneHeight - 10);
+  expect(shrunk.gap, JSON.stringify(shrunk)).toBeCloseTo(14, 0);
+
+  await page.evaluate(() => {
+    const mount = document.querySelector('#pit .pit-bay-mount');
+    for (let i = 0; i < 40; i += 1) {
+      const filler = document.createElement('div');
+      filler.style.cssText = 'width:52px;height:52px';
+      mount.append(filler);
+    }
+  });
+  const capped = await gapAtCurrentHeight();
+  expect(capped.laneHeight, 'lane must now be at its cap').toBeGreaterThan(shrunk.laneHeight + 10);
+  expect(capped.gap, JSON.stringify(capped)).toBeCloseTo(14, 0);
+  expect(capped.tipTop).toBeGreaterThanOrEqual(0);
+});
+
+test('pit tooltips shrink to their content instead of a fixed width', async ({ page }) => {
+  const bubbles = await page.evaluate(() => {
+    const out = [];
+    for (const wrapper of document.querySelectorAll('#pit .pit-vehicle')) {
+      const car = wrapper.querySelector('.session-car');
+      car.focus();
+      const tip = wrapper.querySelector('.session-tooltip');
+      const style = getComputedStyle(tip);
+      const chrome = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight)
+        + parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
+      // .visually-hidden a11y text is absolutely positioned and clipped to 1px, but a
+      // Range still reports its full natural extent - measuring it as a "content line"
+      // overstates the widest line by ~200px and hides the very defect under test.
+      const hidden = [...tip.querySelectorAll('.visually-hidden')];
+      hidden.forEach((node) => { node.style.display = 'none'; });
+      const inFlow = [...tip.children].filter((c) => getComputedStyle(c).position !== 'absolute');
+      const widestLine = Math.max(...inFlow.map((child) => {
+        // The preview tile is a fixed-size box with no text, so a Range under-measures it.
+        if (child.classList.contains('vehicle-preview')) return child.getBoundingClientRect().width;
+        const range = document.createRange();
+        range.selectNodeContents(child);
+        return range.getBoundingClientRect().width;
+      }));
+      const clipped = inFlow.filter((child) => child.scrollWidth > child.clientWidth + 1).length;
+      hidden.forEach((node) => { node.style.removeProperty('display'); });
+      out.push({
+        id: wrapper.dataset.sessionId,
+        width: tip.getBoundingClientRect().width,
+        cap: parseFloat(style.maxWidth),
+        deadSpace: tip.getBoundingClientRect().width - widestLine - chrome,
+        clipped,
+      });
+      car.blur();
+    }
+    return out;
+  });
+
+  expect(bubbles.length).toBeGreaterThan(0);
+  // A bubble is either shrink-wrapped around its widest line or held at the cap, where
+  // the leftover is line-breaking slack rather than an unused fixed width.
+  const slack = bubbles.filter((b) => b.width < b.cap - 1 && b.deadSpace > 4);
+  expect(slack, JSON.stringify(slack)).toEqual([]);
+  // At least one bubble must be narrower than the cap, or a fixed width would still pass.
+  expect(bubbles.some((b) => b.width < b.cap - 1), JSON.stringify(bubbles)).toBe(true);
+  expect(bubbles.filter((b) => b.clipped > 0), 'no line may overflow the shrunk bubble').toEqual([]);
+});

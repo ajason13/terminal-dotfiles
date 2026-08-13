@@ -539,6 +539,20 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
   vehicleLayer.addEventListener('pointerover', clampFromEvent, { signal });
   vehicleLayer.addEventListener('focusin', clampFromEvent, { signal });
 
+  // Every pit tooltip is fixed-position and shares one docked rect above the lane, so
+  // the offset is the lane's real top edge. Deriving it from --pit-lane-max instead
+  // floats the bubble by the slack between that cap and the height the lane actually
+  // takes. Measured per show like the route clamp above, so it also survives a resize.
+  const pitLane = root.querySelector?.('#pit-lane') ?? null;
+  function dockPitTooltips() {
+    const laneTop = pitLane?.getBoundingClientRect?.().top;
+    const viewportHeight = documentRef.documentElement?.clientHeight;
+    if (!Number.isFinite(laneTop) || !Number.isFinite(viewportHeight)) return;
+    pitLane.style.setProperty('--pit-dock-offset', `${Math.max(0, viewportHeight - laneTop)}px`);
+  }
+  pitMount.addEventListener('pointerover', dockPitTooltips, { signal });
+  pitMount.addEventListener('focusin', dockPitTooltips, { signal });
+
   let track = getTrack(initialTrack.id);
   root.dataset.trackId = track.id;
   mapHeading.textContent = track.title;
@@ -782,6 +796,9 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
 
       if (pinnedId && !carsById.has(pinnedId)) pinnedId = null;
       setPinned(pinnedId);
+      // A pinned tooltip stays visible across ticks, and this tick may have added or
+      // dropped a bay, so re-dock it here too - the per-show handler will not fire again.
+      dockPitTooltips();
 
       snapshot = nextSnapshot;
       placements = nextPlacements;
