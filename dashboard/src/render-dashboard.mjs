@@ -414,6 +414,9 @@ function syncPitBays(documentRef, pitMount, roster, bays) {
     if (!entry) {
       const section = element(documentRef, 'section', 'pit-bay');
       section.dataset.bayKey = id;
+      // group, not the region a labelled section would imply: four bays plus the lane
+      // would clutter the landmark rotor, and the h3 already makes each bay navigable.
+      section.setAttribute('role', 'group');
       section.setAttribute('aria-label', `${bay.label} bay`);
       const heading = element(documentRef, 'h3', 'pit-bay-name');
       const count = element(documentRef, 'span', 'pit-bay-count', '0');

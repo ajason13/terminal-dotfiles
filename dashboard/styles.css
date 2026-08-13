@@ -1076,6 +1076,12 @@ textarea {
   visibility: hidden;
 }
 
+/* Same reason for hover: a focused car plus a hovered one otherwise stack two tooltips
+   on that rect. The pin still outranks the pointer, hence the :not(:has(...)). */
+.pit-lane:has(.pit-vehicle:hover):not(:has(.pit-vehicle[data-pinned="true"])) .pit-vehicle:not(:hover) .session-tooltip {
+  visibility: hidden;
+}
+
 .pit-overflow {
   margin-top: 2px;
   padding: .4rem;
