@@ -51,6 +51,9 @@ form is right on this axis and was wrong on that one.
 
 ## Decisions locked
 
+Amended 2026-08-12 after branch review: decision 6's rationale for the per-bay count was
+wrong and is restated below. No behavior changed.
+
 1. **Group spatially, by tmux session.** The job is scanning a session's parked work
    as a block, not merely identifying a single car's owner. A per-card session chip
    was considered and rejected as insufficient for that job.
@@ -70,9 +73,11 @@ form is right on this axis and was wrong on that one.
    when it holds at least one car and never shows a `Clear` placeholder.
 6. **Capacity stays globally 18.** `PIT_CAPACITY` keeps its current meaning: one pool
    of 18 by global recency, oldest overflowing into the existing collapsed chip. No
-   per-bay quotas - one capacity rule in one place. Consequence: a busy session can
-   push a quiet session's only car into overflow, so each bay header carries a count
-   to distinguish "nothing parked" from "its car overflowed."
+   per-bay quotas - one capacity rule in one place. Consequence: a busy session can push
+   a quiet session's only car into overflow. Each bay header carries a count of the cars
+   placed in that bay. That count is a convenience readout, not an overflow signal - it
+   reads 0 both when nothing is parked and when the bay's only car overflowed. The global
+   overflow chip remains the only overflow signal.
 7. **The lane scrolls; the stage does not shrink.** `.pit-lane` takes
    `max-height: min(32vh, 16rem)` with `overflow-y: auto` - about two bay rows. The pit
    lane is the `auto` row in `grid-template-rows: auto minmax(0, 1fr) auto`, so an
