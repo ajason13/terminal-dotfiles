@@ -183,6 +183,7 @@ return {
   '200-anime/initial-d/195-fairlady-r32-fc-toll-lineup.png',
   '200-anime/initial-d/196-rx7-nsx-front-lead.png',
   '200-anime/initial-d/197-nsx-rx7-rear-pursuit.png',
+  '200-anime/initial-d/198-gr86-rainy-chase.png',
   '200-anime/one-punch-man/002-genos-red-apparition.png',
   '200-anime/one-punch-man/003-night-canyon-standoff.png',
   '200-anime/haikyuu/001-minus-tempo-quick.png',
