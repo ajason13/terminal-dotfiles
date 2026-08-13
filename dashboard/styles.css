@@ -995,8 +995,10 @@ textarea {
   flex: 0 1 auto;
   flex-direction: column;
   gap: .3rem;
-  /* two 52px car columns plus the grid gap, so a one-car bay is not a sliver */
-  min-width: 116px;
+  /* Three 52px car columns: 3x52 + 2x.55rem gap = 173.6px of content, plus the
+     border-box overhead of .45rem side padding and 1px borders (16.4px). Two columns
+     would put five cars in three rows and scroll the capped lane. */
+  min-width: 190px;
   padding: .35rem .45rem;
   border: 1px solid var(--color-boundary);
   border-radius: .5rem;

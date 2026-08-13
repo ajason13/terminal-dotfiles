@@ -301,7 +301,9 @@ test('mobile keeps the pit full-width and never overflows horizontally', async (
   await expect(page.locator('#pit')).toBeVisible();
   const cols = await page.locator('#pit .pit-bay-mount').first()
     .evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(' ').length);
-  expect(cols).toBeGreaterThanOrEqual(1); // auto-fill wrapping grid
+  // A full-width bay at 390px holds five 52px tracks (5x52 + 4x8.8 gap = 295.2 of 354).
+  // Asserting the real count is the point: >= 1 also passes when auto-fill collapses.
+  expect(cols).toBe(5);
 });
 
 test('the lane stays capped and the page never scrolls vertically', async ({ page }) => {
@@ -314,6 +316,20 @@ test('the lane stays capped and the page never scrolls vertically', async ({ pag
     document.documentElement.scrollHeight > document.documentElement.clientHeight + 1
   ));
   expect(overflows).toBe(false);
+});
+
+test('desktop bays are three cars wide and the fixture pit does not scroll', async ({ page }) => {
+  test.skip(page.viewportSize().width <= 759, 'desktop bay width rule only');
+  const cols = await page.locator('#pit .pit-bay-mount').evaluateAll((mounts) => mounts.map(
+    (el) => getComputedStyle(el).gridTemplateColumns.split(' ').length,
+  ));
+  // min-width: 190px leaves 173.6px of content: 3x52 plus two .55rem gaps.
+  expect(cols.every((count) => count === 3), JSON.stringify(cols)).toBe(true);
+  // The cap assertion above cannot catch this: a pinned, scrolling lane satisfies it.
+  const lane = await page.locator('#pit-lane').evaluate((el) => (
+    { scrollHeight: el.scrollHeight, clientHeight: el.clientHeight }
+  ));
+  expect(lane.scrollHeight, JSON.stringify(lane)).toBeLessThanOrEqual(lane.clientHeight);
 });
 
 test('a docked pit tooltip is fully in-viewport and unclipped by the scrolling lane', async ({ page }) => {
