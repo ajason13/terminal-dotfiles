@@ -130,6 +130,29 @@ overflow, console warnings/errors, or page errors. No route, compiler,
 generated artifact, runtime JavaScript, screenshot, package, or tmux path was
 changed.
 
+## Pit session bays, lane cap, and docked tooltips - 2026-08-12
+
+`#pit` is a wrapping flex row of per-tmux-session bays (one bay per live
+session plus a conditional `Unassigned`), each with its own auto-fill
+`.pit-bay-mount` car grid. The bays reflow inside `#pit-lane`, which is capped
+at `min(32vh, 16rem)` on desktop and `min(32vh, 6rem)` at `<=759px` and scrolls
+internally rather than growing; the cap is what keeps the stage's `1fr` row from
+being eaten and keeps the page itself from scrolling vertically. Desktop bays
+are `min-width: 190px`, three 52px car columns, so the canonical
+twenty-four-session fixture's pit fits the cap without scrolling at 1440x900 -
+verify that (`#pit-lane` `scrollHeight <= clientHeight`), not merely that the
+lane respects its cap, since a lane pinned at its cap and scrolling also
+respects it.
+
+Pit tooltips use `position: fixed` at every width and dock to one shared rect
+(above the lane on desktop, below the header bar on mobile). That is what lets
+them escape the lane's scroll clipping, and it is why only one pit tooltip may
+be visible at a time: `:has()` guards suppress the others when a car is pinned
+and when a car is hovered, pin outranking hover. Confirm no ancestor of
+`.pit-vehicle` gains `transform`, `filter`, `contain`, `perspective`, or
+`will-change`, any of which would re-anchor the fixed tooltip and reintroduce
+the clipping.
+
 ## Cypress mobile clearance implementation evidence — 2026-07-28
 
 Roadmap item 4 applies a Cypress-mobile-only centered `0.94` presentation
@@ -497,10 +520,7 @@ playwright-cli -s=dashboard-live run-code "async page => {
 
 For each transition, inspect source and age labels, actual input
 `disabled`/`aria-busy` settlement, duplicate-node absence, and cleared pinned
-state. For live mode assert three rendered unknown cars, one explicit
-Unclassified-hold overflow, and a visible distinct dashed `?` region, and that
-the fourth pit-lane bay (`.pit-hold`) becomes visible only for that live
-observation.
+state. For live mode assert three rendered unknown cars.
 
 Fold/unfold the legend and confirm the car tooltip tracks focus:
 
@@ -540,12 +560,11 @@ Geometry assertions at 1440x900:
   High Moor -> Pass Ladder -> Cedar Chain -> Cloud Ridge -> Long Arc
   -> Valley Gate direction while cars remain centered over the roadway;
 - distinct session controls do not overlap at the canonical starting phases;
-- the full-bleed `#map-stage`, the bottom `#pit-lane` bays, the Unclassified
-  hold, tooltips, and the corner `#overflow-notice` pill all remain inside
-  their intended bounds;
-- the Unclassified hold bottom remains inside the viewport;
-- `#pit-lane` sits below `#map-stage` as a row of labeled bays, and the header
-  bar's source controls remain secondary to the stage.
+- the full-bleed `#map-stage`, the bottom `#pit-lane` bays, tooltips, and the
+  corner `#overflow-notice` pill all remain inside their intended bounds;
+- `#pit-lane` sits below `#map-stage` as a row of per-tmux-session bays (one
+  per session plus `Unassigned`, not one per status), and the header bar's
+  source controls remain secondary to the stage.
 
 For each manually selected course, run the canonical twelve-route fixture and
 then a separate synthetic sixteen-route phase fixture. Drive every route
@@ -619,9 +638,12 @@ motion, source/age/rejection labels, and unknown overflow checks.
 At 390x844 assert:
 
 - document scroll width equals client width (no horizontal overflow);
-- the header bar wraps to multiple rows and the pit lane reflows to a 2x2
-  grid of bays (`getComputedStyle('#pit-lane').gridTemplateColumns` reports
-  two tracks);
+- the header bar wraps to multiple rows and each bay stacks full-width inside
+  `#pit`, a flex row that wraps, with the cars inside its
+  `.pit-bay-mount` laid out on an auto-fill grid
+  (`getComputedStyle('#pit .pit-bay-mount').gridTemplateColumns` reports the
+  tracks); `#pit-lane` is the scrolling grid container around `#pit`, not the
+  grid the bays reflow within;
 - no car controls overlap;
 - route cars advance between samples while remaining centered over the scaled
   roadway and inside the map bounds;
@@ -824,7 +846,6 @@ and 390x844 using files freshly produced in a `mktemp` directory:
   and zero visible controls outside the map (128 samples across 12 route cars);
 - desktop route controls measured 52px and mobile route controls measured the
   accessible 44px minimum; horizontal overflow was zero;
-- the desktop Unclassified hold bottom was 879.09px within the 900px viewport;
 - source controls measured 44px, and keyboard focus on the real file input
   produced a solid 3px outline on its visible label;
 - focus, hover, and pinning each paused traversal with zero sampled movement;

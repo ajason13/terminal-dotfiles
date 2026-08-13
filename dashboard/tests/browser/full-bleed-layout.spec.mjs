@@ -40,19 +40,35 @@ test('the legend is folded behind a disclosure until opened', async ({ page }) =
   await expect(page.locator('.legend-disclosure .state-legend li')).toHaveCount(7);
 });
 
-test('the pit is one region below the stage, ordered newest-first', async ({ page }) => {
-  await expect(page.locator('.pit-bay')).toHaveCount(0);
+test('the pit divides into tmux-session bays, newest-first inside each', async ({ page }) => {
   await expect(page.locator('#pit-heading')).toHaveText('Pit');
-  const stage = await page.locator('#map-stage').boundingBox();
-  const lane = await page.locator('#pit-lane').boundingBox();
-  expect(lane.y).toBeGreaterThanOrEqual(stage.y + stage.height - 1);
+  await expect(page.locator('#pit .pit-bay-label')).toHaveText([
+    'canary', 'dotfiles', 'e2e', 'Unassigned',
+  ]);
+  await expect(page.locator('#pit .pit-bay-count')).toHaveText(['5', '0', '5', '2']);
 
-  // DOM order in #pit must be descending lastActivityAt (newest first).
-  const times = await page.locator('#pit .pit-vehicle .activity-time').evaluateAll((els) => (
-    els.map((el) => Date.parse(el.getAttribute('datetime')))
+  const lane = await page.locator('#pit-lane').boundingBox();
+  const stage = await page.locator('#map-stage').boundingBox();
+  expect(lane.y).toBeGreaterThan(stage.y);
+
+  // Within each bay, DOM order must be descending lastActivityAt.
+  const perBay = await page.locator('#pit .pit-bay-mount').evaluateAll((mounts) => mounts.map(
+    (mount) => [...mount.querySelectorAll('.activity-time')]
+      .map((el) => Date.parse(el.getAttribute('datetime'))),
   ));
-  const sorted = [...times].sort((a, b) => b - a);
-  expect(times).toEqual(sorted);
+  for (const times of perBay) {
+    expect(times).toEqual([...times].sort((a, b) => b - a));
+  }
+});
+
+test('an all-on-track session shows an empty bay rather than vanishing', async ({ page }) => {
+  const dotfiles = page.locator('#pit .pit-bay', { has: page.locator('.pit-bay-label', { hasText: 'dotfiles' }) });
+  await expect(dotfiles.locator('.pit-vehicle')).toHaveCount(0);
+  const mount = dotfiles.locator('.pit-bay-mount');
+  await expect(mount).toBeVisible();
+  // The generated ::after content is what actually reads "Clear" to a sighted user.
+  const generated = await mount.evaluate((el) => getComputedStyle(el, '::after').content);
+  expect(generated).toContain('Clear');
 });
 
 test('parked (pit) cars mount inside a pit bay, not on the stage', async ({ page }) => {
@@ -283,6 +299,52 @@ test('mobile keeps the pit full-width and never overflows horizontally', async (
   const stage = await page.locator('#map-stage').boundingBox();
   expect(stage.height).toBeGreaterThan(500); // stage stays the hero within the chrome budget
   await expect(page.locator('#pit')).toBeVisible();
-  const cols = await page.locator('#pit').evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(' ').length);
-  expect(cols).toBeGreaterThanOrEqual(1); // auto-fill wrapping grid
+  const cols = await page.locator('#pit .pit-bay-mount').first()
+    .evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(' ').length);
+  // A full-width bay at 390px holds five 52px tracks (5x52 + 4x8.8 gap = 295.2 of 354).
+  // Asserting the real count is the point: >= 1 also passes when auto-fill collapses.
+  expect(cols).toBe(5);
+});
+
+test('the lane stays capped and the page never scrolls vertically', async ({ page }) => {
+  const cap = await page.locator('#pit-lane').evaluate((el) => {
+    const limit = parseFloat(getComputedStyle(el).maxHeight);
+    return { height: el.getBoundingClientRect().height, limit };
+  });
+  expect(cap.height).toBeLessThanOrEqual(cap.limit + 1);
+  const overflows = await page.evaluate(() => (
+    document.documentElement.scrollHeight > document.documentElement.clientHeight + 1
+  ));
+  expect(overflows).toBe(false);
+});
+
+test('desktop bays are three cars wide and the fixture pit does not scroll', async ({ page }) => {
+  test.skip(page.viewportSize().width <= 759, 'desktop bay width rule only');
+  const cols = await page.locator('#pit .pit-bay-mount').evaluateAll((mounts) => mounts.map(
+    (el) => getComputedStyle(el).gridTemplateColumns.split(' ').length,
+  ));
+  // min-width: 190px leaves 173.6px of content: 3x52 plus two .55rem gaps.
+  expect(cols.every((count) => count === 3), JSON.stringify(cols)).toBe(true);
+  // The cap assertion above cannot catch this: a pinned, scrolling lane satisfies it.
+  const lane = await page.locator('#pit-lane').evaluate((el) => (
+    { scrollHeight: el.scrollHeight, clientHeight: el.clientHeight }
+  ));
+  expect(lane.scrollHeight, JSON.stringify(lane)).toBeLessThanOrEqual(lane.clientHeight);
+});
+
+test('a docked pit tooltip is fully in-viewport and unclipped by the scrolling lane', async ({ page }) => {
+  const car = page.locator('#pit .pit-vehicle .session-car').first();
+  await car.focus();
+  const tooltip = page.locator('#pit .pit-vehicle').first().locator('.session-tooltip');
+  await expect(tooltip).toBeVisible();
+  const box = await tooltip.boundingBox();
+  const viewport = page.viewportSize();
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+  // The lane's own top edge must not crop it: fixed positioning is what allows this.
+  const laneTop = (await page.locator('#pit-lane').boundingBox()).y;
+  expect(box.y).toBeLessThan(laneTop);
+  await expect(tooltip).toHaveCSS('position', 'fixed');
 });

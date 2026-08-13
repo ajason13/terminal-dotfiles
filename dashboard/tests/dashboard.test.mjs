@@ -22,6 +22,8 @@ import {
   PIT_CAPACITY,
   ROUTE_ANCHORS,
   SEGMENTS,
+  UNASSIGNED_BAY_LABEL,
+  allocatePitBays,
   allocateSessions,
   fnv1a32,
   preferredRouteIndex,
@@ -179,7 +181,7 @@ test('document removes the status rail and declares the exact ordered pit stack'
   }
   assert.match(RENDERER, /placement\.pool === 'route' \? 'route' : 'pit'/);
   assert.match(RENDERER, /vehicleLayer\.append\(car\.wrapper\)/);
-  assert.match(RENDERER, /pitMount\.append\(entry\.wrapper\)/);
+  assert.match(RENDERER, /bay\.mount\.append\(item\.wrapper\)/);
   assert.match(RENDERER, /for \(const status of \['active', 'thinking'\]\)/);
   assert.match(RENDERER, /aria-label', `\$\{count\} \$\{presentation\.label\.toLowerCase\(\)\} sessions on track`/);
   const summarySource = RENDERER.slice(
@@ -1115,8 +1117,11 @@ test('CSS and document preserve 44px targets and map-first responsive behavior',
   assert.match(rootLayout, /grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\)\s+auto\b/);
   const pitLaneRule = STYLES.match(/\.pit-lane\s*\{([^}]*)\}/s)?.[1] ?? '';
   assert.match(pitLaneRule, /display:\s*grid/);
-  assert.match(pitLaneRule, /overflow:\s*visible/);
-  assert.doesNotMatch(pitLaneRule, /overflow:\s*auto/);
+  assert.match(pitLaneRule, /overflow:\s*hidden auto/);
+  assert.doesNotMatch(pitLaneRule, /overflow:\s*visible/);
+  // A scrolling lane only stays safe because the pit tooltip escapes via fixed
+  // positioning; assert the pair together so they cannot drift apart.
+  assert.match(STYLES, /\.pit-vehicle \.session-tooltip\s*\{[^}]*position:\s*fixed/s);
 
   const mobileStart = STYLES.indexOf('@media (max-width: 759px)');
   const mobileEnd = STYLES.indexOf('@media (max-width: 420px)', mobileStart);
@@ -1134,7 +1139,7 @@ test('CSS and document preserve 44px targets and map-first responsive behavior',
   assert.match(mobile, /\.vehicle-anchor \.car-body\s*\{[^}]*width:\s*24px;[^}]*height:\s*36px/si);
   assert.ok(INDEX.indexOf('id="map-stage"') < INDEX.indexOf('id="pit-lane"'));
   assert.match(STYLES, /overflow-x:\s*hidden/);
-  assert.match(STYLES, /\.pit-mount\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fill,\s*52px\)/si);
+  assert.match(STYLES, /\.pit-bay-mount\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fill,\s*52px\)/si);
   assert.doesNotMatch(STYLES, /status-rail|session-list|rail-item/);
 });
 
@@ -1311,8 +1316,8 @@ test('car-badge fades out while its tooltip is open, for both car types', () => 
 });
 
 test('pit grid reserves row room so a below-car badge clears the next row', () => {
-  assert.match(BASE_STYLES, /\.pit-mount \{[^}]*gap:\s*1\.15rem \.55rem;/s);
-  assert.match(BASE_STYLES, /\.pit-mount \{[^}]*padding-bottom:\s*16px;/s);
+  assert.match(BASE_STYLES, /\.pit-bay-mount \{[^}]*gap:\s*1\.15rem \.55rem;/s);
+  assert.match(BASE_STYLES, /\.pit-bay-mount \{[^}]*padding-bottom:\s*16px;/s);
 });
 
 test('fixtures cover every badge/tooltip work-ref state', () => {
@@ -1330,4 +1335,127 @@ test('README documents the work-ref naming convention and auto-rename requiremen
   assert.match(README, /automatic-rename off/);
   assert.match(README, /PR#\d+|PR#42/);
   assert.match(README, /BB-\d+|[A-Z]{2,}-\d+/);
+});
+
+test('pit placements carry a bay key and a within-bay recency rank', () => {
+  const data = normalized([
+    session('e-new', 'idle', { displayName: 'E2E ▸ newer', lastActivityAt: '2026-07-19T20:20:00Z' }),
+    session('e-old', 'idle', { displayName: 'E2E ▸ older', lastActivityAt: '2026-07-19T20:10:00Z' }),
+    session('w-one', 'idle', { displayName: 'Workflow ▸ only', lastActivityAt: '2026-07-19T20:15:00Z' }),
+  ]);
+  const byId = new Map(allocateSessions(data.sessions).map((item) => [item.id, item]));
+  // slotIndex is global recency; bayRank counts only within the bay.
+  assert.deepEqual(['e-new', 'w-one', 'e-old'].map((id) => {
+    const placement = byId.get(id);
+    return [placement.bayKey, placement.bayRank, placement.slotIndex];
+  }), [['E2E', 0, 0], ['Workflow', 0, 1], ['E2E', 1, 2]]);
+});
+
+test('pit location label names the bay and counts within it', () => {
+  const data = normalized([
+    session('a', 'idle', { displayName: 'E2E ▸ newer', lastActivityAt: '2026-07-19T20:20:00Z' }),
+    session('b', 'idle', { displayName: 'E2E ▸ older', lastActivityAt: '2026-07-19T20:10:00Z' }),
+  ]);
+  const placements = allocateSessions(data.sessions);
+  assert.equal(placements[0].locationLabel, 'Pit, E2E bay, position 1');
+  assert.equal(placements[1].locationLabel, 'Pit, E2E bay, position 2');
+});
+
+test('a session with no session prefix lands in the Unassigned bay', () => {
+  const [placement] = allocateSessions(normalized([session('bare', 'idle')]).sessions);
+  assert.equal(placement.bayKey, null);
+  assert.equal(placement.locationLabel, 'Pit, Unassigned bay, position 1');
+});
+
+test('bays sort case-insensitively and Unassigned comes last', () => {
+  const data = normalized([
+    session('w', 'idle', { displayName: 'Workflow ▸ w' }),
+    session('c', 'idle', { displayName: 'canary ▸ c' }),
+    session('e', 'idle', { displayName: 'E2E ▸ e' }),
+    session('bare', 'idle'),
+    session('d', 'idle', { displayName: 'dotfiles ▸ d' }),
+  ]);
+  const bays = allocatePitBays(data.sessions);
+  assert.deepEqual(bays.map((bay) => bay.key), ['canary', 'dotfiles', 'E2E', 'Workflow', null]);
+  assert.deepEqual(bays.at(-1).label, UNASSIGNED_BAY_LABEL);
+});
+
+test('an all-on-track session still gets a bay so it can render Clear', () => {
+  const data = normalized([
+    session('running', 'active', { displayName: 'E2E ▸ busy', progress: 0.5 }),
+    session('parked', 'idle', { displayName: 'canary ▸ waiting' }),
+  ]);
+  assert.deepEqual(allocatePitBays(data.sessions).map((bay) => bay.key), ['canary', 'E2E']);
+});
+
+test('Unassigned appears only when it holds a placed car', () => {
+  const data = normalized([session('bare', 'active', { progress: 0 })]);
+  assert.deepEqual(allocatePitBays(data.sessions), []);
+});
+
+test('an overflowed car with no session prefix does not spawn a phantom Unassigned bay', () => {
+  const named = Array.from({ length: PIT_CAPACITY }, (_, index) => session(
+    `n${String(index).padStart(2, '0')}`,
+    'idle',
+    {
+      displayName: `E2E ▸ w${index}`,
+      // Newest to oldest, all younger than the unprefixed car below, so they fill
+      // every slot and the unprefixed one is the sole overflow.
+      lastActivityAt: `2026-07-19T20:${String(39 - index).padStart(2, '0')}:00Z`,
+    },
+  ));
+  const bare = session('bare', 'idle', { lastActivityAt: '2026-07-19T20:00:00Z' });
+  const data = normalized([...named, bare]);
+  assert.deepEqual(allocatePitBays(data.sessions).map((bay) => bay.key), ['E2E']);
+});
+
+test('bay assignment and roster ignore input order', () => {
+  const sessions = normalized([
+    session('a', 'idle', { displayName: 'E2E ▸ a', lastActivityAt: '2026-07-19T20:20:00Z' }),
+    session('b', 'idle', { displayName: 'canary ▸ b', lastActivityAt: '2026-07-19T20:15:00Z' }),
+    session('c', 'idle', { displayName: 'E2E ▸ c', lastActivityAt: '2026-07-19T20:10:00Z' }),
+  ]).sessions;
+  const digest = (items) => Object.fromEntries(
+    allocateSessions(items).map((item) => [item.id, `${item.bayKey}:${item.bayRank}`]),
+  );
+  const reversed = [...sessions].reverse();
+  assert.deepEqual(digest(reversed), digest(sessions));
+  assert.deepEqual(
+    allocatePitBays(reversed).map((bay) => bay.key),
+    allocatePitBays(sessions).map((bay) => bay.key),
+  );
+});
+
+test('capacity stays global: the oldest pit car overflows regardless of bay', () => {
+  const sessions = Array.from({ length: PIT_CAPACITY + 1 }, (_, index) => session(
+    `p${String(index).padStart(2, '0')}`,
+    'idle',
+    {
+      displayName: `${index % 2 === 0 ? 'E2E' : 'canary'} ▸ w${index}`,
+      // index 0 is newest, each later one a minute older, so the last one overflows.
+      lastActivityAt: `2026-07-19T20:${String(40 - index).padStart(2, '0')}:00Z`,
+    },
+  ));
+  const overflowed = allocateSessions(normalized(sessions).sessions).filter((item) => item.overflow);
+  assert.deepEqual(overflowed.map((item) => item.id), [`p${PIT_CAPACITY}`]);
+});
+
+test('route placements and overflowed pit placements never gain bayKey or bayRank', () => {
+  const pitSessions = Array.from({ length: PIT_CAPACITY + 1 }, (_, index) => session(
+    `p${String(index).padStart(2, '0')}`,
+    'idle',
+    { lastActivityAt: `2026-07-19T20:${String(40 - index).padStart(2, '0')}:00Z` },
+  ));
+  const routeSession = session('on-route', 'active', { progress: 0.5 });
+  const placements = allocateSessions(normalized([...pitSessions, routeSession]).sessions);
+  const routePlacement = placements.find((item) => item.id === 'on-route');
+  const overflowedPitPlacement = placements.find((item) => item.overflow);
+  assert.equal(routePlacement.pool, 'route');
+  assert.equal(overflowedPitPlacement.pool, 'pit');
+  // The renderer gates on pool === 'pit' && !overflow before reading bayKey/bayRank,
+  // so these fields must be absent (not merely undefined) outside that gate.
+  for (const placement of [routePlacement, overflowedPitPlacement]) {
+    assert.equal(Object.hasOwn(placement, 'bayKey'), false);
+    assert.equal(Object.hasOwn(placement, 'bayRank'), false);
+  }
 });
