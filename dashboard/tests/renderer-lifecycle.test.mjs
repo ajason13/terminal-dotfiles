@@ -1055,8 +1055,8 @@ test('update() adds a bay when a new tmux session appears and drops it when it g
   assert.deepEqual(pitIds(root), ['e']);
 });
 
-test('update() keeps a pinned pit car pinned and focused across a bay roster change', () => {
-  const { root, documentRef } = dashboardRoot();
+test('update() keeps a pinned pit car pinned across a bay roster change', () => {
+  const { root } = dashboardRoot();
   const build = (sessions) => routeSnapshot(sessions);
   const view = renderDashboard(build([
     pitSession('keep', 'idle', { displayName: 'E2E ▸ keep' }),
@@ -1076,7 +1076,27 @@ test('update() keeps a pinned pit car pinned and focused across a bay roster cha
   assert.equal(findCar(root, 'keep'), button, 'the pinned car element was not recreated');
   assert.equal(button.parentElement.dataset.pinned, 'true');
   assert.equal(button.getAttribute('aria-pressed'), 'true');
-  assert.equal(documentRef.activeElement, button, 'focus survived the bay reorder');
+  // Focus survival across a reorder is browser-only and unproven: dom-fake's append()
+  // never touches activeElement, so asserting it here would certify nothing.
+});
+
+test('update() keeps an emptied bay alive with count 0 once its last car goes on-track', () => {
+  const { root } = dashboardRoot();
+  const view = renderDashboard(routeSnapshot([
+    pitSession('lone', 'idle', { displayName: 'dotfiles ▸ lone' }),
+    pitSession('other', 'idle', { displayName: 'canary ▸ other' }),
+  ]), root, getTrack('ridge-pass'));
+  assert.deepEqual(pitIds(root), ['other', 'lone']);
+
+  // The dotfiles session is still live, just active, so its bay must stay put.
+  view.update(routeSnapshot([
+    routeSession('lone', { displayName: 'dotfiles ▸ lone' }),
+    pitSession('other', 'idle', { displayName: 'canary ▸ other' }),
+  ]));
+  assert.deepEqual(bayLabels(root), ['canary', 'dotfiles']);
+  const dotfiles = root.querySelectorAll('.pit-bay').find((bay) => bay.dataset.bayKey === 'dotfiles');
+  assert.equal(dotfiles.querySelector('.pit-bay-mount').children.length, 0);
+  assert.equal(dotfiles.querySelector('.pit-bay-count').textContent, '0');
 });
 
 test('update() moves a car to a new bay when its tmux session is renamed', () => {

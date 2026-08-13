@@ -403,6 +403,10 @@ function renderOverflowNotice(documentRef, notice, entries, label, capacity) {
 // descendant car's focus and data-pinned, and dom-fake has no insertBefore.
 function syncPitBays(documentRef, pitMount, roster, bays) {
   const live = new Set();
+  // Match the in-order prefix and append only from the first mismatch onward: append()
+  // moves a node to the end, so once one moves every later node must move too.
+  let cursor = 0;
+  let moving = false;
   for (const bay of roster) {
     const id = bay.key ?? '';
     live.add(id);
@@ -419,6 +423,11 @@ function syncPitBays(documentRef, pitMount, roster, bays) {
       entry = { section, mount, count };
       bays.set(id, entry);
     }
+    if (!moving && pitMount.children[cursor] === entry.section) {
+      cursor += 1;
+      continue;
+    }
+    moving = true;
     pitMount.append(entry.section);
   }
   for (const [id, entry] of [...bays]) {
@@ -428,8 +437,8 @@ function syncPitBays(documentRef, pitMount, roster, bays) {
   }
 }
 
-// Appends every pit car into its bay's mount in bayRank order. Runs on first render and
-// on every update(), so a car whose tmux session was renamed changes bays for free.
+// Places every pit car in its bay's mount in bayRank order, moving only what is out of
+// place. Runs on first render and on update(), so a renamed session's car changes bays.
 function appendPitCars(entries, bays) {
   const byBay = new Map();
   for (const entry of entries) {
@@ -440,7 +449,17 @@ function appendPitCars(entries, bays) {
   for (const [id, bay] of bays) {
     const items = (byBay.get(id) ?? [])
       .sort((left, right) => left.placement.bayRank - right.placement.bayRank);
-    for (const item of items) bay.mount.append(item.wrapper);
+    // Same prefix-then-append rule as syncPitBays: a steady tick moves no car at all.
+    let cursor = 0;
+    let moving = false;
+    for (const item of items) {
+      if (!moving && bay.mount.children[cursor] === item.wrapper) {
+        cursor += 1;
+        continue;
+      }
+      moving = true;
+      bay.mount.append(item.wrapper);
+    }
     bay.count.textContent = String(items.length);
   }
 }
@@ -731,9 +750,9 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
         placementsById.delete(id);
       }
 
-      // Re-append every pit car into its bay each tick: that single pass fixes ordering,
-      // absorbs bay renames, and moves cars into bays created this tick. append() MOVES
-      // an existing node, so element identity, listeners, and pinned state survive.
+      // One reconcile pass per tick fixes ordering, absorbs bay renames, and adopts cars
+      // into bays created this tick. It moves only mismatched nodes, so a steady tick
+      // touches nothing and cannot knock focus out of a car the operator is tabbing.
       const pitEntries = [];
       for (const [id, wrapper] of carsById) {
         const placement = nextPlacementsById.get(id);
