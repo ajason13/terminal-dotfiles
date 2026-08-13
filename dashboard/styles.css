@@ -1055,10 +1055,16 @@ textarea {
 .pit-vehicle .session-tooltip {
   position: fixed;
   top: auto;
-  bottom: calc(var(--pit-lane-max) + 14px);
+  /* --pit-dock-offset is the lane's measured distance from the viewport bottom, written
+     on show by the pit dock handler. --pit-lane-max is only the pre-measure fallback: the
+     lane's max-height is a cap it usually does not reach, so it overshoots on its own. */
+  bottom: calc(var(--pit-dock-offset, var(--pit-lane-max)) + 14px);
   left: 1rem;
   right: auto;
-  width: min(28rem, calc(100vw - 2rem));
+  /* Shrink to the content; the cap only binds once a details line is long enough to wrap.
+     A min() of two lengths is a fixed width, which left a quarter of the bubble empty. */
+  width: max-content;
+  max-width: min(28rem, calc(100vw - 2rem));
   transform: none;
 }
 
@@ -1400,13 +1406,12 @@ details[open] > .overflow-toggle::before {
   .route-centerlines path { stroke-width: 6; }
   .segment-labels text { font-size: 13px; }
 
-  /* Mobile docks to a full-width rect below the header instead of above the lane. */
+  /* Mobile docks below the header instead of above the lane, so the measured lane
+     offset is inert here. The bubble still shrinks to its content (see the base rule);
+     left-anchored at 1rem with the shared max-width, it cannot leave the viewport. */
   .pit-vehicle .session-tooltip {
     top: 4rem;
     bottom: auto;
-    left: 1rem;
-    right: 1rem;
-    width: auto;
   }
 }
 
