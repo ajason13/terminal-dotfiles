@@ -153,6 +153,24 @@ and when a car is hovered, pin outranking hover. Confirm no ancestor of
 `will-change`, any of which would re-anchor the fixed tooltip and reintroduce
 the clipping.
 
+The desktop dock offset is measured, not derived from the cap. `--pit-lane-max`
+bounds the lane but is not the height it takes, so reading the offset from it
+floated the bubble by the slack between the two (55.8px with the canonical
+fixture, whose lane renders 214.2px against a 256px cap). `dockPitTooltips`
+writes the lane's real distance from the viewport bottom into
+`--pit-dock-offset` on show and on each update tick, and `--pit-lane-max`
+survives only as the pre-measure fallback - do not re-couple them. Verify the
+gap at more than one lane height: the old constant was correct exactly when the
+lane sat pinned at its cap, which is the state the cap check already induces.
+
+The bubble is `width: max-content` under a `max-width: min(28rem, calc(100vw -
+2rem))` cap, so it shrinks to its content at every width; a `min()` of two
+lengths is a fixed width and left a quarter of the bubble empty. Leftover space
+in a bubble sitting at the cap is line-breaking slack, not a regression. When
+measuring the widest line by hand, hide `.visually-hidden` first: it is
+absolutely positioned and clipped to 1px, but a `Range` still reports its full
+natural extent and overstates the line by roughly 200px.
+
 ## Cypress mobile clearance implementation evidence — 2026-07-28
 
 Roadmap item 4 applies a Cypress-mobile-only centered `0.94` presentation

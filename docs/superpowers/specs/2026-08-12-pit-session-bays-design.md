@@ -177,8 +177,11 @@ Renderer changes:
 - `.pit-lane`: `max-height: min(32vh, 16rem)`, `overflow-y: auto`,
   `overscroll-behavior: contain`. Leave the grid's `minmax(0, 1fr)` alone (decision 7).
 - `.pit-vehicle .session-tooltip`: `position: fixed` at all widths, docked above the
-  lane, left-aligned at `min(28rem, calc(100vw - 2rem))` at desktop; mobile keeps its
-  current full-width rect. The `:has()` single-visible-tooltip guard at
+  lane, left-aligned. Superseded as shipped: `min(28rem, calc(100vw - 2rem))` became
+  the `max-width` cap over `width: max-content` (a `min()` of two lengths is a fixed
+  width, which left the bubble a quarter empty), the dock offset is measured from the
+  lane rather than read off `--pit-lane-max`, and mobile shares both rules instead of
+  keeping a full-width rect. The `:has()` single-visible-tooltip guard at
   `styles.css:1347` is promoted out of the mobile block along with it, since once all
   tooltips share one rect, two visible at once would overlap.
 - Mobile: bays go full-width single column; the `.pit-mount` 52px column rule at
