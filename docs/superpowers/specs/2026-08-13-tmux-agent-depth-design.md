@@ -268,13 +268,11 @@ with empty stderr.
 
 ## Commit plan
 
-Atomic, in order, with each test commit immediately preceding the implementation it
-covers, per TDD:
+Atomic, in order. Tests are written first within each commit (TDD), but land
+*with* the implementation they cover, because every commit must pass its tests:
 
 1. payload probe findings (spec amendment only, no product code)
-2. `scripts/test-tmux-agent-depth.sh`
-3. `claude/hooks/tmux-agent-depth.sh`
-4. new fixtures and checks in `scripts/test-tmux-llm-status.sh`
-5. `count_window` / `format_marker` / `count_agents` in `tmux/tmux-llm-status`
-6. `install-macos.sh` wiring and `print_hooks_notice` rows
-7. README docs
+2. `claude/hooks/tmux-agent-depth.sh` + `scripts/test-tmux-agent-depth.sh`
+3. `count_window` / `format_marker` / `count_agents` in `tmux/tmux-llm-status`,
+   with the new fixtures and checks in `scripts/test-tmux-llm-status.sh`
+4. `install-macos.sh` wiring, `print_hooks_notice` rows, and README docs
