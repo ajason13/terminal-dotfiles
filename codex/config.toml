@@ -61,7 +61,7 @@ default_subagent_reasoning_effort = "medium"
 
 [[hooks.UserPromptSubmit.hooks]]
 type = "command"
-command = 'session-objective capture'
+command = 'session-objective capture --codex'
 timeout = 5
 
 [[hooks.SessionStart]]

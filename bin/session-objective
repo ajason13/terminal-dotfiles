@@ -86,6 +86,13 @@ case "${1:-}" in
     sid="$(printf '%s' "$payload" | jq -r '.session_id // empty' 2>/dev/null)"
     [[ -n "$sid" ]] || exit 0
 
+    # Codex invokes this hook with --codex.  The restore helper is deliberately
+    # opt-in per pane, so it ignores captures without a prior `codex-restore
+    # start`; this keeps ordinary Codex and every Claude session unmanaged.
+    if [[ "${2:-}" == "--codex" ]] && command -v codex-restore >/dev/null 2>&1; then
+      codex-restore capture "$sid" 2>/dev/null || true
+    fi
+
     prompt="$(printf '%s' "$payload" |
       jq -r '.prompt // .user_prompt // .message // .content // empty' 2>/dev/null | clean)"
     # A hook that quietly does nothing is the worst outcome, so leave the payload

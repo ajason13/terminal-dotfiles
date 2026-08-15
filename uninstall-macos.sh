@@ -100,6 +100,7 @@ targets=(
   "$HOME/.codex/builder.config.toml"
   "$HOME/.local/bin/codex-role"
   "$HOME/.local/bin/session-objective"
+  "$HOME/.local/bin/codex-restore"
   "$HOME/.local/bin/sf-org-resolve"
   "$HOME/.local/bin/sf-lease"
   "$HOME/.claude/statusline.sh"

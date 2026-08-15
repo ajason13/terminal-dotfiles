@@ -862,6 +862,13 @@ conversation in that dir) or `claude --resume` (pick one); Codex has
 directory, so `claude --continue` in a restored pane lands on that project's last
 conversation.
 
+For opt-in recovery of multiple Codex panes, use
+[`codex-restore`](docs/codex-restore.md): start a managed pane with
+`codex-restore start`, then after tmux restores run `codex-restore restore` and
+confirm the exact saved UUID-to-pane matches. It never uses `codex resume --last`
+for every pane. `codex-restore install-login` optionally opens WezTerm after
+graphical login; it deliberately leaves the final resume confirmation to you.
+
 ### Reference
 
 **Everything at once (fresh machine):**
