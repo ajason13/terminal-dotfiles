@@ -42,12 +42,14 @@ is_llm_command() {
 STATE_HOME="${TMUX_LLM_STATE_HOME:-${HOME:-}/.local/state/tmux-llm}"
 
 # In-flight subagents for one pane, as a file count published by the
-# tmux-agent-depth hook. Globbed rather than `ls` because this runs for every
-# pane on every one-second pass and must not fork.
+# tmux-agent-depth hook. Globbed rather than `ls`, and assigns into AGENT_COUNT
+# rather than printing, because this runs for every pane on every one-second
+# pass and must not fork - `$(...)` at the call site would fork just as surely
+# as `ls` would.
 count_agents() {
   local dir="$STATE_HOME/panes/${1#%}.agents"
   local -a found=("$dir"/*)
-  if [[ -e "${found[0]}" ]]; then printf '%d' "${#found[@]}"; else printf '0'; fi
+  if [[ -e "${found[0]}" ]]; then AGENT_COUNT=${#found[@]}; else AGENT_COUNT=0; fi
 }
 
 # Drop agent state for panes tmux no longer reports. Pane ids reset to %0 on a
@@ -141,7 +143,8 @@ count_window() {
   local active=0 present=0 waiting=0 depth_sum=0 pane_id command title depth
 
   while IFS=$'\t' read -r pane_id command title; do
-    depth="$(count_agents "$pane_id")"
+    count_agents "$pane_id"
+    depth=$AGENT_COUNT
     # Depth wins over the title: a lead that fanned out and went quiet reports an
     # idle title while its agents are still running, which is the case this exists for.
     if (( depth > 0 )); then

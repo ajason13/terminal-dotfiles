@@ -128,15 +128,15 @@ agents_for alpha:a1 1
 "$bin" once
 check "depth of 1 suppresses the number" "S" "$(marker_of alpha:a1)"
 
-# A working title plus depth must count the pane once, not twice. alpha:a2 is set
-# in the SAME pass: markers are read from stored options, so a title changed after
-# the last `once` would assert against stale state.
+# Depth still wins even when the title itself already reads as working.
+# alpha:a2 is set in the SAME pass: markers are read from stored options, so a
+# title changed after the last `once` would assert against stale state.
 t select-pane -t alpha:a1 -T '⠋ claude working'
 t select-pane -t alpha:a2 -T '✳ claude idle'
 clear_agents_for alpha:a1
 agents_for alpha:a1 4
 "$bin" once
-check "working title is not double-counted" "S4" "$(marker_of alpha:a1)"
+check "depth wins over a working title" "S4" "$(marker_of alpha:a1)"
 
 # One window's agents must never leak into another's marker.
 check "sibling window unaffected by depth" "◆" "$(marker_of alpha:a2)"
