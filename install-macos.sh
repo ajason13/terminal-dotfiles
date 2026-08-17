@@ -143,6 +143,8 @@ print_hooks_notice() {
   printf '  SubagentStop       -> ~/.claude/hooks/tmux-agent-depth.sh\n'
   printf '  SessionStart       -> ~/.claude/hooks/tmux-agent-depth.sh\n'
   printf '  SessionEnd         -> ~/.claude/hooks/tmux-agent-depth.sh\n'
+  printf 'SessionStart and SessionEnd are shared with the lease hooks above - add both\n'
+  printf 'commands under the same event key, do not let one replace the other.\n'
   printf '\n'
   printf 'Separately, for the statusline org indicator (never blocks, always exits 0):\n'
   printf '  PreToolUse  (Bash) -> ~/.claude/hooks/track-crm-org.sh\n'
