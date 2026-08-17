@@ -297,8 +297,9 @@ update_session() {
     read -r active present waiting < <(count_window "$window")
     tmux_cmd set-option -wq -t "$window" @llm_status \
       "$(format_marker "$active" "$present" "$waiting")" 2>/dev/null || true
-    tmux_cmd set-option -wq -t "$window" @llm_objective \
-      "$(publish_objectives "$window")" 2>/dev/null || true
+    # Called for its per-pane @objective side effect; the window-level return is
+    # unused now that the window status shows only the name.
+    publish_objectives "$window" >/dev/null 2>&1 || true
     case "$(window_category "$active" "$present" "$waiting")" in
       active) active_w=$((active_w + 1)) ;;
       present) present_w=$((present_w + 1)) ;;
