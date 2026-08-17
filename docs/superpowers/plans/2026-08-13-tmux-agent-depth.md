@@ -313,7 +313,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: the on-disk contract from Task 2
-- Produces: `count_agents <pane_id>` echoing an integer; `prune_dead_panes` and its `prune` subcommand; `count_window` echoing four space-separated integers `active present waiting depth_sum`; `format_marker <active> <present> <waiting> [depth]`
+- Produces: `count_agents <pane_id>` assigning `AGENT_COUNT` (not printing - see note below); `prune_dead_panes` and its `prune` subcommand; `count_window` echoing four space-separated integers `active present waiting depth_sum`; `format_marker <active> <present> <waiting> [depth]`
 
 **Critical:** `count_window` currently emits three fields and is read at **four** call sites (`window_status:225`, `fleet_summary:242`, `next_waiting:275`, `update_session:297`). `read -r a b c` against four fields silently packs `"3 4"` into `c`. Every call site must gain the fourth variable or `waiting` becomes a non-numeric string and the `(( ))` comparisons break.
 
@@ -396,14 +396,22 @@ In `tmux/tmux-llm-status`, add after the `tmux_cmd` function (around line 22):
 STATE_HOME="${TMUX_LLM_STATE_HOME:-${HOME:-}/.local/state/tmux-llm}"
 
 # In-flight subagents for one pane, as a file count published by the
-# tmux-agent-depth hook. Globbed rather than `ls` because this runs for every
-# pane on every one-second pass and must not fork.
+# tmux-agent-depth hook. Globbed rather than `ls`, and assigns into AGENT_COUNT
+# rather than printing, because this runs for every pane on every one-second
+# pass and must not fork - `$(...)` at the call site would fork just as surely
+# as `ls` would.
 count_agents() {
   local dir="$STATE_HOME/panes/${1#%}.agents"
   local -a found=("$dir"/*)
-  if [[ -e "${found[0]}" ]]; then printf '%d' "${#found[@]}"; else printf '0'; fi
+  if [[ -e "${found[0]}" ]]; then AGENT_COUNT=${#found[@]}; else AGENT_COUNT=0; fi
 }
 ```
+
+Note: an earlier revision of this plan had `count_agents` `printf` an integer for
+the caller to capture with `$(...)`. That was removed before this landed - a
+`$(...)` at the call site forks once per pane per pass, exactly what the daemon
+must not do - so every call site below reads `$AGENT_COUNT` after calling
+`count_agents`, never `$(count_agents ...)`.
 
 - [ ] **Step 4: Teach `count_window` to read depth**
 
@@ -418,7 +426,8 @@ count_window() {
   local active=0 present=0 waiting=0 depth_sum=0 pane_id command title depth
 
   while IFS=$'\t' read -r pane_id command title; do
-    depth="$(count_agents "$pane_id")"
+    count_agents "$pane_id"
+    depth=$AGENT_COUNT
     # Depth wins over the title: a lead that fanned out and went quiet reports an
     # idle title while its agents are still running, which is the case this exists for.
     if (( depth > 0 )); then

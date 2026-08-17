@@ -98,9 +98,14 @@ Detection today is entirely a terminal-title scrape: `count_window` reads only
 ### State contract
 
 The state file carries **only what the title cannot**: a count. It never stores
-working/idle, because the title classification already gets that right. This
-deletes the worst failure mode of a richer contract, where a missed `Stop` hook
-strands a pane displaying "working" forever.
+working/idle, because the title classification already gets that right. That
+avoids storing a *state* that can go stale - but not a stale count: a nonzero
+count unconditionally forces `active` in `count_window`, so one leftover file
+still pins the marker to working. Recovery is that pane's next `SessionStart`,
+a daemon restart after the pane dies, or `rm -rf` of the pane's `.agents/` dir.
+A `Stop`-hook wipe was considered as a self-heal and rejected: in this harness
+the lead's turn ends while background subagents are still running, so wiping on
+`Stop` would destroy live counts.
 
 ```
 ~/.local/state/tmux-llm/panes/
@@ -118,9 +123,10 @@ Panes are keyed by `$TMUX_PANE` (`%437`, stripped to `437`). `TMUX_LLM_STATE_HOM
 overrides the root so tests never touch live state, mirroring
 `SESSION_OBJECTIVE_HOME`.
 
-Phantom files are reaped in three tiers: `SessionStart` wipes the pane's dir,
-`SessionEnd` wipes it, and the daemon ignores state for panes tmux no longer
-reports as live. A hard `SIGKILL` can strand files until that pane's next
+Phantom files are reaped in three tiers: `SessionStart` wipes the pane's dir
+(unless its `.source` is `compact` or `resume` - see Hooks below), `SessionEnd`
+always wipes it, and the daemon ignores state for panes tmux no longer reports
+as live. A hard `SIGKILL` can strand files until that pane's next qualifying
 `SessionStart`; accepted rather than adding a permanent heartbeat for a rare,
 self-healing case.
 
@@ -132,8 +138,14 @@ One script, `claude/hooks/tmux-agent-depth.sh`, dispatching on `.hook_event_name
 | --- | --- |
 | `SubagentStart` | create `panes/<pane>.agents/<agent-id>` |
 | `SubagentStop` | remove that file |
-| `SessionStart` | wipe the pane's `.agents/` dir |
+| `SessionStart` | wipe the pane's `.agents/` dir, unless `.source` is `compact` or `resume` |
 | `SessionEnd` | wipe the pane's `.agents/` dir |
+
+`SessionStart` also fires mid-turn for auto-compaction (`source: "compact"`) and
+session resume (`source: "resume"`), both of which can happen while subagents
+are still in flight; wiping there would strand a busy pane at idle forever,
+since surviving agents only ever fire `SubagentStop`. `startup` and `clear`,
+and any `.source` value not yet observed, still wipe.
 
 One script rather than the four-script `sf-lease-*` pattern: those four do
 genuinely different work, whereas these share pane resolution and differ by one

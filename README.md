@@ -39,12 +39,18 @@ terminal backgrounds.
 | `!` | blocked on you |
 
 `N` is suppressed at 1. Depth comes from `tmux-agent-depth.sh`, which writes one
-file per in-flight subagent under `~/.local/state/tmux-llm/panes/<pane>.agents/`.
-Until those four hooks are registered in `~/.claude/settings.json` the bar behaves
+file per in-flight subagent under `$TMUX_LLM_STATE_HOME/panes/<pane>.agents/`
+(default `~/.local/state/tmux-llm`, override with `TMUX_LLM_STATE_HOME`). Until
+those four hooks are registered in `~/.claude/settings.json` the bar behaves
 exactly as it did before: depth is simply absent, and nothing else changes.
 
 Codex panes get presence and working states but never a depth number, because
 Codex has no `SubagentStart` equivalent.
+
+`tmux-llm-status prune` drops state directories for panes tmux no longer
+reports, so a dead pane's leftover count cannot linger. If a marker still shows
+a spinner with no real work running - a missed `SubagentStop` left a file
+behind - clear it by hand: `rm -rf ~/.local/state/tmux-llm/panes/<pane>.agents`.
 
 ## Layout
 
