@@ -321,19 +321,19 @@ day says what it was for instead of needing to be asked.
   once; with one window per task the window name already carries the task, so
   both were removed rather than duplicating it. `LLM_OBJECTIVE_MAX_LEN` and
   `LLM_PANE_OBJECTIVE_MAX_LEN` went with them.
-- Store: `~/.local/state/session-objectives/`, one file per session id, plus
-  `by-pane/` symlinks keyed on `$TMUX_PANE`. Nothing consumes the pane lookup
-  now that tmux does not render objectives; it is kept so a pane-keyed reader
-  can come back cheaply. `SESSION_OBJECTIVE_HOME` relocates it.
+- Store: `~/.local/state/session-objectives/`, one file per session id.
+  `SESSION_OBJECTIVE_HOME` relocates it. Files unread for 30 days are swept on
+  the next `SessionStart`.
 
 Claude Code and Codex both send `session_id` and `prompt` on `UserPromptSubmit`,
-so one capture path serves both. Codex cannot render this in its own footer -
-`tui.status_line` takes a fixed list of predefined identifiers, not a command -
-which is why tmux is the shared surface.
+so one capture path serves both. Only Claude Code renders it: `tui.status_line`
+takes a fixed list of predefined identifiers, not a command, so a Codex session
+captures an objective that nothing currently displays. tmux used to be the shared
+surface for exactly that reason; one window per task made it redundant.
 
 Run `session-objective doctor` if an objective stops appearing. It reports the
-store, the link count, whether `$TMUX_PANE` is visible, and warns if a hook
-payload arrived with no recognisable prompt field.
+store and its objective count, and warns if a hook payload arrived with no
+recognisable prompt field.
 
 ### Claude Code hooks (manual step)
 
