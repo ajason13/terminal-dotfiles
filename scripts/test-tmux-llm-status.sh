@@ -22,6 +22,28 @@ SESSION_OBJECTIVE_HOME="$test_home/objectives"
 export SESSION_OBJECTIVE_HOME
 mkdir -p "$SESSION_OBJECTIVE_HOME"
 
+# Isolate agent-depth state the same way objectives are isolated, so these tests
+# can never read or write the real status directory.
+TMUX_LLM_STATE_HOME="$test_home/llm-state"
+export TMUX_LLM_STATE_HOME
+
+agent_dir_for() {
+  local id
+  id="$(t display-message -p -t "$1" '#{pane_id}')"
+  printf '%s' "$TMUX_LLM_STATE_HOME/panes/${id#%}.agents"
+}
+
+agents_for() {
+  local dir i
+  dir="$(agent_dir_for "$1")"
+  mkdir -p "$dir"
+  for (( i = 0; i < $2; i++ )); do : > "$dir/a$i"; done
+}
+
+clear_agents_for() { rm -rf "$(agent_dir_for "$1")"; }
+
+exists() { if [[ -d "$1" ]]; then printf 'present'; else printf 'absent'; fi; }
+
 # -f /dev/null on every server-creating call: the real tmux.conf restarts the
 # status daemon, which would then run against this test socket.
 t() { tmux -S "$TMUX_SOCKET" "$@"; }
@@ -90,6 +112,53 @@ check "beta still working" "S1" "$(fleet_of beta)"
 # --- summary subcommand is scoped to the session it is asked about ------------
 check "summary -t beta" "S1" "$(normalize "$("$bin" summary beta)")"
 check "summary -t alpha" "" "$(normalize "$("$bin" summary alpha)")"
+
+# --- agent depth ---------------------------------------------------------------
+# The whole feature: a lead that fanned out and went quiet still reads as working.
+t select-pane -t alpha:a1 -T '✳ claude idle'
+agents_for alpha:a1 3
+"$bin" once
+check "depth overrides an idle title" "S3" "$(marker_of alpha:a1)"
+
+# The roll-up counts windows, not agents, or the bottom-left corner stops scanning.
+check "roll-up counts windows not agents" "S1" "$(fleet_of alpha)"
+
+clear_agents_for alpha:a1
+agents_for alpha:a1 1
+"$bin" once
+check "depth of 1 suppresses the number" "S" "$(marker_of alpha:a1)"
+
+# A working title plus depth must count the pane once, not twice. alpha:a2 is set
+# in the SAME pass: markers are read from stored options, so a title changed after
+# the last `once` would assert against stale state.
+t select-pane -t alpha:a1 -T '⠋ claude working'
+t select-pane -t alpha:a2 -T '✳ claude idle'
+clear_agents_for alpha:a1
+agents_for alpha:a1 4
+"$bin" once
+check "working title is not double-counted" "S4" "$(marker_of alpha:a1)"
+
+# One window's agents must never leak into another's marker.
+check "sibling window unaffected by depth" "◆" "$(marker_of alpha:a2)"
+
+clear_agents_for alpha:a1
+t select-pane -t alpha:a1 -T '✳ claude idle'
+"$bin" once
+check "clearing agents reverts to present" "◆" "$(marker_of alpha:a1)"
+
+# --- pruning state for panes that no longer exist ------------------------------
+# tmux pane ids reset to %0 when the server restarts, so a dir left by a previous
+# server can collide with a recycled id. Exposed as a subcommand so it is testable
+# without running the daemon loop.
+mkdir -p "$TMUX_LLM_STATE_HOME/panes/99999.agents"
+: > "$TMUX_LLM_STATE_HOME/panes/99999.agents/ghost"
+agents_for alpha:a1 2
+"$bin" prune
+check "prune drops dirs for dead panes" "absent" \
+  "$(exists "$TMUX_LLM_STATE_HOME/panes/99999.agents")"
+check "prune keeps dirs for live panes" "present" \
+  "$(exists "$(agent_dir_for alpha:a1)")"
+clear_agents_for alpha:a1
 
 if (( failures > 0 )); then
   printf 'test-tmux-llm-status: %d failure(s)\n' "$failures" >&2
