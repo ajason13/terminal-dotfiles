@@ -137,6 +137,15 @@ print_hooks_notice() {
   printf 'They stay inert until you export SF_LEASE_ENABLE=1 - register them first,\n'
   printf 'confirm sessions still behave, and arm them only after that (see README).\n'
   printf '\n'
+  printf 'Separately, for the tmux status bar subagent-depth markers (unconditional,\n'
+  printf 'no env gate - they take effect as soon as they are registered):\n'
+  printf '  SubagentStart      -> ~/.claude/hooks/tmux-agent-depth.sh\n'
+  printf '  SubagentStop       -> ~/.claude/hooks/tmux-agent-depth.sh\n'
+  printf '  SessionStart       -> ~/.claude/hooks/tmux-agent-depth.sh\n'
+  printf '  SessionEnd         -> ~/.claude/hooks/tmux-agent-depth.sh\n'
+  printf 'SessionStart and SessionEnd are shared with the lease hooks above - add both\n'
+  printf 'commands under the same event key, do not let one replace the other.\n'
+  printf '\n'
   printf 'Separately, for the statusline org indicator (never blocks, always exits 0):\n'
   printf '  PreToolUse  (Bash) -> ~/.claude/hooks/track-crm-org.sh\n'
   printf 'Without it the statusline still works, falling back to the env default.\n'
@@ -184,6 +193,7 @@ if [[ "$mode" == "link" ]]; then
   link_path "$root_dir/claude/hooks/sf-lease-post.sh" "$HOME/.claude/hooks/sf-lease-post.sh"
   link_path "$root_dir/claude/hooks/sf-lease-end.sh" "$HOME/.claude/hooks/sf-lease-end.sh"
   link_path "$root_dir/claude/hooks/sf-lease-table.sh" "$HOME/.claude/hooks/sf-lease-table.sh"
+  link_path "$root_dir/claude/hooks/tmux-agent-depth.sh" "$HOME/.claude/hooks/tmux-agent-depth.sh"
   for profile in "$root_dir"/codex/profiles/*.config.toml; do
     link_path "$profile" "$HOME/.codex/$(basename "$profile")"
   done
@@ -230,6 +240,7 @@ install_file "$root_dir/claude/hooks/sf-lease-guard.sh" "$HOME/.claude/hooks/sf-
 install_file "$root_dir/claude/hooks/sf-lease-post.sh" "$HOME/.claude/hooks/sf-lease-post.sh" 0755
 install_file "$root_dir/claude/hooks/sf-lease-end.sh" "$HOME/.claude/hooks/sf-lease-end.sh" 0755
 install_file "$root_dir/claude/hooks/sf-lease-table.sh" "$HOME/.claude/hooks/sf-lease-table.sh" 0755
+install_file "$root_dir/claude/hooks/tmux-agent-depth.sh" "$HOME/.claude/hooks/tmux-agent-depth.sh" 0755
 
 for agent in "$root_dir"/codex/agents/*.toml; do
   install_file "$agent" "$HOME/.codex/agents/$(basename "$agent")"

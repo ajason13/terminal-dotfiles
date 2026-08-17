@@ -110,6 +110,7 @@ targets=(
   "$HOME/.claude/hooks/sf-lease-post.sh"
   "$HOME/.claude/hooks/sf-lease-end.sh"
   "$HOME/.claude/hooks/sf-lease-table.sh"
+  "$HOME/.claude/hooks/tmux-agent-depth.sh"
 )
 
 for target in "${targets[@]}"; do
@@ -135,4 +136,12 @@ if [[ -d "${SF_LEASE_HOME:-$HOME/.local/state/sf-leases}" ]]; then
   printf 'It holds any still-live leases, and hook.log there records real org\n'
   printf 'identities and Claude session ids. To delete both: rm -rf %s\n' \
     "${SF_LEASE_HOME:-$HOME/.local/state/sf-leases}"
+fi
+
+# Left in place on purpose: it may hold live subagent-depth counts for a running
+# pane, and this script only removes what it installed.
+if [[ -d "${TMUX_LLM_STATE_HOME:-$HOME/.local/state/tmux-llm}" ]]; then
+  printf '\nThe tmux-llm-status state store was NOT removed: %s\n' \
+    "${TMUX_LLM_STATE_HOME:-$HOME/.local/state/tmux-llm}"
+  printf 'To delete it: rm -rf %s\n' "${TMUX_LLM_STATE_HOME:-$HOME/.local/state/tmux-llm}"
 fi
