@@ -16,12 +16,6 @@ fi
 test_home="$(mktemp -d /tmp/tmux-llm-status-test-XXXXXX)"
 TMUX_SOCKET="$test_home/tmux.sock"
 export TMUX_SOCKET
-# publish_objectives shells out to the installed session-objective; point its
-# store at a throwaway dir so these tests cannot read or write real objectives.
-SESSION_OBJECTIVE_HOME="$test_home/objectives"
-export SESSION_OBJECTIVE_HOME
-mkdir -p "$SESSION_OBJECTIVE_HOME"
-
 # -f /dev/null on every server-creating call: the real tmux.conf restarts the
 # status daemon, which would then run against this test socket.
 t() { tmux -S "$TMUX_SOCKET" "$@"; }

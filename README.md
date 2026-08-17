@@ -12,8 +12,8 @@ terminal backgrounds.
 - tmux owns windows and panes; WezTerm tabs are hidden.
 - tmux status bar shows LLM activity markers: per window, plus a roll-up for the
   current session next to its name (each session counts only its own windows).
-- The current tmux window shows its agent's session objective after a `▸`,
-  so a pane you come back to says what it was doing.
+- Session objectives are tracked and shown in the Claude Code statusline, but no
+  longer in tmux: one window per task means the window name already says it.
 - `Ctrl-a` is the tmux prefix.
 - `Ctrl-a \` splits horizontally and `Ctrl-a -` splits vertically.
 - `Ctrl-a h/j/k/l` moves between panes.
@@ -317,27 +317,23 @@ day says what it was for instead of needing to be asked.
   pins it. A bare `/objective` just reports the current one.
 - Claude Code shows it as the first status-line segment; an explicit `/rename`
   wins over it there.
-- The tmux **status bar** shows it for the current window only, after a `▸`,
-  capped shorter than the Claude status line so a fleet of agent windows does
-  not blow out the bar. Cap: `LLM_OBJECTIVE_MAX_LEN` (default 32).
-- **Pane borders** label every pane in a split window, so four agents side by
-  side are all visible instead of just the active one. The border row is only
-  turned on for a split window that has an objective to show, so unsplit or
-  shell-only windows keep their full height; expect a one-row shift when a
-  window's first agent starts. Cap: `LLM_PANE_OBJECTIVE_MAX_LEN` (default 48,
-  wider because the border spans the pane).
-- Store: `~/.local/state/session-objectives/`, one file per session id, plus
-  `by-pane/` symlinks keyed on `$TMUX_PANE` so tmux can map a pane to its
-  objective. `SESSION_OBJECTIVE_HOME` relocates it.
+- **tmux does not display it.** The status bar and pane borders both showed it
+  once; with one window per task the window name already carries the task, so
+  both were removed rather than duplicating it. `LLM_OBJECTIVE_MAX_LEN` and
+  `LLM_PANE_OBJECTIVE_MAX_LEN` went with them.
+- Store: `~/.local/state/session-objectives/`, one file per session id.
+  `SESSION_OBJECTIVE_HOME` relocates it. Files unread for 30 days are swept on
+  the next `SessionStart`.
 
 Claude Code and Codex both send `session_id` and `prompt` on `UserPromptSubmit`,
-so one capture path serves both. Codex cannot render this in its own footer -
-`tui.status_line` takes a fixed list of predefined identifiers, not a command -
-which is why tmux is the shared surface.
+so one capture path serves both. Only Claude Code renders it: `tui.status_line`
+takes a fixed list of predefined identifiers, not a command, so a Codex session
+captures an objective that nothing currently displays. tmux used to be the shared
+surface for exactly that reason; one window per task made it redundant.
 
 Run `session-objective doctor` if an objective stops appearing. It reports the
-store, the link count, whether `$TMUX_PANE` is visible, and warns if a hook
-payload arrived with no recognisable prompt field.
+store and its objective count, and warns if a hook payload arrived with no
+recognisable prompt field.
 
 ### Claude Code hooks (manual step)
 

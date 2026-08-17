@@ -6,7 +6,6 @@
 #   capture           <- UserPromptSubmit hook JSON on stdin
 #   reset             <- SessionStart hook JSON on stdin
 #   read <session_id> -> the objective, truncated
-#   pane <pane_id>    -> the objective for a tmux pane
 #   normalize         <- text on stdin, tidied the way a seed is
 #   doctor            -> store state, for diagnosing a silent hook
 #
@@ -18,7 +17,7 @@ STORE="${SESSION_OBJECTIVE_HOME:-$HOME/.local/state/session-objectives}"
 MAX_LEN="${SESSION_OBJECTIVE_MAX_LEN:-48}"
 MIN_SEED_LEN=12
 
-mkdir -p "$STORE/by-pane" 2>/dev/null || true
+mkdir -p "$STORE" 2>/dev/null || true
 
 # Collapse to one line and trim; every consumer is a single-line status bar.
 clean() { tr '\n\r\t' '   ' | sed -e 's/  */ /g' -e 's/^ *//' -e 's/ *$//'; }
@@ -31,9 +30,6 @@ truncate_objective() {
     printf '%s' "$text"
   fi
 }
-
-# tmux pane ids are "%182"; the % is awkward in paths, so key on the digits.
-pane_key() { printf '%s' "${1#\%}"; }
 
 # Make a seeded prompt worth reading in ~32 characters. Real prompts front-load
 # the least useful part - polite framing and a long URL - and put the identifier
@@ -106,12 +102,6 @@ case "${1:-}" in
     file="$STORE/$sid.txt"
     pin="$STORE/$sid.pin"
 
-    # Repoint the pane link on every prompt: a pane outlives the agent in it, so
-    # a recycled pane must follow the newest session rather than the dead one.
-    if [[ -n "${TMUX_PANE:-}" ]]; then
-      ln -sfn "$file" "$STORE/by-pane/$(pane_key "$TMUX_PANE")" 2>/dev/null || true
-    fi
-
     # Explicit override wins and pins. Handled here rather than in the agent's
     # slash-command body so it never depends on the model choosing to act.
     if printf '%s' "$prompt" | grep -qiE '^(objective:|/objective\b)'; then
@@ -158,22 +148,11 @@ case "${1:-}" in
       rm -f "$STORE/$sid.txt" "$STORE/$sid.pin"
     fi
     find "$STORE" -maxdepth 1 -type f -mtime +30 -delete 2>/dev/null || true
-    # Prune links whose target session file is gone. -e follows the link, so a
-    # dangling one fails it; the -L guard also absorbs a non-matching glob.
-    for link in "$STORE"/by-pane/*; do
-      [[ -L "$link" ]] || continue
-      [[ -e "$link" ]] || rm -f "$link"
-    done
     exit 0
     ;;
 
   read)
     emit_objective "$STORE/${2:-}.txt"
-    ;;
-
-  pane)
-    [[ -n "${2:-}" ]] || exit 0
-    emit_objective "$STORE/by-pane/$(pane_key "$2")"
     ;;
 
   normalize)
@@ -184,8 +163,6 @@ case "${1:-}" in
     printf 'store:            %s\n' "$STORE"
     printf 'max length:       %s\n' "$MAX_LEN"
     printf 'objectives:       %s\n' "$(find "$STORE" -maxdepth 1 -name '*.txt' 2>/dev/null | wc -l | tr -d ' ')"
-    printf 'pane links:       %s\n' "$(find "$STORE/by-pane" -maxdepth 1 -type l 2>/dev/null | wc -l | tr -d ' ')"
-    printf 'TMUX_PANE (here): %s\n' "${TMUX_PANE:-<unset>}"
     if [[ -f "$STORE/.unparsed-payload.json" ]]; then
       printf 'WARNING:          a hook payload had no known prompt field.\n'
       printf '                  inspect %s/.unparsed-payload.json\n' "$STORE"
@@ -193,7 +170,7 @@ case "${1:-}" in
     ;;
 
   *)
-    printf 'Usage: %s capture | reset | read <session_id> | pane <pane_id> | normalize | doctor\n' \
+    printf 'Usage: %s capture | reset | read <session_id> | normalize | doctor\n' \
       "${0##*/}" >&2
     exit 2
     ;;
