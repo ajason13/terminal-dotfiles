@@ -146,6 +146,18 @@ t select-pane -t alpha:a1 -T '✳ claude idle'
 "$bin" once
 check "clearing agents reverts to present" "◆" "$(marker_of alpha:a1)"
 
+# --- depth_sum accumulates across panes in one window ---------------------------
+# Nothing else exercises two panes contributing to the same window's depth; a sum
+# that silently truncated to one pane's count would otherwise slip through.
+t -f /dev/null new-window -d -t alpha: -n multi
+t split-window -d -t alpha:multi
+agents_for alpha:multi.0 2
+agents_for alpha:multi.1 3
+"$bin" once
+check "depth_sum accumulates across panes" "S5" "$(marker_of alpha:multi)"
+clear_agents_for alpha:multi.0
+clear_agents_for alpha:multi.1
+
 # --- pruning state for panes that no longer exist ------------------------------
 # tmux pane ids reset to %0 when the server restarts, so a dir left by a previous
 # server can collide with a recycled id. Exposed as a subcommand so it is testable

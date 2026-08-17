@@ -58,6 +58,9 @@ prune_dead_panes() {
   local dir id live
   [[ -d "$STATE_HOME/panes" ]] || return 0
   live=" $(tmux_cmd list-panes -a -F '#{pane_id}' 2>/dev/null | tr -d '%' | tr '\n' ' ' || true)"
+  # An empty live set more likely means the socket resolved wrong than that every
+  # pane died at once - never let that wipe valid state.
+  [[ "$live" != " " ]] || return 0
   for dir in "$STATE_HOME/panes"/*.agents; do
     [[ -d "$dir" ]] || continue
     id="${dir##*/}"
