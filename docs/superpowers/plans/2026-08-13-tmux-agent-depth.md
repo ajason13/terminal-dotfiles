@@ -235,7 +235,7 @@ Expected: FAIL, because `claude/hooks/tmux-agent-depth.sh` does not exist yet. T
 
 - [ ] **Step 3: Write the hook**
 
-Create `claude/hooks/tmux-agent-depth.sh`. Replace `.agent_id` in the jq expression with the field Task 1 confirmed:
+Create `claude/hooks/tmux-agent-depth.sh` exactly as below. `agent_id` is the documented correlating field on both subagent events, but Task 1 could not capture a live payload to confirm it, so the jq expression keeps a defensive fallback chain. Do not collapse it to a single field:
 
 ```bash
 #!/usr/bin/env bash
@@ -256,7 +256,7 @@ AGENT_DIR="$STATE_HOME/panes/${TMUX_PANE#%}.agents"
 
 payload="$(cat 2>/dev/null || true)"
 event="$(printf '%s' "$payload" | jq -r '.hook_event_name // empty' 2>/dev/null || true)"
-agent="$(printf '%s' "$payload" | jq -r '.agent_id // empty' 2>/dev/null || true)"
+agent="$(printf '%s' "$payload" | jq -r '.agent_id // .subagent_id // .tool_use_id // empty' 2>/dev/null || true)"
 
 # Ids are opaque upstream values that become filenames, so keep only characters
 # that cannot escape the directory.

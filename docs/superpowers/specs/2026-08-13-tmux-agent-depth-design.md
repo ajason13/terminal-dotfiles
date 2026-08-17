@@ -20,20 +20,28 @@ No other decisions are open. Everything else was settled during brainstorming.
 
 ## Assumptions I have not verified
 
-These are premises this design rests on that I did **not** confirm. All five are
-settled by one throwaway logging hook, which runs before any real code.
+Premises this design rests on. Items 1 and 2 were settled from vendor
+documentation on 2026-08-17; the rest remain open and are confirmed by the live
+session check, since a live payload capture proved impossible (see below).
 
-1. `SubagentStart` and `SubagentStop` payloads carry a **stable correlating id** so
-   Stop can delete the file Start created. Decides Section 1's whole mechanism.
-2. Payloads include `hook_event_name`, which the single-script dispatch depends on.
+1. ~~Payloads carry a stable correlating id.~~ **Settled as `agent_id`** - see
+   Verified facts. Documented, not observed.
+2. ~~Payloads include `hook_event_name`.~~ **Settled** - see Verified facts.
 3. `$TMUX_PANE` inside a `SubagentStart` hook resolves to the **lead's** pane. If
    subagent hooks run in a different environment, the keying breaks and everything
-   downstream with it.
+   downstream with it. **Still open** - confirmed by the live session check.
 4. `SubagentStart` fires for **every** agent flavour (Task tool, forks, workflow
    agents), not just one. Affects completeness of the count, not its correctness.
+   **Still open.**
 5. Whether the lead's main loop actually goes idle during a fan-out. Affects how
    often depth-over-idle fires in practice; correctness is unaffected because depth
-   overrides the title either way.
+   overrides the title either way. **Still open.**
+
+Because 1 is documented rather than observed, the hook resolves the id through a
+defensive fallback chain (`.agent_id // .subagent_id // .tool_use_id`) rather than
+hardcoding a single field. If `agent_id` is present, as documented, the chain is a
+no-op; if it is absent under some agent flavour, depth degrades to an over-count
+rather than breaking outright.
 
 ## Verified facts
 
@@ -52,6 +60,16 @@ Measured or inspected during brainstorming, not assumed:
 - `~/.claude/jobs/<id>/state.json` is a live registry carrying `.state`, `.tempo`,
   `.inFlight.tasks`, and `.updatedAt`, but only for background agents. Two entries
   existed against 17 live panes, so it is not a general session registry.
+- **`agent_id` is the correlating field on both subagent events.** Vendor changelog:
+  "Added `agent_id` and `agent_transcript_path` fields to `SubagentStop` hooks", and
+  "Added `agent_id` (for subagents) and `agent_type` (for subagents and `--agent`)
+  to hook events". Documented, not observed - the hook keeps a fallback chain.
+- **Hooks do not hot-reload into a running session.** A probe hook registered in a
+  worktree `.claude/settings.local.json` mid-session did not fire for two subagents
+  that ran to completion, while the same script logged correctly when invoked
+  directly. So a live payload capture requires either a session restart or a global
+  registration that would fire across every other live session. This is why items 1
+  and 2 above were settled from documentation instead.
 
 ## Problem
 
