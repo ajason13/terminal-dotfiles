@@ -284,9 +284,10 @@ with empty stderr.
   opinion. The idle-persistence result is banked if the daemon ever needs to push
   state outward to WezTerm or a notifier.
 - **Depth in the session roll-up.** Pinned by a test.
-- **The now-inert split-window border logic** in `publish_objectives`. One pane per
-  window means `pane-border-status` effectively never turns on, so it is dead
-  weight, but removing it here is scope creep. Its own ticket.
+- **The now-inert split-window border logic** in `publish_objectives`. Identified as
+  dead weight under a one-pane-per-window workflow but left alone as scope creep.
+  Resolved upstream instead: `main` removed objectives from the daemon entirely, so
+  this is settled and needs no ticket.
 - **Codex depth.** Codex has no `SubagentStart` equivalent, so Codex panes get
   presence and working states but never a depth number. The asymmetry is documented
   in the source rather than faked.

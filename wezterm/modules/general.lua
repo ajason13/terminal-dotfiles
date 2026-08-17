@@ -26,12 +26,18 @@ function M.apply(config)
   config.automatically_reload_config = true
   config.check_for_updates = false
   -- Attach the most recently used session rather than a fixed name, so renaming a
-  -- session does not make the next window spawn a stray empty one. Bare `attach`
-  -- exits nonzero only when no server is running, which is when `main` is created.
+  -- session does not make the next window spawn a stray empty one. If that session
+  -- ends while other sessions remain, attach again instead of letting this GUI
+  -- window exit and quitting WezTerm. Once no sessions remain, let the window exit.
   local tmux = tmux_path()
-  -- `-A` on the fallback so an attach that failed for some other reason still lands
-  -- in `main` instead of erroring out with "duplicate session".
-  config.default_prog = { '/bin/sh', '-c', tmux .. ' attach || exec ' .. tmux .. ' new-session -A -s main' }
+  local tmux_session_loop = string.format([[if %s list-sessions >/dev/null 2>&1; then
+  while %s list-sessions >/dev/null 2>&1; do
+    %s attach
+  done
+else
+  exec %s new-session -A -s main
+fi]], tmux, tmux, tmux, tmux)
+  config.default_prog = { '/bin/sh', '-c', tmux_session_loop }
   config.scrollback_lines = 20000
   config.enable_scroll_bar = true
   config.enable_tab_bar = false

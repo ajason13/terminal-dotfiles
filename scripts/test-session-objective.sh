@@ -15,10 +15,6 @@ SESSION_OBJECTIVE_HOME="$(mktemp -d)"
 export SESSION_OBJECTIVE_HOME
 trap 'rm -rf "$SESSION_OBJECTIVE_HOME"' EXIT
 
-# Run hermetically. A real tmux pane exports TMUX_PANE, which would have every
-# case link its own pane and make pane assertions pass in CI but fail locally.
-unset TMUX_PANE
-
 failures=0
 check() {
   local label="$1" want="$2" got="$3"
@@ -82,29 +78,18 @@ check "startup does not clear" "buffer time scenarios" "$(objective_of s1)"
 jq -nc '{session_id:"s1", source:"clear"}' | "$bin" reset
 check "clear resets the objective" "" "$(objective_of s1)"
 
-# --- pane linking ------------------------------------------------------------
-TMUX_PANE='%42' submit p1 "Investigate the booking confirm timeout"
-check "pane link resolves to the objective" "Investigate the booking confirm timeout" \
-  "$("$bin" pane '%42')"
-check "pane lookup tolerates a bare id" "Investigate the booking confirm timeout" \
-  "$("$bin" pane 42)"
-
-TMUX_PANE='%42' submit p2 "Different session reusing the same pane"
-check "recycled pane repoints to the new session" "Different session reusing the same pane" \
-  "$("$bin" pane '%42')"
-check "old session keeps its own objective" "Investigate the booking confirm timeout" \
+# Sessions are independent: a reset aimed at one id must not touch another's.
+submit p1 "Investigate the booking confirm timeout"
+submit p3 "A live session that must survive the sweep"
+jq -nc '{session_id:"none", source:"startup"}' | "$bin" reset
+check "unrelated reset keeps other objectives" "A live session that must survive the sweep" \
+  "$(objective_of p3)"
+check "each session keeps its own objective" "Investigate the booking confirm timeout" \
   "$(objective_of p1)"
 
-rm -f "$SESSION_OBJECTIVE_HOME/p2.txt"
-check "dangling pane link yields nothing" "" "$("$bin" pane '%42')"
-jq -nc '{session_id:"none", source:"startup"}' | "$bin" reset
-check "reset prunes the dangling pane link" "gone" \
-  "$([[ -L "$SESSION_OBJECTIVE_HOME/by-pane/42" ]] && echo present || echo gone)"
-
-TMUX_PANE='%43' submit p3 "A live session that must survive the prune"
-jq -nc '{session_id:"none", source:"startup"}' | "$bin" reset
-check "reset keeps a live pane link" "A live session that must survive the prune" \
-  "$("$bin" pane '%43')"
+# TMUX_PANE is no longer read: nothing renders objectives per pane any more.
+check "pane subcommand is gone" "2" \
+  "$("$bin" pane '%42' >/dev/null 2>&1; echo $?)"
 
 # --- unparsed payload diagnostic ---------------------------------------------
 jq -nc '{session_id:"s9", surprise:"a long enough value to seed with"}' | "$bin" capture

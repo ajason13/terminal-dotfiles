@@ -16,14 +16,8 @@ fi
 test_home="$(mktemp -d /tmp/tmux-llm-status-test-XXXXXX)"
 TMUX_SOCKET="$test_home/tmux.sock"
 export TMUX_SOCKET
-# publish_objectives shells out to the installed session-objective; point its
-# store at a throwaway dir so these tests cannot read or write real objectives.
-SESSION_OBJECTIVE_HOME="$test_home/objectives"
-export SESSION_OBJECTIVE_HOME
-mkdir -p "$SESSION_OBJECTIVE_HOME"
-
-# Isolate agent-depth state the same way objectives are isolated, so these tests
-# can never read or write the real status directory.
+# Point agent-depth state at a throwaway dir so these tests can never read or
+# write the real status directory.
 TMUX_LLM_STATE_HOME="$test_home/llm-state"
 export TMUX_LLM_STATE_HOME
 

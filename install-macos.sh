@@ -183,6 +183,7 @@ if [[ "$mode" == "link" ]]; then
   link_path "$root_dir/codex/agents" "$HOME/.codex/agents"
   link_path "$root_dir/codex/bin/codex-role" "$HOME/.local/bin/codex-role"
   link_path "$root_dir/bin/session-objective" "$HOME/.local/bin/session-objective"
+  link_path "$root_dir/bin/codex-restore" "$HOME/.local/bin/codex-restore"
   link_path "$root_dir/bin/sf-org-resolve" "$HOME/.local/bin/sf-org-resolve"
   link_path "$root_dir/bin/sf-lease" "$HOME/.local/bin/sf-lease"
   link_path "$root_dir/claude/statusline.sh" "$HOME/.claude/statusline.sh"
@@ -229,6 +230,7 @@ install_file "$root_dir/codex/config.toml" "$HOME/.codex/config.toml" 0600
 install_file "$root_dir/codex/AGENTS.md" "$HOME/.codex/AGENTS.md"
 install_file "$root_dir/codex/bin/codex-role" "$HOME/.local/bin/codex-role" 0755
 install_file "$root_dir/bin/session-objective" "$HOME/.local/bin/session-objective" 0755
+install_file "$root_dir/bin/codex-restore" "$HOME/.local/bin/codex-restore" 0755
 install_file "$root_dir/bin/sf-org-resolve" "$HOME/.local/bin/sf-org-resolve" 0755
 install_file "$root_dir/bin/sf-lease" "$HOME/.local/bin/sf-lease" 0755
 install_file "$root_dir/claude/statusline.sh" "$HOME/.claude/statusline.sh" 0755
