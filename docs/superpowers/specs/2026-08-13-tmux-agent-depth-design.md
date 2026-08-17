@@ -204,11 +204,14 @@ The daemon resolves its root once, the same override the hook and tests use:
 
 ```bash
 count_agents() {
-  local dir="${STATE_HOME}/panes/${1#%}.agents"
-  local -a f=("$dir"/*)
-  [[ -e "${f[0]}" ]] && printf '%d' "${#f[@]}" || printf '0'
+  local dir="$STATE_HOME/panes/${1#%}.agents"
+  local -a found=("$dir"/*)
+  if [[ -e "${found[0]}" ]]; then AGENT_COUNT=${#found[@]}; else AGENT_COUNT=0; fi
 }
 ```
+
+Assigning to `AGENT_COUNT` instead of printing avoids a subshell fork on the call site where
+depth is read with no command substitution.
 
 `window_category`, `format_fleet`, and the roll-up are untouched. `status-left`
 counts **windows** by dominant state, and depth has no place there: `⠹3 ◆2` must

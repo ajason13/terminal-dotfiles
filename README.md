@@ -29,6 +29,23 @@ terminal backgrounds.
   agents do not run tests against the same org at once. Off until
   `SF_LEASE_ENABLE` is set - see Salesforce Org Leases.
 
+## Status bar markers
+
+| Marker | Meaning |
+| --- | --- |
+| `⠹` | a turn is running, no fan-out |
+| `⠹N` | N subagents in flight |
+| `◆` | agent present, idle |
+| `!` | blocked on you |
+
+`N` is suppressed at 1. Depth comes from `tmux-agent-depth.sh`, which writes one
+file per in-flight subagent under `~/.local/state/tmux-llm/panes/<pane>.agents/`.
+Until those four hooks are registered in `~/.claude/settings.json` the bar behaves
+exactly as it did before: depth is simply absent, and nothing else changes.
+
+Codex panes get presence and working states but never a depth number, because
+Codex has no `SubagentStart` equivalent.
+
 ## Layout
 
 ```text
@@ -46,7 +63,8 @@ terminal backgrounds.
 │   │   ├── sf-lease-end.sh
 │   │   ├── sf-lease-guard.sh
 │   │   ├── sf-lease-post.sh
-│   │   └── sf-lease-table.sh
+│   │   ├── sf-lease-table.sh
+│   │   └── tmux-agent-depth.sh
 │   └── statusline.sh
 ├── codex
 │   ├── AGENTS.md
@@ -161,6 +179,7 @@ Copy mode installs files into:
 ~/.claude/statusline.sh
 ~/.claude/commands/objective.md
 ~/.claude/hooks/sf-lease-{guard,post,end,table}.sh
+~/.claude/hooks/tmux-agent-depth.sh
 ```
 
 Existing files are backed up before replacement when contents differ.
@@ -196,6 +215,7 @@ This symlinks:
 ~/.claude/statusline.sh -> claude/statusline.sh
 ~/.claude/commands/objective.md -> claude/commands/objective.md
 ~/.claude/hooks/sf-lease-{guard,post,end,table}.sh -> claude/hooks/*
+~/.claude/hooks/tmux-agent-depth.sh -> claude/hooks/tmux-agent-depth.sh
 ```
 
 ## Codex Role Routing
