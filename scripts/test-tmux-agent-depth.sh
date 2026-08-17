@@ -12,8 +12,6 @@ TMUX_LLM_STATE_HOME="$test_home/state"
 export TMUX_LLM_STATE_HOME
 trap 'rm -rf "$test_home"' EXIT
 
-agent_dir="$TMUX_LLM_STATE_HOME/panes/9.agents"
-
 failures=0
 check() {
   local label="$1" want="$2" got="$3"
@@ -36,7 +34,9 @@ fire() {
 # and `${f[0]}` is unbound under `set -u`. Unset, the glob stays literal and the
 # -e test fails cleanly.
 count() {
-  local -a f=("$agent_dir"/*)
+  local pane="${1:-9}"
+  local dir="$TMUX_LLM_STATE_HOME/panes/$pane.agents"
+  local -a f=("$dir"/*)
   if [[ -e "${f[0]}" ]]; then printf '%d' "${#f[@]}"; else printf '0'; fi
 }
 
@@ -65,10 +65,12 @@ fire SessionEnd
 check "session end wipes the pane" "0" "$(count)"
 
 # --- guards: the hook must never disturb a session --------------------------
-fire SubagentStart delta '%9'
-other="$TMUX_LLM_STATE_HOME/panes/7.agents"
-check "another pane is untouched" "absent" \
-  "$(if [[ -d "$other" ]]; then printf 'present'; else printf 'absent'; fi)"
+# Seed pane 7 with an agent, then fire on pane 9, then assert pane 7 is untouched.
+fire SubagentStart seeded-agent '%7'
+check "can seed another pane" "1" "$(count 7)"
+
+fire SubagentStart isolated '%9'
+check "another pane is untouched" "1" "$(count 7)"
 
 # Outside tmux there is no pane to key on, so the hook must do nothing.
 # `|| true` throughout: `set -e` would abort the run instead of reporting a FAIL.
