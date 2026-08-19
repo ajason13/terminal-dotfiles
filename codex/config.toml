@@ -51,22 +51,3 @@ enabled = true
 max_concurrent_threads_per_session = 2
 default_subagent_model = "gpt-5.6-terra"
 default_subagent_reasoning_effort = "medium"
-
-# Per-session objective, shared with Claude Code and rendered on the tmux status
-# bar (Codex's tui.status_line takes fixed identifiers, so it cannot show this).
-# Invoked by name, not via $HOME: Codex does not document whether hook commands
-# go through a shell, and a PATH lookup works either way. Requires ~/.local/bin
-# on PATH, which codex-role and tmux-llm-status already assume.
-[[hooks.UserPromptSubmit]]
-
-[[hooks.UserPromptSubmit.hooks]]
-type = "command"
-command = 'session-objective capture --codex'
-timeout = 5
-
-[[hooks.SessionStart]]
-
-[[hooks.SessionStart.hooks]]
-type = "command"
-command = 'session-objective reset'
-timeout = 5

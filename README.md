@@ -12,8 +12,9 @@ terminal backgrounds.
 - tmux owns windows and panes; WezTerm tabs are hidden.
 - tmux status bar shows LLM activity markers: per window, plus a roll-up for the
   current session next to its name (each session counts only its own windows).
-- Session objectives are tracked and shown in the Claude Code statusline, but no
-  longer in tmux: one window per task means the window name already says it.
+- The Claude Code status line shows the target Salesforce org, model, branch, PR
+  state, path, and rate-limit usage. Session objectives are gone: one window per
+  task means the window name already says what the session is for.
 - `Ctrl-a` is the tmux prefix.
 - `Ctrl-a \` splits horizontally and `Ctrl-a -` splits vertically.
 - `Ctrl-a h/j/k/l` moves between panes.
@@ -114,12 +115,9 @@ TTL expires.
 ├── LICENSE
 ├── README.md
 ├── bin
-│   ├── session-objective
 │   ├── sf-lease
 │   └── sf-org-resolve
 ├── claude
-│   ├── commands
-│   │   └── objective.md
 │   ├── hooks
 │   │   ├── sf-lease-end.sh
 │   │   ├── sf-lease-guard.sh
@@ -152,8 +150,7 @@ TTL expires.
 │           └── which-key.lua
 ├── scripts
 │   ├── check-background-assets.sh
-│   ├── check-background-inbox.sh
-│   └── test-session-objective.sh
+│   └── check-background-inbox.sh
 ├── tmux
 │   ├── tmux.conf
 │   ├── tmux.local.conf.example
@@ -234,18 +231,16 @@ Copy mode installs files into:
 ~/.codex/agents
 ~/.codex/{deep-researcher,lead-architect,workflow-coordinator,builder}.config.toml
 ~/.local/bin/codex-role
-~/.local/bin/session-objective
 ~/.local/bin/sf-org-resolve
 ~/.local/bin/sf-lease
 ~/.claude/statusline.sh
-~/.claude/commands/objective.md
 ~/.claude/hooks/sf-lease-{guard,post,end,table}.sh
 ~/.claude/hooks/tmux-agent-depth.sh
 ```
 
 Existing files are backed up before replacement when contents differ.
-`~/.claude/settings.json` is never written: see Session Objectives and Salesforce
-Org Leases for the hook snippets to merge by hand. The lease hooks stay inert
+`~/.claude/settings.json` is never written: see Claude Code Status Line and
+Salesforce Org Leases for the settings and hook snippets to merge by hand. The lease hooks stay inert
 after installation until `SF_LEASE_ENABLE` is set, so installing them changes
 nothing about how a session behaves.
 
@@ -270,11 +265,9 @@ This symlinks:
 ~/.codex/agents -> codex/agents
 ~/.codex/{deep-researcher,lead-architect,workflow-coordinator,builder}.config.toml -> codex/profiles/*
 ~/.local/bin/codex-role -> codex/bin/codex-role
-~/.local/bin/session-objective -> bin/session-objective
 ~/.local/bin/sf-org-resolve -> bin/sf-org-resolve
 ~/.local/bin/sf-lease -> bin/sf-lease
 ~/.claude/statusline.sh -> claude/statusline.sh
-~/.claude/commands/objective.md -> claude/commands/objective.md
 ~/.claude/hooks/sf-lease-{guard,post,end,table}.sh -> claude/hooks/*
 ~/.claude/hooks/tmux-agent-depth.sh -> claude/hooks/tmux-agent-depth.sh
 ```
@@ -365,85 +358,45 @@ whenever a client attaches, so newly opened WezTerm windows pick up the latest
 config automatically; the session you're already in still needs `Ctrl-a r`. For
 a fully clean slate, quit all WezTerm windows (or run `tmux kill-server`).
 
-## Session Objectives
+## Claude Code Status Line
 
-Every agent session gets a one-line objective, so a pane you return to after a
-day says what it was for instead of needing to be asked.
+`claude/statusline.sh` renders one line under the prompt, joining only the
+segments whose data is available, in this order:
 
-- Seeded once from the session's first substantive prompt, then left alone.
-  Replies like `yes` or `run it` do not overwrite it.
-- The seed is **normalized**, because a real prompt front-loads the least useful
-  part and puts the identifier last. A raw truncation reads
-  `create a plan to implement https://leandat...`; normalized it reads
-  `plan: BB-484`. Ticket URLs collapse to their key, GitHub links to
-  `<repo> PR <n>`, other URLs to their last path segment, and interaction
-  framing (`can you`, `please`, `I want you to`) is dropped. Task verbs like
-  `fix` and `add` are kept, because those *are* the objective. Review-command
-  openers collapse too, since the command name alone can be 29 characters:
-  `/playwright-code-review-panel e2e-automation pr 469` becomes
-  `Review PR 469`. Planning and PR-description openers get a compact tag
-  (`test plan: BB-300`, `PR desc: jalvarez/eng-613`), and paste placeholders are
-  dropped.
+| Segment | Source |
+| --- | --- |
+| `sf:<org>` | the org this session targets - red `⚠PROD` when it is production |
+| `opus-5` | the session model, abbreviated |
+| branch | the worktree's branch, else the branch at `cwd` |
+| `PR #<n>` | the branch's PR, colored by open/draft/merged/closed |
+| path | `cwd` relative to the worktree root |
+| `5h 2% · 7d 99%` | rate-limit usage |
 
-  `/rename` is deliberately kept and seeds its text, because a hand-written
-  session name is the best objective available and tmux cannot read
-  `session_name` the way Claude's status line can. Config commands (`/model`,
-  `/mcp`, `/clear`, ...) do not seed at all, so the next real prompt describes
-  the session instead. Same for a prompt that was only a paste placeholder.
+`gh pr view` runs in the background behind a 15-second cache, so a slow network
+never delays a render - the line always shows whatever the cache holds.
 
-  An explicit
-  `/objective` is stored verbatim - your words are not rewritten.
-  Check any string with `session-objective normalize`.
-- `/objective <text>` (or a prompt starting `objective:`) sets it explicitly and
-  pins it. A bare `/objective` just reports the current one.
-- Claude Code shows it as the first status-line segment; an explicit `/rename`
-  wins over it there.
-- **tmux does not display it.** The status bar and pane borders both showed it
-  once; with one window per task the window name already carries the task, so
-  both were removed rather than duplicating it. `LLM_OBJECTIVE_MAX_LEN` and
-  `LLM_PANE_OBJECTIVE_MAX_LEN` went with them.
-- Store: `~/.local/state/session-objectives/`, one file per session id.
-  `SESSION_OBJECTIVE_HOME` relocates it. Files unread for 30 days are swept on
-  the next `SessionStart`.
+**No session objective.** A `▸ <objective>` segment used to lead the line,
+seeded from the session's first substantive prompt. One window per task means
+the window name already says what the session is for, so the segment and the
+capture pipeline behind it - `session-objective`, `/objective`, and their
+`UserPromptSubmit`/`SessionStart` hooks - were removed rather than kept as a
+second copy of the window name. Uninstall still clears the two installed paths
+from machines that had them.
 
-Claude Code and Codex both send `session_id` and `prompt` on `UserPromptSubmit`,
-so one capture path serves both. Only Claude Code renders it: `tui.status_line`
-takes a fixed list of predefined identifiers, not a command, so a Codex session
-captures an objective that nothing currently displays. tmux used to be the shared
-surface for exactly that reason; one window per task made it redundant.
-
-Run `session-objective doctor` if an objective stops appearing. It reports the
-store and its objective count, and warns if a hook payload arrived with no
-recognisable prompt field.
-
-### Claude Code hooks (manual step)
+### Claude Code settings (manual step)
 
 `~/.claude/settings.json` is **not** installed by this repo: it carries a
-personal MCP tool allowlist and this repo is public. Merge these two hooks into
-it by hand, keeping whatever is already there:
-
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/session-objective capture", "timeout": 5 }] }
-    ],
-    "SessionStart": [
-      { "hooks": [{ "type": "command", "command": "$HOME/.local/bin/session-objective reset", "timeout": 5 }] }
-    ]
-  }
-}
-```
-
-Also set the status line, if it is not already pointed there:
+personal MCP tool allowlist and this repo is public. Point the status line at
+the installed script by hand:
 
 ```json
 { "statusLine": { "type": "command", "command": "~/.claude/statusline.sh" } }
 ```
 
+The hook snippets that feed it are listed under Status bar markers (subagent
+depth) and Salesforce Org Leases (the lease guard and the CRM-org tracker).
 Hooks added to a running session may need `/hooks` opened once, or a restart,
-before they take effect. Codex needs no manual step - its hooks live in
-`codex/config.toml`, but they are inert until `~/.codex/config.toml` is linked.
+before they take effect.
 
 ## Salesforce Org Leases
 
@@ -1009,8 +962,8 @@ Remove this setup without restoring old files:
 ./uninstall-macos.sh --remove-only
 ```
 
-Uninstall removes `~/.local/bin/session-objective`, the two lease binaries and
-the four `~/.claude/hooks/sf-lease-*.sh` scripts, but it cannot touch
+Uninstall removes the two lease binaries and the four
+`~/.claude/hooks/sf-lease-*.sh` scripts, but it cannot touch
 `~/.claude/settings.json`, since this repo never installs it. Remove those hook
 entries from that file by hand - and `unset SF_LEASE_ENABLE` - or they will point
 at scripts that are no longer there, which errors on every Bash call.

@@ -190,16 +190,8 @@ if [ -n "$WEEK" ]; then
   LIMITS="${LIMITS:+$LIMITS · }$WEEK_FMT"
 fi
 
-# --- Session objective (what this pane is doing) ---
-# An explicit /rename wins; otherwise fall back to the captured objective.
-OBJECTIVE=$(echo "$input" | jq -r '.session_name // empty')
-if [ -z "$OBJECTIVE" ] && [ -n "$SESSION_ID" ]; then
-  OBJECTIVE=$("$HOME/.local/bin/session-objective" read "$SESSION_ID" 2>/dev/null)
-fi
-
 # --- Assemble, omitting any segment whose data wasn't available ---
 SEGMENTS=()
-[ -n "$OBJECTIVE" ] && SEGMENTS+=("▸ $OBJECTIVE")
 [ -n "$CRM_ORG" ] && SEGMENTS+=("$CRM_ORG")
 [ -n "$MODEL" ] && SEGMENTS+=("$MODEL")
 [ -n "$BRANCH" ] && SEGMENTS+=("$BRANCH")

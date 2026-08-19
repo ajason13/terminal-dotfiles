@@ -170,7 +170,6 @@ fetch_backgrounds() {
 run mkdir -p "$HOME/.config"
 run mkdir -p "$HOME/.local/bin"
 run mkdir -p "$HOME/.codex"
-run mkdir -p "$HOME/.claude/commands"
 
 if [[ "$mode" == "link" ]]; then
   link_path "$root_dir/wezterm/.wezterm.lua" "$HOME/.wezterm.lua"
@@ -182,12 +181,10 @@ if [[ "$mode" == "link" ]]; then
   link_path "$root_dir/codex/AGENTS.md" "$HOME/.codex/AGENTS.md"
   link_path "$root_dir/codex/agents" "$HOME/.codex/agents"
   link_path "$root_dir/codex/bin/codex-role" "$HOME/.local/bin/codex-role"
-  link_path "$root_dir/bin/session-objective" "$HOME/.local/bin/session-objective"
   link_path "$root_dir/bin/codex-restore" "$HOME/.local/bin/codex-restore"
   link_path "$root_dir/bin/sf-org-resolve" "$HOME/.local/bin/sf-org-resolve"
   link_path "$root_dir/bin/sf-lease" "$HOME/.local/bin/sf-lease"
   link_path "$root_dir/claude/statusline.sh" "$HOME/.claude/statusline.sh"
-  link_path "$root_dir/claude/commands/objective.md" "$HOME/.claude/commands/objective.md"
   link_path "$root_dir/claude/hooks/track-crm-org.sh" "$HOME/.claude/hooks/track-crm-org.sh"
   link_path "$root_dir/claude/hooks/sf-lease-guard.sh" "$HOME/.claude/hooks/sf-lease-guard.sh"
   link_path "$root_dir/claude/hooks/sf-lease-post.sh" "$HOME/.claude/hooks/sf-lease-post.sh"
@@ -229,12 +226,10 @@ install_file "$root_dir/tmux/tmux-llm-status" "$HOME/.local/bin/tmux-llm-status"
 install_file "$root_dir/codex/config.toml" "$HOME/.codex/config.toml" 0600
 install_file "$root_dir/codex/AGENTS.md" "$HOME/.codex/AGENTS.md"
 install_file "$root_dir/codex/bin/codex-role" "$HOME/.local/bin/codex-role" 0755
-install_file "$root_dir/bin/session-objective" "$HOME/.local/bin/session-objective" 0755
 install_file "$root_dir/bin/codex-restore" "$HOME/.local/bin/codex-restore" 0755
 install_file "$root_dir/bin/sf-org-resolve" "$HOME/.local/bin/sf-org-resolve" 0755
 install_file "$root_dir/bin/sf-lease" "$HOME/.local/bin/sf-lease" 0755
 install_file "$root_dir/claude/statusline.sh" "$HOME/.claude/statusline.sh" 0755
-install_file "$root_dir/claude/commands/objective.md" "$HOME/.claude/commands/objective.md"
 install_file "$root_dir/claude/hooks/track-crm-org.sh" "$HOME/.claude/hooks/track-crm-org.sh" 0755
 install_file "$root_dir/claude/hooks/sf-lease-guard.sh" "$HOME/.claude/hooks/sf-lease-guard.sh" 0755
 install_file "$root_dir/claude/hooks/sf-lease-post.sh" "$HOME/.claude/hooks/sf-lease-post.sh" 0755
