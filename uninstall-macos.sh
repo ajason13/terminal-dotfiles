@@ -99,12 +99,10 @@ targets=(
   "$HOME/.codex/workflow-coordinator.config.toml"
   "$HOME/.codex/builder.config.toml"
   "$HOME/.local/bin/codex-role"
-  "$HOME/.local/bin/session-objective"
   "$HOME/.local/bin/codex-restore"
   "$HOME/.local/bin/sf-org-resolve"
   "$HOME/.local/bin/sf-lease"
   "$HOME/.claude/statusline.sh"
-  "$HOME/.claude/commands/objective.md"
   "$HOME/.claude/hooks/track-crm-org.sh"
   "$HOME/.claude/hooks/sf-lease-guard.sh"
   "$HOME/.claude/hooks/sf-lease-post.sh"
@@ -113,7 +111,13 @@ targets=(
   "$HOME/.claude/hooks/tmux-agent-depth.sh"
 )
 
-for target in "${targets[@]}"; do
+# Retired features whose files may still be present from an earlier install.
+legacy_targets=(
+  "$HOME/.local/bin/session-objective"
+  "$HOME/.claude/commands/objective.md"
+)
+
+for target in "${targets[@]}" "${legacy_targets[@]}"; do
   remove_target "$target"
 done
 
