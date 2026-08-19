@@ -38,19 +38,74 @@ terminal backgrounds.
 | `◆` | agent present, idle |
 | `!` | blocked on you |
 
-`N` is suppressed at 1. Depth comes from `tmux-agent-depth.sh`, which writes one
-file per in-flight subagent under `$TMUX_LLM_STATE_HOME/panes/<pane>.agents/`
-(default `~/.local/state/tmux-llm`, override with `TMUX_LLM_STATE_HOME`). Until
-those four hooks are registered in `~/.claude/settings.json` the bar behaves
-exactly as it did before: depth is simply absent, and nothing else changes.
+`N` is suppressed at 1. Both working states come from `tmux-agent-depth.sh`,
+under `$TMUX_LLM_STATE_HOME/panes/` (default `~/.local/state/tmux-llm`, override
+with `TMUX_LLM_STATE_HOME`):
 
-Codex panes get presence and working states but never a depth number, because
-Codex has no `SubagentStart` equivalent.
+- **depth** - one file per in-flight subagent in `<pane>.agents/`
+- **busy** - `<pane>.busy`, holding the epoch of the last event in the turn
 
-`tmux-llm-status prune` drops state directories for panes tmux no longer
-reports, so a dead pane's leftover count cannot linger. If a marker still shows
-a spinner with no real work running - a missed `SubagentStop` left a file
-behind - clear it by hand: `rm -rf ~/.local/state/tmux-llm/panes/<pane>.agents`.
+Busy is not a nicety. Claude Code used to animate its terminal title with
+braille frames while working; since 2.1.2xx it shows a static `✳ <summary>`
+whether it is thinking or idle, so the title can no longer answer "is this pane
+working?" at all. Without the hooks registered, every Claude window sits on `◆`
+forever and the spinner appears only during a fan-out.
+
+Busy is read as **fresh**, not merely present: `Stop` does not fire when you
+interrupt a turn, so an existence check alone would spin forever afterwards.
+`UserPromptSubmit` opens the turn, `PostToolBatch` heartbeats it, and
+`Stop`/`StopFailure` close it; the marker ages out after
+`TMUX_LLM_BUSY_TTL` seconds (default 1200, comfortably above one tool batch).
+
+Codex panes get presence and the title-based working state, but never a depth
+number or a busy marker, because Codex fires neither `SubagentStart` nor these
+turn events. The title matchers stay in place for exactly that reason.
+
+`tmux-llm-status prune` drops state for panes tmux no longer reports, so a dead
+pane's leftovers cannot linger. If a marker still shows a spinner with no real
+work running - a missed `SubagentStop` left a file behind - clear it by hand:
+`rm -rf ~/.local/state/tmux-llm/panes/<pane>.agents ~/.local/state/tmux-llm/panes/<pane>.busy`.
+
+### Registering the hooks
+
+`~/.claude/settings.json` is never written by this repo, so merge these by hand,
+appending to any array that already exists:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "$HOME/.claude/hooks/tmux-agent-depth.sh", "timeout": 5 }] }
+    ],
+    "PostToolBatch": [
+      { "hooks": [{ "type": "command", "command": "$HOME/.claude/hooks/tmux-agent-depth.sh", "timeout": 5 }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "$HOME/.claude/hooks/tmux-agent-depth.sh", "timeout": 5 }] }
+    ],
+    "StopFailure": [
+      { "hooks": [{ "type": "command", "command": "$HOME/.claude/hooks/tmux-agent-depth.sh", "timeout": 5 }] }
+    ],
+    "SubagentStart": [
+      { "hooks": [{ "type": "command", "command": "$HOME/.claude/hooks/tmux-agent-depth.sh", "timeout": 5 }] }
+    ],
+    "SubagentStop": [
+      { "hooks": [{ "type": "command", "command": "$HOME/.claude/hooks/tmux-agent-depth.sh", "timeout": 5 }] }
+    ],
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "$HOME/.claude/hooks/tmux-agent-depth.sh", "timeout": 5 }] }
+    ],
+    "SessionEnd": [
+      { "hooks": [{ "type": "command", "command": "$HOME/.claude/hooks/tmux-agent-depth.sh", "timeout": 5 }] }
+    ]
+  }
+}
+```
+
+The first four are the busy marker, the next two are depth, and the last two
+reset a pane. Registering only some is fine - each state degrades to absent
+rather than wrong - but dropping `Stop` leaves every pane spinning until the
+TTL expires.
 
 ## Layout
 

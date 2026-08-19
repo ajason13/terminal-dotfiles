@@ -21,13 +21,16 @@ tmux_cmd() {
   fi
 }
 
-# LLM presence is detected PRIMARILY from the terminal title (see the title
-# helpers below and the classification order in window_status). Claude Code and
-# Codex animate/label their titles, and their pane_current_command is an
-# unstable value (Claude reports a version string such as "2.1.198", not
-# "claude"), so they are matched by title, not command. This list is only a
-# fallback for CLIs that expose a stable process name. Do NOT add version
-# strings here - fix the title matchers instead.
+# LLM PRESENCE is detected from the terminal title (see the title helpers below
+# and the classification order in count_window); WORKING is not, because Claude
+# Code 2.1.2xx stopped animating its title - it now shows a static "✳ <summary>"
+# whether it is thinking or idle, and ships no braille frames at all. Working
+# state therefore comes from the hook-published busy marker (is_pane_busy); the
+# title matchers survive only for Codex and any CLI that still animates.
+# pane_current_command is an unstable value (Claude reports a version string such
+# as "2.1.198", not "claude"), so presence is matched by title, not command. This
+# list is only a fallback for CLIs that expose a stable process name. Do NOT add
+# version strings here - fix the title matchers instead.
 is_llm_command() {
   case "$1" in
     codex | claude | gemini | aider | opencode)
@@ -41,6 +44,28 @@ is_llm_command() {
 
 STATE_HOME="${TMUX_LLM_STATE_HOME:-${HOME:-}/.local/state/tmux-llm}"
 
+# How long a busy marker stays believable without a heartbeat. `Stop` does not
+# fire when you interrupt a turn, so freshness - not mere existence - is what
+# keeps an abandoned marker from spinning forever. The floor is the longest gap
+# the hook can go without refreshing, i.e. one tool batch.
+BUSY_TTL="${TMUX_LLM_BUSY_TTL:-1200}"
+
+# Set once per pass and reused: this runs for every pane every second, so the
+# alternative is a `date` fork per pane.
+refresh_now() { NOW="$(date +%s)"; }
+
+# Is a turn running in this pane? The marker holds the epoch of the last hook
+# event in the turn. Read with a redirect rather than $(cat ...) to stay
+# fork-free on the per-pane path.
+is_pane_busy() {
+  local file="$STATE_HOME/panes/${1#%}.busy" stamp=''
+  [[ -f "$file" ]] || return 1
+  [[ -n "${NOW:-}" ]] || refresh_now
+  read -r stamp < "$file" 2>/dev/null || true
+  [[ "$stamp" =~ ^[0-9]+$ ]] || return 1
+  (( NOW - stamp < BUSY_TTL ))
+}
+
 # In-flight subagents for one pane, as a file count published by the
 # tmux-agent-depth hook. Globbed rather than `ls`, and assigns into AGENT_COUNT
 # rather than printing, because this runs for every pane on every one-second
@@ -52,22 +77,24 @@ count_agents() {
   if [[ -e "${found[0]}" ]]; then AGENT_COUNT=${#found[@]}; else AGENT_COUNT=0; fi
 }
 
-# Drop agent state for panes tmux no longer reports. Pane ids reset to %0 on a
-# tmux server restart, so a stale dir could otherwise collide with a recycled id.
+# Drop agent and busy state for panes tmux no longer reports. Pane ids reset to
+# %0 on a tmux server restart, so stale state could otherwise collide with a
+# recycled id.
 prune_dead_panes() {
-  local dir id live
+  local entry id live
   [[ -d "$STATE_HOME/panes" ]] || return 0
   live=" $(tmux_cmd list-panes -a -F '#{pane_id}' 2>/dev/null | tr -d '%' | tr '\n' ' ' || true)"
   # An empty live set more likely means the socket resolved wrong than that every
   # pane died at once - never let that wipe valid state.
   [[ "$live" != " " ]] || return 0
-  for dir in "$STATE_HOME/panes"/*.agents; do
-    [[ -d "$dir" ]] || continue
-    id="${dir##*/}"
+  for entry in "$STATE_HOME/panes"/*.agents "$STATE_HOME/panes"/*.busy; do
+    [[ -e "$entry" ]] || continue
+    id="${entry##*/}"
     id="${id%.agents}"
+    id="${id%.busy}"
     case "$live" in
       *" $id "*) ;;
-      *) rm -rf "$dir" 2>/dev/null || true ;;
+      *) rm -rf "$entry" 2>/dev/null || true ;;
     esac
   done
 }
@@ -153,6 +180,10 @@ count_window() {
     if (( depth > 0 )); then
       active=$((active + 1))
       depth_sum=$((depth_sum + depth))
+    # Ahead of every title matcher: a working Claude pane's title is now
+    # indistinguishable from an idle one, so the marker is the only truth.
+    elif is_pane_busy "$pane_id"; then
+      active=$((active + 1))
     elif has_spinner_title "${title:-}"; then
       active=$((active + 1))
     elif is_active_title "${title:-}"; then
@@ -305,6 +336,9 @@ update_session() {
 
 update_all_windows() {
   local session
+  # Once per pass, so busy markers age against the current clock in the daemon's
+  # long-lived process rather than against whenever it started.
+  refresh_now
 
   # Clear the global fallback so a session created between passes renders empty
   # rather than inheriting whatever the last session to be scanned reported.

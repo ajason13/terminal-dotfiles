@@ -47,6 +47,21 @@ count() {
   if [[ -e "${f[0]}" ]]; then printf '%d' "${#f[@]}"; else printf '0'; fi
 }
 
+# Fire a lead-agent event: no agent_id key at all, which is what separates the
+# main agent's turn events from a subagent's on the same pane.
+fire_lead() {
+  local event="$1" pane="${2:-%9}"
+  printf '{"hook_event_name":"%s"}' "$event" | TMUX_PANE="$pane" "$hook"
+}
+
+busy_file() { printf '%s' "$TMUX_LLM_STATE_HOME/panes/${1:-9}.busy"; }
+busy_state() {
+  if [[ -f "$(busy_file "${1:-9}")" ]]; then printf 'busy'; else printf 'idle'; fi
+}
+# Unparameterised, unlike its siblings: only the default pane's stamp is ever
+# read, and an unused parameter trips SC2120 on the shellcheck CI runs.
+busy_stamp() { cat "$(busy_file)" 2>/dev/null || printf '0'; }
+
 fire SubagentStart alpha
 check "start creates one file" "1" "$(count)"
 
@@ -90,6 +105,58 @@ check "clear source still wipes" "0" "$(count)"
 fire SubagentStart kept3
 fire_with_source SessionStart ''
 check "missing source wipes conservatively" "0" "$(count)"
+
+# --- busy marker: the lead pane's working state -------------------------------
+# Claude Code no longer animates its terminal title, so "a turn is running" can
+# only come from here. UserPromptSubmit opens the turn, Stop closes it.
+fire_lead SessionEnd
+check "busy starts clear" "idle" "$(busy_state)"
+
+fire_lead UserPromptSubmit
+check "prompt submit marks the pane busy" "busy" "$(busy_state)"
+check "busy marker stores an epoch stamp" "epoch" \
+  "$(if [[ "$(busy_stamp)" =~ ^[0-9]{10,}$ ]]; then printf 'epoch'; else printf 'no'; fi)"
+
+# A resolved tool batch is the heartbeat that keeps a long turn from ageing out
+# of the freshness window.
+printf '%s' "$(( $(busy_stamp) - 5000 ))" > "$(busy_file)"
+stale_stamp="$(busy_stamp)"
+fire_lead PostToolBatch
+check "tool batch refreshes the stamp" "refreshed" \
+  "$(if (( $(busy_stamp) > stale_stamp )); then printf 'refreshed'; else printf 'stale'; fi)"
+
+fire_lead Stop
+check "stop clears busy" "idle" "$(busy_state)"
+
+fire_lead UserPromptSubmit
+fire_lead StopFailure
+check "stop failure is also a turn end" "idle" "$(busy_state)"
+
+# A subagent finishing must not end the lead's turn: subagents inherit the same
+# TMUX_PANE, so the agent_id is the only thing separating them.
+fire_lead UserPromptSubmit
+fire Stop some-subagent
+check "a subagent's stop leaves the lead busy" "busy" "$(busy_state)"
+
+# Compaction fires mid-turn; wiping busy there strands a working pane at idle.
+fire_with_source SessionStart compact
+check "compact keeps busy" "busy" "$(busy_state)"
+
+fire_with_source SessionStart resume
+check "resume keeps busy" "busy" "$(busy_state)"
+
+fire_with_source SessionStart startup
+check "startup clears busy" "idle" "$(busy_state)"
+
+fire_lead UserPromptSubmit
+fire_lead SessionEnd
+check "session end clears busy" "idle" "$(busy_state)"
+
+# Busy is per-pane, like depth.
+fire_lead UserPromptSubmit '%7'
+check "busy is scoped to its own pane" "idle" "$(busy_state 9)"
+check "the seeded pane is busy" "busy" "$(busy_state 7)"
+fire_lead SessionEnd '%7'
 
 # --- guards: the hook must never disturb a session --------------------------
 # Seed pane 7 with an agent, then fire on pane 9, then assert pane 7 is untouched.
