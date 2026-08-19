@@ -58,7 +58,9 @@ busy_file() { printf '%s' "$TMUX_LLM_STATE_HOME/panes/${1:-9}.busy"; }
 busy_state() {
   if [[ -f "$(busy_file "${1:-9}")" ]]; then printf 'busy'; else printf 'idle'; fi
 }
-busy_stamp() { cat "$(busy_file "${1:-9}")" 2>/dev/null || printf '0'; }
+# Unparameterised, unlike its siblings: only the default pane's stamp is ever
+# read, and an unused parameter trips SC2120 on the shellcheck CI runs.
+busy_stamp() { cat "$(busy_file)" 2>/dev/null || printf '0'; }
 
 fire SubagentStart alpha
 check "start creates one file" "1" "$(count)"
