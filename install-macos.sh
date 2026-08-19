@@ -170,7 +170,6 @@ fetch_backgrounds() {
 run mkdir -p "$HOME/.config"
 run mkdir -p "$HOME/.local/bin"
 run mkdir -p "$HOME/.codex"
-run mkdir -p "$HOME/.claude/commands"
 
 if [[ "$mode" == "link" ]]; then
   link_path "$root_dir/wezterm/.wezterm.lua" "$HOME/.wezterm.lua"
