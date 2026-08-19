@@ -36,7 +36,23 @@ agents_for() {
 
 clear_agents_for() { rm -rf "$(agent_dir_for "$1")"; }
 
-exists() { if [[ -d "$1" ]]; then printf 'present'; else printf 'absent'; fi; }
+busy_file_for() {
+  local id
+  id="$(t display-message -p -t "$1" '#{pane_id}')"
+  printf '%s' "$TMUX_LLM_STATE_HOME/panes/${id#%}.busy"
+}
+
+# Age is the point of the marker, so the fixture takes it: 0 = a turn running now.
+busy_for() {
+  local f
+  f="$(busy_file_for "$1")"
+  mkdir -p "${f%/*}"
+  printf '%s' "$(( $(date +%s) - ${2:-0} ))" > "$f"
+}
+
+clear_busy_for() { rm -f "$(busy_file_for "$1")"; }
+
+exists() { if [[ -e "$1" ]]; then printf 'present'; else printf 'absent'; fi; }
 
 # -f /dev/null on every server-creating call: the real tmux.conf restarts the
 # status daemon, which would then run against this test socket.
@@ -152,19 +168,61 @@ check "depth_sum accumulates across panes" "S5" "$(marker_of alpha:multi)"
 clear_agents_for alpha:multi.0
 clear_agents_for alpha:multi.1
 
+# --- busy marker drives the working state --------------------------------------
+# The regression this exists for: Claude Code stopped animating its title, so an
+# idle-looking title is now the ONLY title a working lead ever shows.
+t select-pane -t alpha:a1 -T '✳ claude idle'
+busy_for alpha:a1
+"$bin" once
+check "busy marker beats an idle title" "S" "$(marker_of alpha:a1)"
+# a2 is still an idle Claude pane, so the roll-up must separate the two states.
+check "a busy window counts in the roll-up" "S1 ◆1" "$(fleet_of alpha)"
+
+# Freshness, not mere existence: Stop does not fire on a user interrupt, so a
+# marker that outlives its turn must age out rather than spin forever.
+busy_for alpha:a1 99999
+"$bin" once
+check "a stale busy marker reads as idle" "◆" "$(marker_of alpha:a1)"
+
+busy_for alpha:a1
+agents_for alpha:a1 2
+"$bin" once
+check "depth still wins over busy" "S2" "$(marker_of alpha:a1)"
+clear_agents_for alpha:a1
+
+clear_busy_for alpha:a1
+"$bin" once
+check "clearing busy reverts to present" "◆" "$(marker_of alpha:a1)"
+
+# A busy pane with no LLM title at all is still working - a shell pane is not.
+t select-pane -t alpha:a2 -T 'zsh'
+busy_for alpha:a2
+"$bin" once
+check "busy needs no title to count" "S" "$(marker_of alpha:a2)"
+clear_busy_for alpha:a2
+"$bin" once
+check "an unmarked shell pane stays empty" "" "$(marker_of alpha:a2)"
+
 # --- pruning state for panes that no longer exist ------------------------------
 # tmux pane ids reset to %0 when the server restarts, so a dir left by a previous
 # server can collide with a recycled id. Exposed as a subcommand so it is testable
 # without running the daemon loop.
 mkdir -p "$TMUX_LLM_STATE_HOME/panes/99999.agents"
 : > "$TMUX_LLM_STATE_HOME/panes/99999.agents/ghost"
+: > "$TMUX_LLM_STATE_HOME/panes/99999.busy"
 agents_for alpha:a1 2
+busy_for alpha:a1
 "$bin" prune
 check "prune drops dirs for dead panes" "absent" \
   "$(exists "$TMUX_LLM_STATE_HOME/panes/99999.agents")"
+check "prune drops busy markers for dead panes" "absent" \
+  "$(exists "$TMUX_LLM_STATE_HOME/panes/99999.busy")"
 check "prune keeps dirs for live panes" "present" \
   "$(exists "$(agent_dir_for alpha:a1)")"
+check "prune keeps busy markers for live panes" "present" \
+  "$(exists "$(busy_file_for alpha:a1)")"
 clear_agents_for alpha:a1
+clear_busy_for alpha:a1
 
 if (( failures > 0 )); then
   printf 'test-tmux-llm-status: %d failure(s)\n' "$failures" >&2
