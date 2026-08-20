@@ -12,10 +12,10 @@ terminal backgrounds.
 - tmux owns windows and panes; WezTerm tabs are hidden.
 - tmux status bar shows LLM activity markers: per window, plus a roll-up for the
   current session next to its name (each session counts only its own windows).
-- The Claude Code status line shows model, branch, path, context-window usage,
-  and rate-limit usage.
-  Session objectives, PR state, and the Salesforce org indicator have all been
-  removed - see Claude Code Status Line for what each one cost.
+- The Claude Code status line shows model, branch, context-window usage, and
+  rate-limit usage. The path, session objectives, PR state, and the Salesforce
+  org indicator have all been removed - see Claude Code Status Line for what
+  each one cost.
 - `Ctrl-a` is the tmux prefix.
 - `Ctrl-a \` splits horizontally and `Ctrl-a -` splits vertically.
 - `Ctrl-a h/j/k/l` moves between panes.
@@ -368,7 +368,6 @@ segments whose data is available, in this order:
 | --- | --- |
 | `opus-5` | the session model, abbreviated |
 | branch | the worktree's branch, else the branch at `cwd` |
-| path | `cwd` relative to the worktree root |
 | `ctx 34%` | share of the context window in use |
 | `5h 2% (3h) · 7d 99% (2d)` | rate-limit usage, and the time left in each window |
 
@@ -385,6 +384,12 @@ The only subprocesses left are a local `git rev-parse`, when the payload carries
 no worktree branch, and one `date +%s`, when there is a reset to measure against
 - macOS ships bash 3.2, which has no `$EPOCHSECONDS`. Nothing touches the
 network or reads a file, so a render never waits on one.
+
+**No path.** A path segment sat between branch and rate-limit usage, rendering
+`cwd` relative to the worktree root. Under one window per task `cwd` is the
+worktree root nearly always, so the segment showed a bare `.` - a character that
+took up room without ever telling one session from another. `worktree.path` was
+read only to build it, so that read went with it.
 
 **No Salesforce org.** An `sf:<org>` segment led the line, red `⚠PROD` when the
 target looked like production, fed by a `PreToolUse` hook that recorded the org

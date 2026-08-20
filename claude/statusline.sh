@@ -51,19 +51,6 @@ if [ -z "$BRANCH" ] && [ -n "$CWD" ]; then
   BRANCH=$(git -C "$CWD" rev-parse --abbrev-ref HEAD 2>/dev/null)
 fi
 
-# --- Current dir, relative to worktree/project root ---
-ROOT=$(echo "$input" | jq -r '.worktree.path // .workspace.project_dir // empty')
-RELPATH=""
-if [ -n "$CWD" ] && [ -n "$ROOT" ]; then
-  if [ "$CWD" = "$ROOT" ]; then
-    RELPATH="."
-  elif [[ "$CWD" == "$ROOT"/* ]]; then
-    RELPATH="${CWD#"$ROOT"/}"
-  else
-    RELPATH="$CWD"
-  fi
-fi
-
 # --- Context window (null before the first API call, and again after /compact) ---
 CTX_PCT=$(echo "$input" | jq -r '(.context_window.used_percentage | numbers) // empty')
 CTX=""
@@ -115,7 +102,6 @@ fi
 SEGMENTS=()
 [ -n "$MODEL" ] && SEGMENTS+=("$MODEL")
 [ -n "$BRANCH" ] && SEGMENTS+=("$BRANCH")
-[ -n "$RELPATH" ] && SEGMENTS+=("$RELPATH")
 [ -n "$CTX" ] && SEGMENTS+=("$CTX")
 [ -n "$LIMITS" ] && SEGMENTS+=("$LIMITS")
 
