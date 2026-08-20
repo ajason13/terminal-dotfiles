@@ -64,6 +64,11 @@ if [ -n "$CWD" ] && [ -n "$ROOT" ]; then
   fi
 fi
 
+# --- Context window (null before the first API call, and again after /compact) ---
+CTX_PCT=$(echo "$input" | jq -r '(.context_window.used_percentage | numbers) // empty')
+CTX=""
+[ -n "$CTX_PCT" ] && CTX="ctx $(printf '%.0f' "$CTX_PCT")%"
+
 # --- Rate limits (5-hour / 7-day usage, plus time left in each window) ---
 FIVE_H=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
 WEEK=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
@@ -111,6 +116,7 @@ SEGMENTS=()
 [ -n "$MODEL" ] && SEGMENTS+=("$MODEL")
 [ -n "$BRANCH" ] && SEGMENTS+=("$BRANCH")
 [ -n "$RELPATH" ] && SEGMENTS+=("$RELPATH")
+[ -n "$CTX" ] && SEGMENTS+=("$CTX")
 [ -n "$LIMITS" ] && SEGMENTS+=("$LIMITS")
 
 OUT=""

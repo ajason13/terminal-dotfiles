@@ -12,7 +12,8 @@ terminal backgrounds.
 - tmux owns windows and panes; WezTerm tabs are hidden.
 - tmux status bar shows LLM activity markers: per window, plus a roll-up for the
   current session next to its name (each session counts only its own windows).
-- The Claude Code status line shows model, branch, path, and rate-limit usage.
+- The Claude Code status line shows model, branch, path, context-window usage,
+  and rate-limit usage.
   Session objectives, PR state, and the Salesforce org indicator have all been
   removed - see Claude Code Status Line for what each one cost.
 - `Ctrl-a` is the tmux prefix.
@@ -368,7 +369,13 @@ segments whose data is available, in this order:
 | `opus-5` | the session model, abbreviated |
 | branch | the worktree's branch, else the branch at `cwd` |
 | path | `cwd` relative to the worktree root |
+| `ctx 34%` | share of the context window in use |
 | `5h 2% (3h) · 7d 99% (2d)` | rate-limit usage, and the time left in each window |
+
+`ctx` comes from `context_window.used_percentage`, which Claude Code
+pre-calculates. That field is null before the session's first API call and again
+after `/compact`, so the segment drops out until the next call rather than
+standing in a placeholder `ctx 0%`.
 
 The reset spans are rendered as time remaining rather than a wall-clock time, so
 the number reads without arithmetic; the parenthetical is dropped when the
