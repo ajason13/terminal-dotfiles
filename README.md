@@ -368,11 +368,16 @@ segments whose data is available, in this order:
 | `opus-5` | the session model, abbreviated |
 | branch | the worktree's branch, else the branch at `cwd` |
 | path | `cwd` relative to the worktree root |
-| `5h 2% · 7d 99%` | rate-limit usage |
+| `5h 2% (3h) · 7d 99% (2d)` | rate-limit usage, and the time left in each window |
 
-The only subprocess left is a local `git rev-parse`, and only when the payload
-carries no worktree branch. Nothing touches the network or reads a file, so a
-render never waits on one.
+The reset spans are rendered as time remaining rather than a wall-clock time, so
+the number reads without arithmetic; the parenthetical is dropped when the
+payload carries no reset or the window has already rolled over.
+
+The only subprocesses left are a local `git rev-parse`, when the payload carries
+no worktree branch, and one `date +%s`, when there is a reset to measure against
+- macOS ships bash 3.2, which has no `$EPOCHSECONDS`. Nothing touches the
+network or reads a file, so a render never waits on one.
 
 **No Salesforce org.** An `sf:<org>` segment led the line, red `⚠PROD` when the
 target looked like production, fed by a `PreToolUse` hook that recorded the org

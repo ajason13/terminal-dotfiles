@@ -64,14 +64,45 @@ if [ -n "$CWD" ] && [ -n "$ROOT" ]; then
   fi
 fi
 
-# --- Rate limits (5-hour / 7-day usage) ---
+# --- Rate limits (5-hour / 7-day usage, plus time left in each window) ---
 FIVE_H=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
 WEEK=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
+# `numbers` drops a null or non-numeric reset instead of letting floor error out
+FIVE_H_AT=$(echo "$input" | jq -r '(.rate_limits.five_hour.resets_at | numbers | floor) // empty')
+WEEK_AT=$(echo "$input" | jq -r '(.rate_limits.seven_day.resets_at | numbers | floor) // empty')
+
+# Only pay for `date` when there is a reset to measure against. Bash 3.2 ships
+# on macOS, so $EPOCHSECONDS is not an option here.
+NOW=""
+[ -n "$FIVE_H_AT$WEEK_AT" ] && NOW=$(date +%s)
+
+# Span until an epoch reset: whole hours under a day, whole days above. Empty
+# for a missing or already-elapsed reset, so the caller omits the parenthetical.
+until_reset() {
+  local at="$1" delta n unit
+  { [ -z "$at" ] || [ -z "$NOW" ]; } && { echo ""; return; }
+  delta=$(( at - NOW ))
+  [ "$delta" -le 0 ] && { echo ""; return; }
+  if [ "$delta" -lt 86400 ]; then
+    n=$(( (delta + 1800) / 3600 )); unit="h"
+  else
+    n=$(( (delta + 43200) / 86400 )); unit="d"
+  fi
+  # a reset minutes away rounds to 0; report the floor of one unit instead
+  [ "$n" -lt 1 ] && n=1
+  echo "${n}${unit}"
+}
 
 LIMITS=""
-[ -n "$FIVE_H" ] && LIMITS="5h $(printf '%.0f' "$FIVE_H")%"
+if [ -n "$FIVE_H" ]; then
+  LIMITS="5h $(printf '%.0f' "$FIVE_H")%"
+  FIVE_H_LEFT=$(until_reset "$FIVE_H_AT")
+  [ -n "$FIVE_H_LEFT" ] && LIMITS="$LIMITS ($FIVE_H_LEFT)"
+fi
 if [ -n "$WEEK" ]; then
   WEEK_FMT="7d $(printf '%.0f' "$WEEK")%"
+  WEEK_LEFT=$(until_reset "$WEEK_AT")
+  [ -n "$WEEK_LEFT" ] && WEEK_FMT="$WEEK_FMT ($WEEK_LEFT)"
   LIMITS="${LIMITS:+$LIMITS · }$WEEK_FMT"
 fi
 
