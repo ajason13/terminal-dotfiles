@@ -12,9 +12,9 @@ terminal backgrounds.
 - tmux owns windows and panes; WezTerm tabs are hidden.
 - tmux status bar shows LLM activity markers: per window, plus a roll-up for the
   current session next to its name (each session counts only its own windows).
-- The Claude Code status line shows the target Salesforce org, model, branch, PR
-  state, path, and rate-limit usage. Session objectives are gone: one window per
-  task means the window name already says what the session is for.
+- The Claude Code status line shows the target Salesforce org, model, branch,
+  path, and rate-limit usage. Session objectives and PR state are gone: one
+  window per task means the window name already carries both.
 - `Ctrl-a` is the tmux prefix.
 - `Ctrl-a \` splits horizontally and `Ctrl-a -` splits vertically.
 - `Ctrl-a h/j/k/l` moves between panes.
@@ -368,12 +368,19 @@ segments whose data is available, in this order:
 | `sf:<org>` | the org this session targets - red `⚠PROD` when it is production |
 | `opus-5` | the session model, abbreviated |
 | branch | the worktree's branch, else the branch at `cwd` |
-| `PR #<n>` | the branch's PR, colored by open/draft/merged/closed |
 | path | `cwd` relative to the worktree root |
 | `5h 2% · 7d 99%` | rate-limit usage |
 
-`gh pr view` runs in the background behind a 15-second cache, so a slow network
-never delays a render - the line always shows whatever the cache holds.
+The only subprocesses left are a local `git rev-parse` when the payload carries
+no worktree branch, and the env-file reads behind `sf:`. Nothing touches the
+network, so a render never waits on one.
+
+**No PR state.** A `PR #<n>` segment sat between branch and path, colored by
+open/draft/merged/closed. It cost a backgrounded `gh pr view` per render behind
+a 15-second cache, and the window name already carries the PR. Claude Code does
+now pass `pr.number` and `pr.review_state` in the status-line payload, so
+restoring it costs one `jq` read rather than the cache - worth knowing if the
+window-name habit ever changes.
 
 **No session objective.** A `▸ <objective>` segment used to lead the line,
 seeded from the session's first substantive prompt. One window per task means
