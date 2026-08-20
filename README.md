@@ -12,9 +12,9 @@ terminal backgrounds.
 - tmux owns windows and panes; WezTerm tabs are hidden.
 - tmux status bar shows LLM activity markers: per window, plus a roll-up for the
   current session next to its name (each session counts only its own windows).
-- The Claude Code status line shows the target Salesforce org, model, branch,
-  path, and rate-limit usage. Session objectives and PR state are gone: one
-  window per task means the window name already carries both.
+- The Claude Code status line shows model, branch, path, and rate-limit usage.
+  Session objectives, PR state, and the Salesforce org indicator have all been
+  removed - see Claude Code Status Line for what each one cost.
 - `Ctrl-a` is the tmux prefix.
 - `Ctrl-a \` splits horizontally and `Ctrl-a -` splits vertically.
 - `Ctrl-a h/j/k/l` moves between panes.
@@ -365,15 +365,25 @@ segments whose data is available, in this order:
 
 | Segment | Source |
 | --- | --- |
-| `sf:<org>` | the org this session targets - red `⚠PROD` when it is production |
 | `opus-5` | the session model, abbreviated |
 | branch | the worktree's branch, else the branch at `cwd` |
 | path | `cwd` relative to the worktree root |
 | `5h 2% · 7d 99%` | rate-limit usage |
 
-The only subprocesses left are a local `git rev-parse` when the payload carries
-no worktree branch, and the env-file reads behind `sf:`. Nothing touches the
-network, so a render never waits on one.
+The only subprocess left is a local `git rev-parse`, and only when the payload
+carries no worktree branch. Nothing touches the network or reads a file, so a
+render never waits on one.
+
+**No Salesforce org.** An `sf:<org>` segment led the line, red `⚠PROD` when the
+target looked like production, fed by a `PreToolUse` hook that recorded the org
+of the last test command. It was removed because it was silent in the sessions
+that needed it most: the hook matched only Playwright invocations, so canary
+vitest runs never updated it, and its `.env` fallback looked at the project root
+while canary's package lives a directory down. Prod canary runs therefore showed
+nothing at all, and a `⚠PROD` badge that stays silent teaches you to read
+silence as safe. `sf-org-resolve` and the lease system are unaffected - they
+never depended on this - and dropping the hook leaves them the single copy of
+the org-resolution logic.
 
 **No PR state.** A `PR #<n>` segment sat between branch and path, colored by
 open/draft/merged/closed. It cost a backgrounded `gh pr view` per render behind
@@ -661,10 +671,6 @@ env file is present and unreadable.
   unprotected against each other.
 - Only the invocation shapes listed above are recognised. A runner started some
   other way takes no lease.
-- `~/.claude/hooks/track-crm-org.sh`, the status line's CRM-org tracker, is not
-  in this repo and still carries **its own copy** of the resolution logic that
-  `sf-org-resolve` was derived from. Converging the two is follow-up work; until
-  then a resolution rule has to change in both places.
 
 ### Verifying it end to end
 
