@@ -125,43 +125,6 @@ if [ -z "$BRANCH" ] && [ -n "$CWD" ]; then
   BRANCH=$(git -C "$CWD" rev-parse --abbrev-ref HEAD 2>/dev/null)
 fi
 
-# --- GitHub PR status (background-refreshed; never blocks statusline render) ---
-# Shows the branch's PR number colored by state. gh runs in the background on a
-# short TTL so rendering stays instant even when gh/network is slow; we always
-# render whatever the cache holds (empty = checked, no PR for this branch).
-PR_STATUS=""
-if [ -n "$BRANCH" ] && [ -n "$CWD" ] && command -v gh >/dev/null 2>&1; then
-  pr_cache_dir="${TMPDIR:-/tmp}/claude-pr-status"
-  mkdir -p "$pr_cache_dir" 2>/dev/null
-  pr_key=$(printf '%s' "$CWD|$BRANCH" | cksum | cut -d' ' -f1)
-  pr_file="$pr_cache_dir/$pr_key"
-
-  pr_fresh=0
-  if [ -f "$pr_file" ]; then
-    pr_mtime=$(stat -f %m "$pr_file" 2>/dev/null || stat -c %Y "$pr_file" 2>/dev/null || echo 0)
-    [ $(( $(date +%s) - pr_mtime )) -lt 15 ] && pr_fresh=1
-  fi
-  if [ "$pr_fresh" -eq 0 ]; then
-    ( cd "$CWD" && gh pr view --json number,state,isDraft \
-        --jq '(.number|tostring) + "|" + (if .isDraft then "DRAFT" else .state end)' \
-        >"$pr_file.tmp" 2>/dev/null && mv "$pr_file.tmp" "$pr_file" 2>/dev/null \
-        || : >"$pr_file" ) >/dev/null 2>&1 &
-    disown 2>/dev/null
-  fi
-
-  if [ -s "$pr_file" ]; then
-    pr_info=$(cat "$pr_file" 2>/dev/null)
-    pr_num="${pr_info%%|*}"
-    pr_state="${pr_info##*|}"
-    case "$pr_state" in
-      OPEN)   PR_STATUS=$(printf '\033[1;32mPR #%s\033[0m' "$pr_num") ;;
-      DRAFT)  PR_STATUS=$(printf '\033[1;33mPR #%s draft\033[0m' "$pr_num") ;;
-      MERGED) PR_STATUS=$(printf '\033[1;35mPR #%s merged\033[0m' "$pr_num") ;;
-      CLOSED) PR_STATUS=$(printf '\033[1;31mPR #%s closed\033[0m' "$pr_num") ;;
-    esac
-  fi
-fi
-
 # --- Current dir, relative to worktree/project root ---
 ROOT=$(echo "$input" | jq -r '.worktree.path // .workspace.project_dir // empty')
 RELPATH=""
@@ -195,7 +158,6 @@ SEGMENTS=()
 [ -n "$CRM_ORG" ] && SEGMENTS+=("$CRM_ORG")
 [ -n "$MODEL" ] && SEGMENTS+=("$MODEL")
 [ -n "$BRANCH" ] && SEGMENTS+=("$BRANCH")
-[ -n "$PR_STATUS" ] && SEGMENTS+=("$PR_STATUS")
 [ -n "$RELPATH" ] && SEGMENTS+=("$RELPATH")
 [ -n "$LIMITS" ] && SEGMENTS+=("$LIMITS")
 
