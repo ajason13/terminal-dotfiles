@@ -103,7 +103,6 @@ targets=(
   "$HOME/.local/bin/sf-org-resolve"
   "$HOME/.local/bin/sf-lease"
   "$HOME/.claude/statusline.sh"
-  "$HOME/.claude/hooks/track-crm-org.sh"
   "$HOME/.claude/hooks/sf-lease-guard.sh"
   "$HOME/.claude/hooks/sf-lease-post.sh"
   "$HOME/.claude/hooks/sf-lease-end.sh"
@@ -113,6 +112,7 @@ targets=(
 
 # Retired features whose files may still be present from an earlier install.
 legacy_targets=(
+  "$HOME/.claude/hooks/track-crm-org.sh"
   "$HOME/.local/bin/session-objective"
   "$HOME/.claude/commands/objective.md"
 )

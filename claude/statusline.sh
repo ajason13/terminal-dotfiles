@@ -41,80 +41,6 @@ abbreviate_model() {
   fi
 }
 
-# --- CRM org resolution (announce-only visibility of the target Salesforce org) ---
-# Reads only non-secret identity keys from the env file the suite loads; never
-# prints the file and never touches *PASSWORD/SECRET/TOKEN keys.
-read_env_key() {
-  # $1 = file, $2 = key; prints the value with surrounding quotes/space stripped.
-  grep -E "^[[:space:]]*$2=" "$1" 2>/dev/null | tail -n1 \
-    | sed -E "s/^[[:space:]]*$2=//; s/^[\"']//; s/[\"'][[:space:]]*\$//; s/[[:space:]]*\$//"
-}
-
-resolve_crm_org() {
-  local root="$1" sess="$2"
-  local id="" is_prod=0
-
-  # Per-session override: the org of the last test command this session ran,
-  # recorded by the track-crm-org PreToolUse hook. Authoritative over the default,
-  # because it reflects what the session actually targeted (prod, a scratch org...).
-  local store="${SESSION_ORG_HOME:-$HOME/.local/state/session-orgs}"
-  if [ -n "$sess" ] && [ -f "$store/$sess" ]; then
-    local line flag
-    line=$(cat "$store/$sess" 2>/dev/null)
-    flag=${line%%$'\t'*}
-    if [ "$flag" != default ] && [ "$line" != "$flag" ]; then
-      id=${line#*$'\t'}
-      [ "$flag" = prod ] && is_prod=1
-    fi
-  fi
-
-  # Otherwise the session default, from the env file the suite would load.
-  if [ -z "$id" ] && [ -n "$root" ]; then
-    local envfile=".env"
-    [ -n "$TEST_ENV" ] && envfile=".env.$TEST_ENV"
-    local path="$root/$envfile"
-    # relevance gate: silent unless this project's env exposes SF org identity keys
-    if [ -f "$path" ] && grep -qE '^[[:space:]]*(SF_BASE_URL|AM_SANDBOX_NAME|SF_ORG_ALIAS|SF_SCRATCH_POOL)=' "$path" 2>/dev/null; then
-      local alias baseurl sandbox pool host
-      alias=$(read_env_key "$path" SF_ORG_ALIAS)
-      baseurl=$(read_env_key "$path" SF_BASE_URL)
-      sandbox=$(read_env_key "$path" AM_SANDBOX_NAME)
-      pool=$(read_env_key "$path" SF_SCRATCH_POOL)
-
-      host=""
-      if [ -n "$baseurl" ]; then
-        host="${baseurl#*://}"; host="${host%%/*}"; host="${host%%.*}"
-      fi
-
-      if [ -n "$alias" ]; then id="$alias"
-      elif [ -n "$host" ]; then id="$host"
-      elif [ -n "$sandbox" ]; then
-        id="$sandbox"
-        # compact email-style sandbox logins (user+orgtag@domain) to the org tag
-        case "$id" in *@*) id="${id%@*}"; case "$id" in *+*) id="${id##*+}";; esac ;; esac
-      elif [ -n "$pool" ]; then id="scratch-pool"
-      else id="${TEST_ENV:-sf}"
-      fi
-
-      # PROD when TEST_ENV says so, or a base URL lacks sandbox/scratch/dev markers
-      case "$TEST_ENV" in *[Pp][Rr][Oo][Dd]*) is_prod=1;; esac
-      if [ "$is_prod" -eq 0 ] && [ -n "$host" ]; then
-        case "$baseurl" in
-          *sandbox*|*scratch*|*develop*|*--*) : ;;
-          *) is_prod=1 ;;
-        esac
-      fi
-    fi
-  fi
-
-  [ -z "$id" ] && return
-  if [ "$is_prod" -eq 1 ]; then
-    printf '\033[1;31msf:⚠PROD %s\033[0m' "$id"
-  else
-    printf 'sf:%s' "$id"
-  fi
-}
-
 MODEL_RAW=$(echo "$input" | jq -r '.model.id // .model.display_name // empty')
 MODEL=$(abbreviate_model "$MODEL_RAW")
 
@@ -138,10 +64,6 @@ if [ -n "$CWD" ] && [ -n "$ROOT" ]; then
   fi
 fi
 
-# --- CRM org (the org this session is using: last test run's target, else default) ---
-SESSION_ID=$(echo "$input" | jq -r '.session_id // empty')
-CRM_ORG=$(resolve_crm_org "${ROOT:-$CWD}" "$SESSION_ID")
-
 # --- Rate limits (5-hour / 7-day usage) ---
 FIVE_H=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
 WEEK=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
@@ -155,7 +77,6 @@ fi
 
 # --- Assemble, omitting any segment whose data wasn't available ---
 SEGMENTS=()
-[ -n "$CRM_ORG" ] && SEGMENTS+=("$CRM_ORG")
 [ -n "$MODEL" ] && SEGMENTS+=("$MODEL")
 [ -n "$BRANCH" ] && SEGMENTS+=("$BRANCH")
 [ -n "$RELPATH" ] && SEGMENTS+=("$RELPATH")
