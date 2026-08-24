@@ -724,13 +724,37 @@ textarea {
   z-index: 30;
 }
 
-.state-active { --state-bg: var(--color-active-bg); --state-ink: var(--color-active-ink); }
-.state-thinking { --state-bg: var(--color-thinking-bg); --state-ink: var(--color-thinking-ink); }
-.state-waiting-for-permission { --state-bg: var(--color-waiting-bg); --state-ink: var(--color-waiting-ink); }
-.state-idle { --state-bg: var(--color-idle-bg); --state-ink: var(--color-idle-ink); }
-.state-error { --state-bg: var(--color-error-bg); --state-ink: var(--color-error-ink); }
-.state-complete { --state-bg: var(--color-complete-bg); --state-ink: var(--color-complete-ink); }
-.state-unknown { --state-bg: var(--color-unknown-bg); --state-ink: var(--color-unknown-ink); }
+/* --state-glyph repeats the legend's symbol so the car and the key speak one language. */
+.state-active { --state-bg: var(--color-active-bg); --state-ink: var(--color-active-ink); --state-glyph: "\203A"; }
+.state-thinking { --state-bg: var(--color-thinking-bg); --state-ink: var(--color-thinking-ink); --state-glyph: "\2026"; }
+.state-waiting-for-permission { --state-bg: var(--color-waiting-bg); --state-ink: var(--color-waiting-ink); --state-glyph: "!"; }
+.state-idle { --state-bg: var(--color-idle-bg); --state-ink: var(--color-idle-ink); --state-glyph: "\2016"; }
+.state-error { --state-bg: var(--color-error-bg); --state-ink: var(--color-error-ink); --state-glyph: "\00D7"; }
+.state-complete { --state-bg: var(--color-complete-bg); --state-ink: var(--color-complete-ink); --state-glyph: "\2713"; }
+.state-unknown { --state-bg: var(--color-unknown-bg); --state-ink: var(--color-unknown-ink); --state-glyph: "?"; }
+
+/* The only at-a-glance state channel the pit pool has, and five of the seven states
+   live there. Undefined --state-glyph makes content invalid, so no badge is drawn. */
+.vehicle-anchor::after,
+.pit-vehicle::after {
+  content: var(--state-glyph);
+  position: absolute;
+  z-index: 5;
+  top: calc(-5 * var(--car-unit));
+  right: calc(-5 * var(--car-unit));
+  display: grid;
+  width: calc(17 * var(--car-unit));
+  height: calc(17 * var(--car-unit));
+  place-items: center;
+  border: calc(1.5 * var(--car-unit)) solid var(--state-ink);
+  border-radius: 50%;
+  color: var(--state-ink);
+  background: color-mix(in srgb, var(--state-bg) 92%, var(--color-surface-night));
+  font-size: calc(10 * var(--car-unit));
+  font-weight: 800;
+  line-height: 1;
+  pointer-events: none;
+}
 
 .dashboard-root:where([data-route-angle-motion="enabled"])[data-track-id]
   .vehicle-anchor.state-active > .car-atmosphere::before {
