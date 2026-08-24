@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <link rel="icon" href="data:,">
+    <title>Night Pass state matrix</title>
+    <link rel="stylesheet" href="../generated/route-motion.css">
+    <link rel="stylesheet" href="../styles.css">
+    <style>
+      /* Harness chrome only. Nothing here may style the dashboard itself, or the
+         matrix stops being evidence about the real stylesheet. */
+      .harness-note {
+        max-width: 68ch;
+        margin: 1rem auto;
+        padding: .75rem 1rem;
+        border: 1px dashed var(--color-boundary);
+        border-radius: .5rem;
+        color: var(--color-text-muted);
+        font: 500 .8rem/1.5 system-ui, sans-serif;
+      }
+      .harness-note strong { color: var(--color-text-primary); }
+      .harness-note code {
+        color: var(--color-focus);
+        font-family: ui-monospace, monospace;
+      }
+      .harness-fail {
+        margin: 2rem auto;
+        max-width: 68ch;
+        color: var(--color-error-ink);
+        font: 600 .85rem/1.6 ui-monospace, monospace;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <p class="harness-note">
+      <strong>State matrix harness.</strong> This is not the product. It boots the real
+      renderer against a synthetic snapshot in which the tmux session name <em>is</em> the
+      state, so every pit bay holds exactly one state. Bays read
+      <code>active</code>, <code>complete</code>, <code>error</code>, <code>idle</code>,
+      <code>permission</code>, <code>thinking</code>.
+      The <code>active</code> and <code>thinking</code> bays show <em>Clear</em> because
+      those states live in the route pool; their cars are on the track.
+      Every car wears its state glyph badge, drawn by <code>styles.css</code>: check the
+      four pit bays read <code>✓</code>, <code>×</code>, <code>‖</code> and <code>!</code>
+      distinctly. Before that badge shipped, all four bays were identical.
+      <br><br>
+      <strong>Why no <code>unknown</code> bay.</strong> The two snapshot validators cover
+      different vocabularies and neither covers all seven states. Fixtures go through
+      <code>normalizeSnapshot</code>, whose <code>FIXTURE_STATUSES</code> omits
+      <code>unknown</code>; live and imported snapshots go through
+      <code>normalizeImportedSnapshot</code>, whose combination allowlist has no
+      <code>error</code> or <code>complete</code> entry. Rendering all seven at once would
+      need two dashboards on one page. It is not needed: <code>stateClass()</code> emits
+      <code>state-unknown</code> uniformly and <code>--state-bg</code>/<code>--state-ink</code>
+      are already defined for it, so any token-driven encoding covers it by construction.
+    </p>
+    <div id="harness-mount"></div>
+    <script type="module">
+      // Deliberately never imports ../src/app.mjs: it self-starts on import and would
+      // boot the real fixture dashboard over this page. The shell is transplanted instead.
+      import { renderDashboard } from '../src/render-dashboard.mjs';
+      import { normalizeSnapshot } from '../src/session-contract.mjs';
+      import { getTrack } from '../src/track-catalog.mjs';
+      import { hydrateRouteGeometry } from '../src/hydrate-route-geometry.mjs';
+      import { initializeRouteAngleMotion } from '../src/route-motion-capability.mjs';
+
+      // Bay grouping keys off the name before "▸", so naming the session after the
+      // state turns the real pit-bay allocator into the matrix layout for free.
+      const STATE_BAYS = [
+        ['active', 'active', { phase: 'Editing module', progress: 0.4 }],
+        ['thinking', 'thinking', { phase: 'Comparing approaches', progress: 0.2 }],
+        ['waiting_for_permission', 'permission', { permissionState: 'requested', phase: 'Needs filesystem approval' }],
+        ['idle', 'idle', { phase: 'Ready for work' }],
+        ['error', 'error', { errorSummary: 'Type check stopped on an incompatible fixture shape' }],
+        ['complete', 'complete', { phase: 'Delivered', progress: 1 }],
+      ];
+
+      // Three per state: a bare name, a ticket, and a PR, so the badge slot is
+      // exercised alongside whatever state treatment is being evaluated.
+      const WORK_REFS = ['', ' BB-228', ' BB-410 PR#63'];
+
+      function buildMatrixSnapshot() {
+        const sessions = [];
+        for (const [status, bay, extra] of STATE_BAYS) {
+          WORK_REFS.forEach((ref, index) => {
+            sessions.push({
+              id: `${bay}-${index}`,
+              displayName: `${bay} ▸${ref || ` ${bay} sample`} ${index + 1}`,
+              status,
+              lastActivityAt: '2026-08-24T16:00:00Z',
+              permissionState: 'not_required',
+              ...extra,
+            });
+          });
+        }
+        return { schemaVersion: 1, generatedAt: '2026-08-24T16:05:00Z', sessions };
+      }
+
+      function fail(error) {
+        const pre = document.createElement('pre');
+        pre.className = 'harness-fail';
+        pre.textContent = `State matrix harness failed to boot.\n\n${error?.stack || error}`;
+        document.body.append(pre);
+      }
+
+      try {
+        // Transplant the shipped shell rather than copying it. preflightDocument
+        // throws loudly if index.html drifts, so this cannot rot silently.
+        const source = await fetch('../index.html').then((response) => {
+          if (!response.ok) throw new Error(`index.html fetch failed: ${response.status}`);
+          return response.text();
+        });
+        const parsed = new DOMParser().parseFromString(source, 'text/html');
+        const shell = parsed.querySelector('#dashboard-root');
+        if (!shell) throw new Error('index.html has no #dashboard-root to transplant');
+        document.querySelector('#harness-mount').append(document.adoptNode(shell));
+
+        hydrateRouteGeometry(document);
+        const root = document.querySelector('#dashboard-root');
+        initializeRouteAngleMotion(root, window.CSS);
+        const track = getTrack('ridge-pass');
+        root.dataset.trackId = track.id;
+        document.querySelector('#map-heading').textContent = track.title;
+        renderDashboard(normalizeSnapshot(buildMatrixSnapshot()), root, track);
+      } catch (error) {
+        fail(error);
+      }
+    </script>
+  </body>
+</html>
