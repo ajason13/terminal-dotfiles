@@ -1,0 +1,68 @@
+/* Candidate state encodings for the pit-state legibility finding. This is NOT product
+   CSS: whichever treatment wins moves into styles.css and this file is deleted. */
+
+/* Per-state glyph and label, read by the treatments below. The glyphs are the ones
+   STATE_PRESENTATION already defines and the legend already shows, so putting them on
+   the car turns that collapsed legend into a real key instead of adding a new language. */
+.state-active { --state-glyph: "\203A"; --state-label: "ACTIVE"; }
+.state-thinking { --state-glyph: "\2026"; --state-label: "THINKING"; }
+.state-waiting-for-permission { --state-glyph: "!"; --state-label: "PERMISSION"; }
+.state-idle { --state-glyph: "\2016"; --state-label: "IDLE"; }
+.state-error { --state-glyph: "\00D7"; --state-label: "ERROR"; }
+.state-complete { --state-glyph: "\2713"; --state-label: "COMPLETE"; }
+.state-unknown { --state-glyph: "?"; --state-label: "UNKNOWN"; }
+
+/* Candidate 1: ring. A circle is rotation-invariant, so it survives the car's
+   --route-heading without counter-rotation. Colour is its only channel. */
+[data-state-encoding="ring"] :is(.vehicle-anchor, .pit-vehicle)::before {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  inset: -3px;
+  border: 2px solid var(--state-ink);
+  border-radius: 50%;
+  box-shadow: 0 0 9px color-mix(in srgb, var(--state-ink) 45%, transparent);
+  opacity: .9;
+  pointer-events: none;
+}
+
+/* Candidate 2: upright plate. Sits above the car because .car-badge already owns the
+   slot below it. Widest of the three; watch the 3-column pit bays for collisions. */
+[data-state-encoding="plate"] :is(.vehicle-anchor, .pit-vehicle)::after {
+  content: var(--state-label);
+  position: absolute;
+  z-index: 5;
+  top: -10px;
+  left: 50%;
+  padding: 1px 5px;
+  border: 1px solid var(--state-ink);
+  border-radius: 999px;
+  color: var(--state-ink);
+  background: color-mix(in srgb, var(--state-bg) 88%, var(--color-surface-night));
+  font: 800 .5rem/1.35 system-ui, sans-serif;
+  letter-spacing: .02em;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+/* Candidate 3: glyph badge. Carries state by shape and colour together, so it survives
+   small sizes and colour-blind readers. Fixed px, so it does not track --car-unit on
+   route cars; production would size it from that variable. */
+[data-state-encoding="glyph"] :is(.vehicle-anchor, .pit-vehicle)::after {
+  content: var(--state-glyph);
+  position: absolute;
+  z-index: 5;
+  top: -5px;
+  right: -5px;
+  display: grid;
+  width: 17px;
+  height: 17px;
+  place-items: center;
+  border: 1.5px solid var(--state-ink);
+  border-radius: 50%;
+  color: var(--state-ink);
+  background: color-mix(in srgb, var(--state-bg) 92%, var(--color-surface-night));
+  font: 800 .62rem/1 system-ui, sans-serif;
+  pointer-events: none;
+}

@@ -8,9 +8,13 @@
     <title>Night Pass state matrix</title>
     <link rel="stylesheet" href="../generated/route-motion.css">
     <link rel="stylesheet" href="../styles.css">
+    <!-- Candidate encodings under evaluation. Loaded after styles.css so it can only
+         add, never mask, what the real stylesheet already does. -->
+    <link rel="stylesheet" href="./state-encodings.css">
     <style>
-      /* Harness chrome only. Nothing here may style the dashboard itself, or the
-         matrix stops being evidence about the real stylesheet. */
+      /* Harness chrome only. Nothing in this block may style the dashboard itself, or
+         the matrix stops being evidence about the real stylesheet. Candidate treatments
+         live in state-encodings.css, kept separate precisely so that line stays visible. */
       .harness-note {
         max-width: 68ch;
         margin: 1rem auto;
@@ -25,6 +29,20 @@
         color: var(--color-focus);
         font-family: ui-monospace, monospace;
       }
+      .harness-switch {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .9rem;
+        max-width: 68ch;
+        margin: 0 auto 1rem;
+        padding: .6rem 1rem;
+        border: 1px solid var(--color-boundary);
+        border-radius: .5rem;
+        color: var(--color-text-primary);
+        font: 600 .78rem/1.4 system-ui, sans-serif;
+      }
+      .harness-switch legend { padding: 0 .4rem; color: var(--color-text-muted); }
+      .harness-switch label { display: flex; gap: .3rem; align-items: center; }
       .harness-fail {
         margin: 2rem auto;
         max-width: 68ch;
@@ -56,6 +74,13 @@
       <code>state-unknown</code> uniformly and <code>--state-bg</code>/<code>--state-ink</code>
       are already defined for it, so any token-driven encoding covers it by construction.
     </p>
+    <fieldset class="harness-switch">
+      <legend>Candidate encoding</legend>
+      <label><input type="radio" name="encoding" value="none" checked> None (today)</label>
+      <label><input type="radio" name="encoding" value="ring"> Ring</label>
+      <label><input type="radio" name="encoding" value="plate"> Upright plate</label>
+      <label><input type="radio" name="encoding" value="glyph"> Glyph badge</label>
+    </fieldset>
     <div id="harness-mount"></div>
     <script type="module">
       // Deliberately never imports ../src/app.mjs: it self-starts on import and would
@@ -124,6 +149,25 @@
         root.dataset.trackId = track.id;
         document.querySelector('#map-heading').textContent = track.title;
         renderDashboard(normalizeSnapshot(buildMatrixSnapshot()), root, track);
+
+        // Drives the [data-state-encoding] hook in state-encodings.css. "none" removes
+        // the attribute entirely so the baseline is the untouched stylesheet.
+        const applyEncoding = (value) => {
+          if (value === 'none') delete root.dataset.stateEncoding;
+          else root.dataset.stateEncoding = value;
+        };
+        for (const input of document.querySelectorAll('input[name="encoding"]')) {
+          input.addEventListener('change', () => applyEncoding(input.value));
+        }
+
+        // ?encoding=ring deep-links a candidate, so screenshots can be driven from a
+        // plain URL instead of a scripted click.
+        const requested = new URLSearchParams(location.search).get('encoding');
+        const preset = document.querySelector(`input[name="encoding"][value="${CSS.escape(requested ?? '')}"]`);
+        if (preset) {
+          preset.checked = true;
+          applyEncoding(preset.value);
+        }
       } catch (error) {
         fail(error);
       }
