@@ -590,8 +590,8 @@ textarea {
   --drift-yaw: 0deg;
   --drift-upright-yaw: 0deg;
   position: relative;
-  width: 52px;
-  height: 52px;
+  width: calc(52 * var(--car-unit));
+  height: calc(52 * var(--car-unit));
   pointer-events: auto;
 }
 
@@ -1064,12 +1064,12 @@ textarea {
 
 .pit-bay-mount {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
-  grid-auto-rows: 52px;
+  grid-template-columns: repeat(auto-fill, minmax(calc(52 * var(--car-unit)), 1fr));
+  grid-auto-rows: calc(52 * var(--car-unit));
   justify-items: center;
   gap: 1.15rem .55rem;
   padding-bottom: 16px;
-  min-height: 52px;
+  min-height: calc(52 * var(--car-unit));
 }
 
 .pit-bay-mount:empty::after {
