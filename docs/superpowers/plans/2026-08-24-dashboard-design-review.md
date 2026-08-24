@@ -196,7 +196,50 @@ floated off its own car; and the mobile focus ring already owned
 `.vehicle-anchor::after`, so focusing a route car swapped the badge for the
 ring. The badge lives on `::before` now, with a regression test.
 
-Still open: findings 1, 2, 3, 5, 6, 7, 8.
+Done on `main` (2026-08-24), desktop-only pass:
+
+- **Finding 1.** `.pit-bay` was `flex: 0 1 auto`, so bays never grew past their
+  190px floor and stopped at x=810, stranding 630px of lane. They now fill the
+  lane, and the reclaimed width goes into car size rather than more columns:
+  `--car-unit` is raised on `.pit-bay-mount`, which scales the art, the state
+  badge and the shadow together. Pit cars 52px -> 65px, dead space 630px -> 14px,
+  lane 214px -> 240px against the 256px cap without scrolling.
+- **Finding 2.** The course `<select>` takes `appearance: none` plus an inlined
+  SVG caret, so it stops being the one native control in an art-directed bar.
+- **Finding 3.** The `Fixtures - Night sector` pill moved out of `.brand` and
+  into `#source-controls`, grouping it with Import / Fixtures / Go live.
+- **Finding 5.** Object-like scenery (`.harbor-containers`, `.harbor-beacons`,
+  `.harbor-quay`, `.harbor-jump`, and the `.drift-*` equivalents) dropped in
+  contrast. Ground layers kept their weight. The pit bay borders are now the
+  brightest containers on screen, which is the hierarchy the finding wanted.
+
+**Findings 7 and 8 are closed, not fixed.** The dashboard will not be used on
+mobile (decision, 2026-08-24). The mobile CSS and the `mobile-chromium` project
+stay in place as a second-width regression net - they earned that role twice
+during this work, catching both defects below.
+
+**Finding 6 is deferred to its own session,** untouched. Analysis for whoever
+picks it up: the art is 1000x760 (1.32) against a 1440x629 desktop stage (2.29).
+`meet` would letterbox roughly 400px; `slice` would crop the sides, and cars are
+placed by normalized coordinates so they would ride off the visible path. The
+`--car-unit` clamp at `styles.css:567` already compensates for the stretch. This
+is the one finding where the fix plausibly degrades the product, so it wants
+isolated treatment rather than bundling with layout polish.
+
+Two corrections to the findings above, from measuring the live build:
+
+- Finding 8's claim that each mobile bay scrolls horizontally at five cars wide
+  is **stale**. All four bays measure `clipped: false` at 390px; five 52px cars
+  fit the 354px mount. Finding 8 was purely vertical by the time it was read.
+- Not in the original list: an empty bay spends a full bay's height rendering
+  "Clear". On mobile that was ~20% of the pit lane for zero sessions. Left as
+  is - it is proportionate on desktop, and mobile is out of scope.
+
+Two mobile-only regressions were caused and fixed during this pass: moving the
+pill into the source group pushed the legend toggle onto a fifth bar row, which
+reintroduced the vertical page scroll `9dc0d50` exists to prevent; and the
+mobile `select` padding override let the label run under the new caret. The
+legend toggle now sits with the state chips it explains, and the bar is 148px.
 
 ## Suggested sequence
 
