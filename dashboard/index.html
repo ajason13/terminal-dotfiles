@@ -17,7 +17,6 @@
       <header class="dashboard-bar">
         <div class="brand">
           <h1>Night Pass Session Map</h1>
-          <p id="source-label" class="mode-pill">Fixtures · Night sector</p>
         </div>
         <div class="bar-course">
           <label for="track-select">Course</label>
@@ -45,6 +44,8 @@
           </ul>
         </details>
         <section id="source-controls" class="source-controls" aria-label="Snapshot source">
+          <!-- Reads the active source; sits with the controls that change it, not beside the title. -->
+          <p id="source-label" class="mode-pill">Fixtures · Night sector</p>
           <label class="import-label" for="snapshot-file">Import</label>
           <input id="snapshot-file" type="file" accept=".json,application/json">
           <button id="reset-source" type="button">Fixtures</button>
