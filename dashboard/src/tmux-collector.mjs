@@ -7,7 +7,7 @@ import { access } from 'node:fs/promises';
 import {
   LENGTH_PREFIXED_FORMAT, LIVE_CONSTANTS, TMUX_BINARIES,
 } from './live-constants.mjs';
-import { classifyPane, sanitizeDisplayName } from './tmux-classifier.mjs';
+import { classifyPane, sanitizeDisplayName, windowSilenceMs } from './tmux-classifier.mjs';
 import { CollectorError, parseTmuxBuffer } from './tmux-frame.mjs';
 
 function fail(code) {
@@ -62,6 +62,11 @@ export function stableTmuxId(record) {
   return `tmux-${digest.slice(0, LIVE_CONSTANTS.SHA256_EMITTED_HEX_CHARS)}`;
 }
 
+function lastActivityAt(record, observedAtMs, observedAt) {
+  const silence = windowSilenceMs(record, observedAtMs);
+  return silence === null ? observedAt : new Date(observedAtMs - silence).toISOString();
+}
+
 export function buildSnapshot(records, observedAt = new Date().toISOString()) {
   const emittedIds = new Set();
   const sessions = [];
@@ -76,7 +81,9 @@ export function buildSnapshot(records, observedAt = new Date().toISOString()) {
       id,
       displayName: sanitizeDisplayName(record.window_name, record.pane_index, record.session_name),
       ...classification,
-      activity: { kind: 'observed', at: observedAt },
+      // When the epoch is unusable this falls back to the observation time, which
+      // is the old behaviour: no worse a claim than the snapshot already made.
+      activity: { kind: 'observed', at: lastActivityAt(record, observedAtMs, observedAt) },
     });
     if (sessions.length > LIVE_CONSTANTS.MAX_SESSION_COUNT) fail('TMUX_FIELD_INVALID');
   }

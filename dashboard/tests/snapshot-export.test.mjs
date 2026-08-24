@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { normalizeImportedSnapshot } from '../src/import-snapshot.mjs';
+import { LIVE_CONSTANTS } from '../src/live-constants.mjs';
 import {
   SNAPSHOT_DESTINATION_INVALID,
   SNAPSHOT_EXPORT_FAILED,
@@ -21,7 +22,7 @@ const OBSERVED = '2026-07-31T18:00:00.000Z';
 function snapshot(label = 'Synthetic') {
   return {
     schemaVersion: 2,
-    source: { kind: 'tmux_oneshot', collectorVersion: '1.0.0' },
+    source: { kind: 'tmux_oneshot', collectorVersion: LIVE_CONSTANTS.COLLECTOR_VERSION },
     observedAt: OBSERVED,
     sessions: [{
       id: 'tmux-0123456789abcdef0123456789abcdef',

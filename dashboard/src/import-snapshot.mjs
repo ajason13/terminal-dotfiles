@@ -90,7 +90,10 @@ export function normalizeImportedSnapshot(snapshot, importNow = Date.now()) {
       || session.displayName !== session.displayName.normalize('NFC')
       || session.displayName !== canonicalizeDisplayName(session.displayName)
       || !exactKeys(session.activity, ACTIVITY_KEYS)
-      || session.activity.at !== snapshot.observedAt
+      // Activity may predate the observation by any amount - that gap is the
+      // point - but a stamp after it is incoherent and rejects the file.
+      || !validTimestamp(session.activity.at)
+      || Date.parse(session.activity.at) > observed
       || !validCombination(session)
       || ids.has(session.id)) reject();
     ids.add(session.id);

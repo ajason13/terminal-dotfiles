@@ -74,7 +74,7 @@ function liveSession(overrides = {}) {
 function liveSnapshot(sessions = [liveSession()], overrides = {}) {
   return {
     schemaVersion: 2,
-    source: { kind: 'tmux_oneshot', collectorVersion: '1.0.0' },
+    source: { kind: 'tmux_oneshot', collectorVersion: LIVE_CONSTANTS.COLLECTOR_VERSION },
     observedAt: OBSERVED,
     sessions,
     ...overrides,
@@ -84,7 +84,7 @@ function liveSnapshot(sessions = [liveSession()], overrides = {}) {
 test('exports every resolved constant, enum, error code, and exact tmux format', () => {
   assert.deepEqual(LIVE_CONSTANTS, {
     SCHEMA_V2: 2,
-    COLLECTOR_VERSION: '1.0.0',
+    COLLECTOR_VERSION: '1.1.0',
     MAX_IMPORT_FILE_BYTES: 262144,
     MAX_SESSION_COUNT: 64,
     MAX_IMPORT_AGE_MS: 900000,
@@ -586,6 +586,34 @@ test('window silence splits static-provider panes into evidenced active and idle
 
   // Silence classifies an agent banner, not any quiet pane.
   assert.equal(call(0, { pane_title: 'plain shell' }), null);
+});
+
+test('activity.at reports real window silence and is accepted at or before observedAt', () => {
+  const epoch = Math.floor(NOW / 1000) - 8 * 3600;
+  const [session] = buildSnapshot([raw({
+    pane_title: '✳ Night Pass dashboard', window_activity: String(epoch),
+  })], OBSERVED).sessions;
+  assert.equal(session.activity.at, new Date(epoch * 1000).toISOString());
+  assert.notEqual(session.activity.at, OBSERVED);
+  assert.equal(session.status, 'idle');
+
+  // No usable epoch keeps the observation time, so activity.at is never absent.
+  const [degraded] = buildSnapshot([raw({
+    pane_title: '✳ Night Pass dashboard', window_activity: '',
+  })], OBSERVED).sessions;
+  assert.equal(degraded.activity.at, OBSERVED);
+
+  const past = normalizeImportedSnapshot(liveSnapshot([liveSession({
+    status: 'idle', confidence: 'medium', provenance: 'tmux_activity_idle',
+    activity: { kind: 'observed', at: '2026-07-22T04:00:00.000Z' },
+  })]), NOW);
+  assert.equal(past.sessions[0].lastActivityAt, '2026-07-22T04:00:00.000Z');
+  assert.equal(past.observedAt, OBSERVED);
+
+  // An activity stamp after the observation is incoherent and rejects the file.
+  assert.throws(() => normalizeImportedSnapshot(liveSnapshot([liveSession({
+    activity: { kind: 'observed', at: '2026-07-22T12:00:00.001Z' },
+  })]), NOW), { issues: ['LIVE_SNAPSHOT_INVALID'] });
 });
 
 test('schema-v2 accepts every compatibility row and normalizes tmux-only identity', () => {
