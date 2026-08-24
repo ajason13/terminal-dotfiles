@@ -734,14 +734,17 @@ textarea {
 .state-unknown { --state-bg: var(--color-unknown-bg); --state-ink: var(--color-unknown-ink); --state-glyph: "?"; }
 
 /* The only at-a-glance state channel the pit pool has, and five of the seven states
-   live there. Undefined --state-glyph makes content invalid, so no badge is drawn. */
-.vehicle-anchor::after,
-.pit-vehicle::after {
+   live there. Undefined --state-glyph makes content invalid, so no badge is drawn.
+   Uses ::before because the mobile focus ring already owns the wrappers' ::after.
+   Offsets track .car-body (32x48 units) rather than the wrapper, which is larger and
+   is overridden to a different art size on mobile. */
+.vehicle-anchor::before,
+.pit-vehicle::before {
   content: var(--state-glyph);
   position: absolute;
   z-index: 5;
-  top: calc(-5 * var(--car-unit));
-  right: calc(-5 * var(--car-unit));
+  top: calc(50% - 29 * var(--car-unit));
+  right: calc(50% - 21 * var(--car-unit));
   display: grid;
   width: calc(17 * var(--car-unit));
   height: calc(17 * var(--car-unit));
@@ -1424,6 +1427,12 @@ details[open] > .overflow-toggle::before {
   .vehicle-anchor .car-body {
     width: 24px;
     height: 36px;
+  }
+  /* Route art is pinned to 24x36 here, so re-anchor the badge to that instead of the
+     32x48 the base rule assumes; otherwise it floats off its own car. */
+  .vehicle-anchor::before {
+    top: calc(50% - 23px);
+    right: calc(50% - 17px);
   }
   .pit-bay-mount { grid-template-columns: repeat(auto-fill, 52px); }
   .pit-bay { flex: 1 1 100%; }
