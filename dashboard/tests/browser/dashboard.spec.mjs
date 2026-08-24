@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test';
+
+import { LIVE_CONSTANTS } from '../../src/live-constants.mjs';
 import config from '../../routes/route-config.mjs';
 import cypress from '../../routes/cypress-run.route.mjs';
 import harbor from '../../routes/harbor-yard-rallycross.route.mjs';
@@ -58,7 +60,7 @@ function syntheticLiveSnapshot() {
   const observedAt = new Date().toISOString();
   return {
     schemaVersion: 2,
-    source: { kind: 'tmux_oneshot', collectorVersion: '1.0.0' },
+    source: { kind: 'tmux_oneshot', collectorVersion: LIVE_CONSTANTS.COLLECTOR_VERSION },
     observedAt,
     sessions: Array.from({ length: 16 }, (_, index) => ({
       id: `tmux-${index.toString(16).padStart(32, '0')}`,

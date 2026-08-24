@@ -222,7 +222,8 @@ function makeTooltip(documentRef, session, presentation, text, tooltipId, visual
   if (text.workRef.sessionName) {
     tooltip.append(element(documentRef, 'span', 'tooltip-session', text.workRef.sessionName));
   }
-  tooltip.append(element(documentRef, 'span', '', presentation.label));
+  tooltip.append(element(documentRef, 'span', text.provisional ? 'tooltip-provisional' : '',
+    text.provisional ? `${presentation.label} (unconfirmed)` : presentation.label));
   const refs = refLine(unusedRefs(text.workRef));
   if (refs) tooltip.append(element(documentRef, 'span', '', refs));
   const details = element(documentRef, 'span', 'tooltip-details');
@@ -322,6 +323,7 @@ function makeCar(documentRef, session, placement, text, target) {
   );
   wrapper.dataset.sessionId = session.id;
   wrapper.dataset.status = session.status;
+  wrapper.dataset.confidence = session.confidence;
   if (target === 'route') {
     wrapper.style.setProperty('--vehicle-x', `${placement.x / 10}%`);
     wrapper.style.setProperty('--vehicle-y', `${placement.y / 7.6}%`);
@@ -594,8 +596,10 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
 
   // Swaps a wrapper's state-* class and dataset.status in place, without touching
   // its base (vehicle-anchor/pit-vehicle) class or recreating the element.
-  function swapStateClass(wrapper, status) {
+  function swapStateClass(wrapper, session) {
+    const { status } = session;
     wrapper.dataset.status = status;
+    wrapper.dataset.confidence = session.confidence;
     // DOMTokenList is iterable but `.values` is a METHOD, not an array/Set - spreading
     // the bare function reference throws in real browsers. Iterate the list itself.
     for (const cls of [...wrapper.classList]) {
@@ -616,7 +620,7 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
     wrapper.style.setProperty('--vehicle-y', `${placement.y / 7.6}%`);
     wrapper.style.setProperty('--route-phase', `${-placement.slotIndex * ROUTE_PHASE_SECONDS}s`);
     wrapper.dataset.routeSlot = String(placement.slotIndex);
-    swapStateClass(wrapper, session.status);
+    swapStateClass(wrapper, session);
     button.setAttribute('aria-label', text.label);
     const visual = updateCarVisual(documentRef, wrapper, button, tooltip, session);
     replaceTooltip(documentRef, tooltip, session, text, visual);
@@ -745,7 +749,7 @@ export function renderDashboard(snapshot, root = document, initialTrack = getTra
             button.setAttribute('aria-label', text.label);
             const visual = updateCarVisual(documentRef, existingWrapper, button, tooltip, session);
             replaceTooltip(documentRef, tooltip, session, text, visual);
-            swapStateClass(existingWrapper, session.status);
+            swapStateClass(existingWrapper, session);
             applyBadge(documentRef, existingWrapper, text.workRef);
           }
         } else {
