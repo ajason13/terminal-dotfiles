@@ -18,7 +18,7 @@ export const LIVE_CONSTANTS = Object.freeze({
   TMUX_KILL_SIGNAL: 'SIGKILL',
   MAX_RAW_RECORDS: 256,
   MAX_LENGTH_DIGITS: 7,
-  TMUX_FIELD_COUNT: 10,
+  TMUX_FIELD_COUNT: 11,
   MAX_SOCKET_BYTES: 4096,
   MAX_NAME_OR_TITLE_BYTES: 4096,
   MAX_COMMAND_BYTES: 256,
@@ -46,6 +46,7 @@ export const TMUX_FIELDS = Object.freeze([
   'window_name',
   'pane_title',
   'pane_current_command',
+  'window_activity',
 ]);
 
 export const LENGTH_PREFIXED_FORMAT =
@@ -54,7 +55,8 @@ export const LENGTH_PREFIXED_FORMAT =
   + '#{n:window_id}:#{window_id}'
   + '#{n:pane_id}:#{pane_id}#{n:pane_index}:#{pane_index}'
   + '#{n:window_name}:#{window_name}#{n:pane_title}:#{pane_title}'
-  + '#{n:pane_current_command}:#{pane_current_command}';
+  + '#{n:pane_current_command}:#{pane_current_command}'
+  + '#{n:window_activity}:#{window_activity}';
 
 export const COLLECTOR_ERROR_CODES = Object.freeze([
   'TMUX_BINARY_UNAVAILABLE',

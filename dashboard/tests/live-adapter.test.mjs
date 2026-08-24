@@ -43,6 +43,7 @@ function raw(overrides = {}) {
     window_name: 'Synthetic',
     pane_title: '⠧ Working',
     pane_current_command: 'zsh',
+    window_activity: '1784773438',
     ...overrides,
   };
 }
@@ -101,7 +102,7 @@ test('exports every resolved constant, enum, error code, and exact tmux format',
     TMUX_KILL_SIGNAL: 'SIGKILL',
     MAX_RAW_RECORDS: 256,
     MAX_LENGTH_DIGITS: 7,
-    TMUX_FIELD_COUNT: 10,
+    TMUX_FIELD_COUNT: 11,
     MAX_SOCKET_BYTES: 4096,
     MAX_NAME_OR_TITLE_BYTES: 4096,
     MAX_COMMAND_BYTES: 256,
@@ -131,7 +132,8 @@ test('exports every resolved constant, enum, error code, and exact tmux format',
     + '#{n:window_id}:#{window_id}'
     + '#{n:pane_id}:#{pane_id}#{n:pane_index}:#{pane_index}'
     + '#{n:window_name}:#{window_name}#{n:pane_title}:#{pane_title}'
-    + '#{n:pane_current_command}:#{pane_current_command}');
+    + '#{n:pane_current_command}:#{pane_current_command}'
+    + '#{n:window_activity}:#{window_activity}');
 });
 
 test('parses concatenated byte-framed records containing delimiter-like and control data', () => {
@@ -216,6 +218,25 @@ test('parser framing enforces every field byte maximum and structural edge case'
   ]), SOCKET));
   assert.throws(() => parseTmuxBuffer(frame([
     raw({ start_time: String(Number.MAX_SAFE_INTEGER + 1) }),
+  ]), SOCKET), { code: 'TMUX_FIELD_INVALID' });
+});
+
+test('frame carries window_activity as an epoch and rejects non-numeric or oversized values', () => {
+  assert.equal(TMUX_FIELDS.at(-1), 'window_activity');
+  assert.equal(LIVE_CONSTANTS.TMUX_FIELD_COUNT, TMUX_FIELDS.length);
+  assert.match(LENGTH_PREFIXED_FORMAT, /#\{n:window_activity\}:#\{window_activity\}$/);
+
+  const [parsed] = parseTmuxBuffer(frame([raw({ window_activity: '1784773999' })]), SOCKET);
+  assert.equal(parsed.window_activity, '1784773999');
+
+  // tmux emits an empty string for a window that has never produced output.
+  assert.doesNotThrow(() => parseTmuxBuffer(frame([raw({ window_activity: '' })]), SOCKET));
+  for (const bad of ['nope', '17847e5', '-1', '1784773438.5']) {
+    assert.throws(() => parseTmuxBuffer(frame([raw({ window_activity: bad })]), SOCKET),
+      { code: 'TMUX_FIELD_INVALID' }, bad);
+  }
+  assert.throws(() => parseTmuxBuffer(frame([
+    raw({ window_activity: String(Number.MAX_SAFE_INTEGER + 1) }),
   ]), SOCKET), { code: 'TMUX_FIELD_INVALID' });
 });
 
