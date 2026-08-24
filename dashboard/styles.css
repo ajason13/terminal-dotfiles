@@ -542,12 +542,16 @@ textarea {
 .label-crossover-rise { fill: #be9bc8 !important; }
 .label-yard-finish { fill: #a9b9c9 !important; }
 
+/* Deliberately quieter than .car-badge and the state badge: the sector name is scenery,
+   the car is the data. The stroke stays so names survive crossing the lit road. */
 .segment-labels text {
   font-size: 11px;
+  font-weight: 700;
   text-anchor: middle;
   paint-order: stroke;
   stroke: var(--color-surface-night);
-  stroke-width: 5px;
+  stroke-width: 4px;
+  opacity: .58;
 }
 
 .vehicle-layer,
@@ -1437,7 +1441,14 @@ details[open] > .overflow-toggle::before {
   .pit-bay-mount { grid-template-columns: repeat(auto-fill, 52px); }
   .pit-bay { flex: 1 1 100%; }
   .route-centerlines path { stroke-width: 6; }
-  .segment-labels text { font-size: 13px; }
+
+  /* Sector names are wayfinding flavour and the cars are the payload. At this width the
+     SVG compresses them onto the cars, so keep them below the data, not above it. */
+  .segment-labels text {
+    font-size: 10px;
+    letter-spacing: .6px;
+    opacity: .45;
+  }
 
   /* Mobile docks below the header instead of above the lane, so the measured lane
      offset is inert here. The bubble still shrinks to its content (see the base rule);
