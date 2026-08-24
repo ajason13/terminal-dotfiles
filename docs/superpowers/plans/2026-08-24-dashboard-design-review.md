@@ -178,6 +178,26 @@ reading the render and the CSS.
 
 **Conclusion: skip it, steal benefits 1 and 3.** See step 1 below.
 
+## Status
+
+Done, on `feat/dashboard-state-matrix`:
+
+- Step 1, the `tests/states.html` matrix harness.
+- Step 2, the headline finding. Every car now carries a state glyph badge
+  driven by `--state-glyph`. Ring and upright plate were prototyped and
+  rejected: the plate is wider than a car and collides in the 3-column pit
+  bays, and the ring leans on colour alone, where the pale complete, error and
+  idle inks read alike.
+- Step 3, findings 4 and 9. Sector names now sit behind the cars.
+
+Two defects were found and fixed while doing step 2, both mobile-only: the
+badge anchored to the 52-unit wrapper rather than the 24x36 route art, so it
+floated off its own car; and the mobile focus ring already owned
+`.vehicle-anchor::after`, so focusing a route car swapped the badge for the
+ring. The badge lives on `::before` now, with a regression test.
+
+Still open: findings 1, 2, 3, 5, 6, 7, 8.
+
 ## Suggested sequence
 
 1. **Build `dashboard/tests/states.html`.** One static page that `<link>`s the
