@@ -24,6 +24,10 @@ export const LIVE_CONSTANTS = Object.freeze({
   MAX_COMMAND_BYTES: 256,
   MAX_ID_FIELD_BYTES: 64,
   MAX_DISPLAY_NAME_CODE_POINTS: 80,
+  // Silence shorter than this reads as work in progress. A busy agent pane writes
+  // continuously (spinner redraws count), so the gap between working and stopped
+  // is wide - measured spreads jump from tens of seconds straight to minutes.
+  ACTIVITY_ACTIVE_WINDOW_MS: 60000,
   UNKNOWN_HOLD_ANCHORS: 3,
   SHA256_EMITTED_HEX_CHARS: 32,
 });

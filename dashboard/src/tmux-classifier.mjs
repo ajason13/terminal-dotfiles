@@ -1,3 +1,5 @@
+import { LIVE_CONSTANTS } from './live-constants.mjs';
+
 const COMMANDS = new Set(['codex', 'claude', 'gemini', 'aider', 'opencode']);
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/u;
 const BRAILLE_SPINNER = /^[\u2800-\u28ff]/u;
@@ -21,7 +23,15 @@ function commandBasename(command) {
   return slash === -1 ? command : command.slice(slash + 1);
 }
 
-export function classifyPane(record) {
+// Milliseconds since this window last produced output, or null when tmux gave no
+// usable epoch. Negative skew clamps to 0 so a fast clock cannot read as silence.
+export function windowSilenceMs(record, observedAtMs) {
+  const epoch = Number(record.window_activity);
+  if (!Number.isSafeInteger(epoch) || epoch <= 0 || !Number.isFinite(observedAtMs)) return null;
+  return Math.max(0, observedAtMs - epoch * 1000);
+}
+
+export function classifyPane(record, observedAtMs = Date.now()) {
   const title = record.pane_title;
   const commandCandidate = COMMANDS.has(commandBasename(record.pane_current_command));
   if (CONTROL_CHARACTERS.test(title)) {
@@ -69,10 +79,25 @@ export function classifyPane(record) {
     });
   }
   if (codexStatic || claudeStatic) {
-    return Object.freeze({
-      status: 'idle', permissionState: 'unknown',
-      confidence: 'low', provenance: 'tmux_title_static_provider',
-    });
+    // The banner says a provider is attached, never what it is doing. Window
+    // silence is the only positive evidence available, so idle here means
+    // "nothing written for a minute", not "no evidence either way".
+    const silence = windowSilenceMs(record, observedAtMs);
+    if (silence === null) {
+      return Object.freeze({
+        status: 'idle', permissionState: 'unknown',
+        confidence: 'low', provenance: 'tmux_title_static_provider',
+      });
+    }
+    return silence < LIVE_CONSTANTS.ACTIVITY_ACTIVE_WINDOW_MS
+      ? Object.freeze({
+        status: 'active', permissionState: 'unknown',
+        confidence: 'medium', provenance: 'tmux_activity_recent',
+      })
+      : Object.freeze({
+        status: 'idle', permissionState: 'unknown',
+        confidence: 'medium', provenance: 'tmux_activity_idle',
+      });
   }
   return Object.freeze({
     status: 'unknown', permissionState: 'unknown',

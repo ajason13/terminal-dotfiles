@@ -65,8 +65,9 @@ export function stableTmuxId(record) {
 export function buildSnapshot(records, observedAt = new Date().toISOString()) {
   const emittedIds = new Set();
   const sessions = [];
+  const observedAtMs = Date.parse(observedAt);
   for (const record of records) {
-    const classification = classifyPane(record);
+    const classification = classifyPane(record, observedAtMs);
     if (!classification) continue;
     const id = stableTmuxId(record);
     if (emittedIds.has(id)) fail('TMUX_IDENTITY_COLLISION');

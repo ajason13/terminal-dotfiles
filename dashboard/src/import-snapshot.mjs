@@ -14,6 +14,8 @@ export const PROVENANCE_VALUES = Object.freeze([
   'tmux_title_action_required',
   'tmux_title_ready_idle',
   'tmux_title_static_provider',
+  'tmux_activity_recent',
+  'tmux_activity_idle',
   'tmux_command_candidate',
 ]);
 
@@ -53,6 +55,8 @@ function validCombination(session) {
     'waiting_for_permission|observed|requested|low|tmux_title_action_required',
     'idle|observed|unknown|low|tmux_title_ready_idle',
     'idle|observed|unknown|low|tmux_title_static_provider',
+    'active|observed|unknown|medium|tmux_activity_recent',
+    'idle|observed|unknown|medium|tmux_activity_idle',
     'unknown|observed|unknown|none|tmux_command_candidate',
   ]).has(key);
 }

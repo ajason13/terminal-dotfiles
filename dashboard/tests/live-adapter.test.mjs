@@ -108,12 +108,13 @@ test('exports every resolved constant, enum, error code, and exact tmux format',
     MAX_COMMAND_BYTES: 256,
     MAX_ID_FIELD_BYTES: 64,
     MAX_DISPLAY_NAME_CODE_POINTS: 80,
+    ACTIVITY_ACTIVE_WINDOW_MS: 60000,
     UNKNOWN_HOLD_ANCHORS: 3,
     SHA256_EMITTED_HEX_CHARS: 32,
   });
   assert.deepEqual(ACTIVITY_KINDS, ['observed', 'last_activity', 'last_response', 'unavailable']);
   assert.deepEqual(CONFIDENCE_LEVELS, ['authoritative', 'medium', 'low', 'none']);
-  assert.equal(PROVENANCE_VALUES.length, 8);
+  assert.equal(PROVENANCE_VALUES.length, 10);
   assert.deepEqual(COLLECTOR_ERROR_CODES, [
     'TMUX_BINARY_UNAVAILABLE',
     'TMUX_SOCKET_REJECTED',
@@ -241,8 +242,14 @@ test('frame carries window_activity as an epoch and rejects non-numeric or overs
 });
 
 test('classifier asserts full tuples for precedence, spinner families, tokens, and commands', () => {
-  const tuple = (title, command = 'zsh') => {
-    const result = classifyPane(raw({ pane_title: title, pane_current_command: command }));
+  // Silence is pinned well past the active window so title precedence is what
+  // this test measures; the activity split has its own test below.
+  const SILENT = { window_activity: '1784773438' };
+  const AT = 1784773438000 + LIVE_CONSTANTS.ACTIVITY_ACTIVE_WINDOW_MS + 1000;
+  const tuple = (title, command = 'zsh', overrides = SILENT) => {
+    const result = classifyPane(
+      raw({ pane_title: title, pane_current_command: command, ...overrides }), AT,
+    );
     return result && [
       result.status, result.permissionState, result.confidence, result.provenance,
     ];
@@ -252,7 +259,7 @@ test('classifier asserts full tuples for precedence, spinner families, tokens, a
   const spinner = ['active', 'unknown', 'medium', 'tmux_title_spinner'];
   const working = ['active', 'unknown', 'medium', 'tmux_title_working'];
   const ready = ['idle', 'unknown', 'low', 'tmux_title_ready_idle'];
-  const staticProvider = ['idle', 'unknown', 'low', 'tmux_title_static_provider'];
+  const staticProvider = ['idle', 'unknown', 'medium', 'tmux_activity_idle'];
   const command = ['unknown', 'unknown', 'none', 'tmux_command_candidate'];
 
   assert.deepEqual(tuple('⠧ Action Required Thinking'), waiting);
@@ -542,6 +549,45 @@ test('CLI emits complete JSON only on success and never partial stdout on failur
   assert.equal(failedErr.value(), 'TMUX_FRAME_INVALID\n');
 });
 
+test('window silence splits static-provider panes into evidenced active and idle', () => {
+  const WINDOW = LIVE_CONSTANTS.ACTIVITY_ACTIVE_WINDOW_MS;
+  const epoch = 1784773438;
+  const at = (silenceMs) => epoch * 1000 + silenceMs;
+  const call = (silenceMs, overrides = {}) => classifyPane(
+    raw({ pane_title: '✳ Night Pass dashboard', window_activity: String(epoch), ...overrides }),
+    at(silenceMs),
+  );
+  const shape = (r) => r && [r.status, r.permissionState, r.confidence, r.provenance];
+
+  // A working pane writes continuously - spinner redraws included - so recent
+  // output is the evidence the banner alone cannot carry.
+  assert.deepEqual(shape(call(0)), ['active', 'unknown', 'medium', 'tmux_activity_recent']);
+  assert.deepEqual(shape(call(WINDOW - 1)), ['active', 'unknown', 'medium', 'tmux_activity_recent']);
+  assert.deepEqual(shape(call(WINDOW)), ['idle', 'unknown', 'medium', 'tmux_activity_idle']);
+  assert.deepEqual(shape(call(8 * 3600 * 1000)), ['idle', 'unknown', 'medium', 'tmux_activity_idle']);
+
+  // Clock skew must not read as hours of silence.
+  assert.deepEqual(shape(call(-5000)), ['active', 'unknown', 'medium', 'tmux_activity_recent']);
+
+  // No usable activity degrades to the old low-confidence reading rather than
+  // dropping the pane off the board.
+  for (const bad of ['', '0']) {
+    assert.deepEqual(shape(call(0, { window_activity: bad })),
+      ['idle', 'unknown', 'low', 'tmux_title_static_provider'], bad);
+  }
+
+  // Positive title evidence still outranks silence in both directions.
+  assert.deepEqual(shape(call(8 * 3600 * 1000, { pane_title: '⠧ building' })),
+    ['active', 'unknown', 'medium', 'tmux_title_spinner']);
+  assert.deepEqual(shape(call(8 * 3600 * 1000, { pane_title: '✳ Action Required' })),
+    ['waiting_for_permission', 'requested', 'low', 'tmux_title_action_required']);
+  assert.deepEqual(shape(call(0, { pane_title: '✳ Ready' })),
+    ['idle', 'unknown', 'low', 'tmux_title_ready_idle']);
+
+  // Silence classifies an agent banner, not any quiet pane.
+  assert.equal(call(0, { pane_title: 'plain shell' }), null);
+});
+
 test('schema-v2 accepts every compatibility row and normalizes tmux-only identity', () => {
   const rows = [
     ['active', 'unknown', 'medium', 'tmux_title_spinner'],
@@ -550,6 +596,8 @@ test('schema-v2 accepts every compatibility row and normalizes tmux-only identit
     ['waiting_for_permission', 'requested', 'low', 'tmux_title_action_required'],
     ['idle', 'unknown', 'low', 'tmux_title_ready_idle'],
     ['idle', 'unknown', 'low', 'tmux_title_static_provider'],
+    ['active', 'unknown', 'medium', 'tmux_activity_recent'],
+    ['idle', 'unknown', 'medium', 'tmux_activity_idle'],
     ['unknown', 'unknown', 'none', 'tmux_command_candidate'],
   ];
   const sessions = rows.map(([status, permissionState, confidence, provenance], index) => liveSession({
@@ -576,7 +624,7 @@ test('schema-v2 accepts every compatibility row and normalizes tmux-only identit
   assert.equal(/^tmux-[0-9a-f]{32}$/.test(fixture.sessions[0].id), false);
 });
 
-test('tmux schema compatibility matrix accepts exactly seven exhaustive combinations', () => {
+test('tmux schema compatibility matrix accepts exactly nine exhaustive combinations', () => {
   const accepted = new Set([
     'active|observed|unknown|medium|tmux_title_spinner',
     'active|observed|unknown|medium|tmux_title_working',
@@ -584,6 +632,8 @@ test('tmux schema compatibility matrix accepts exactly seven exhaustive combinat
     'waiting_for_permission|observed|requested|low|tmux_title_action_required',
     'idle|observed|unknown|low|tmux_title_ready_idle',
     'idle|observed|unknown|low|tmux_title_static_provider',
+    'active|observed|unknown|medium|tmux_activity_recent',
+    'idle|observed|unknown|medium|tmux_activity_idle',
     'unknown|observed|unknown|none|tmux_command_candidate',
   ]);
   let acceptedCount = 0;
@@ -616,8 +666,8 @@ test('tmux schema compatibility matrix accepts exactly seven exhaustive combinat
       }
     }
   }
-  assert.equal(testedCount, 4480);
-  assert.equal(acceptedCount, 7);
+  assert.equal(testedCount, 5600);
+  assert.equal(acceptedCount, 9);
 });
 
 test('schema-v2 rejects extra keys, v1, duplicate IDs, timestamps, and invalid combinations', () => {
