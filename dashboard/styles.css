@@ -1340,9 +1340,14 @@ details[open] > .overflow-toggle::before {
     padding: 4px 10px;
   }
 
-  .snapshot-summary,
-  .on-track-summary {
+  .snapshot-summary {
     flex-basis: 100%;
+  }
+
+  /* The source pill moved into the controls group, which no longer leaves the legend toggle
+     room on that row. Pairing the toggle with the chips it explains keeps the bar at four rows. */
+  .on-track-summary {
+    flex-basis: auto;
   }
 
   .bar-course {
