@@ -438,12 +438,14 @@ textarea {
   fill: #b8d8d5;
   opacity: .055;
 }
+/* Object-like scenery sat at the same contrast as the pit bay borders, so empty decorative
+   boxes read as containers that hold something. Ground layers keep their weight; objects drop. */
 .drift-lane-islands {
   fill: #0b1723;
   stroke: #52677a;
   stroke-width: 3;
   stroke-dasharray: 12 7;
-  opacity: .78;
+  opacity: .45;
 }
 .drift-skid-arcs {
   fill: none;
@@ -458,28 +460,28 @@ textarea {
   stroke-width: 12;
   stroke-linecap: round;
   stroke-dasharray: 3 12;
-  opacity: .72;
+  opacity: .45;
 }
 .drift-cones {
   fill: #e29b78;
   stroke: #241b1c;
   stroke-width: 2;
-  opacity: .88;
+  opacity: .5;
 }
 .drift-clip-markers {
   fill: #d8bd7d;
   stroke: #181f28;
   stroke-width: 3;
-  opacity: .9;
+  opacity: .48;
 }
 .harbor-apron { fill: #14222b; stroke: #46606a; stroke-width: 3; opacity: .95; }
 .harbor-water { fill: #102b39; opacity: .58; }
-.harbor-quay { fill: none; stroke: #78929b; stroke-width: 8; stroke-dasharray: 3 12; opacity: .42; }
-.harbor-containers { fill: #273a42; stroke: #69818a; stroke-width: 2; opacity: .8; }
+.harbor-quay { fill: none; stroke: #78929b; stroke-width: 8; stroke-dasharray: 3 12; opacity: .26; }
+.harbor-containers { fill: #273a42; stroke: #4c6069; stroke-width: 2; opacity: .4; }
 .harbor-cranes { fill: none; stroke: #b49b6f; stroke-width: 5; stroke-linecap: round; opacity: .68; }
 .harbor-gravel { fill: none; stroke: #b9a77d; stroke-width: 3; stroke-dasharray: 2 10; opacity: .45; }
-.harbor-jump { fill: #6d7b77; stroke: #c5d0c9; stroke-width: 2; opacity: .8; }
-.harbor-beacons { fill: #dc9d72; opacity: .78; }
+.harbor-jump { fill: #6d7b77; stroke: #8a9791; stroke-width: 2; opacity: .5; }
+.harbor-beacons { fill: #dc9d72; opacity: .38; }
 .segment-labels text {
   fill: var(--color-text-muted);
   font-family: ui-sans-serif, system-ui, sans-serif;
