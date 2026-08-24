@@ -1081,6 +1081,18 @@ textarea {
   text-align: center;
 }
 
+/* Bays share the lane rather than stopping at their 190px floor, which otherwise left the
+   width past the last bay unused. --car-unit scales art, state badge and shadow together. */
+@media (min-width: 760px) {
+  .pit-bay {
+    flex: 1 1 190px;
+  }
+
+  .pit-bay-mount {
+    --car-unit: 1.25px;
+  }
+}
+
 /* The lane scrolls now; fixed positioning is what lets the tooltip escape being
    clipped by it, docking every pit tooltip to one rect above the lane. */
 .pit-vehicle .session-tooltip {

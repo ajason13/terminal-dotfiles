@@ -318,18 +318,35 @@ test('the lane stays capped and the page never scrolls vertically', async ({ pag
   expect(overflows).toBe(false);
 });
 
-test('desktop bays are three cars wide and the fixture pit does not scroll', async ({ page }) => {
+test('desktop bays fill the lane and the fixture pit does not scroll', async ({ page }) => {
   test.skip(page.viewportSize().width <= 759, 'desktop bay width rule only');
-  const cols = await page.locator('#pit .pit-bay-mount').evaluateAll((mounts) => mounts.map(
-    (el) => getComputedStyle(el).gridTemplateColumns.split(' ').length,
-  ));
-  // min-width: 190px leaves 173.6px of content: 3x52 plus two .55rem gaps.
-  expect(cols.every((count) => count === 3), JSON.stringify(cols)).toBe(true);
+  // Bays used to stop at their 190px flex floor, stranding ~630px of lane past the last one.
+  // Asserting the unused remainder, not a column count, is what catches a regression to that.
+  const fill = await page.locator('#pit').evaluate((bays) => {
+    const rows = [...bays.querySelectorAll('.pit-bay')].map((bay) => bay.getBoundingClientRect());
+    return {
+      unused: Math.round(bays.getBoundingClientRect().right - Math.max(...rows.map((r) => r.right))),
+      lane: Math.round(bays.getBoundingClientRect().width),
+    };
+  });
+  expect(fill.unused, JSON.stringify(fill)).toBeLessThanOrEqual(1);
   // The cap assertion above cannot catch this: a pinned, scrolling lane satisfies it.
   const lane = await page.locator('#pit-lane').evaluate((el) => (
     { scrollHeight: el.scrollHeight, clientHeight: el.clientHeight }
   ));
   expect(lane.scrollHeight, JSON.stringify(lane)).toBeLessThanOrEqual(lane.clientHeight);
+});
+
+test('the desktop pit car scales past its 52px route size', async ({ page }) => {
+  test.skip(page.viewportSize().width <= 759, 'desktop bay width rule only');
+  // The state badge is sized in --car-unit too, so dropping the override shrinks the glyph
+  // back to route scale - the one channel the pit pool has for five of the seven states.
+  const car = await page.locator('#pit .pit-vehicle').first().evaluate((el) => ({
+    car: Math.round(el.getBoundingClientRect().width),
+    badge: Math.round(parseFloat(getComputedStyle(el, '::before').width)),
+  }));
+  expect(car.car, JSON.stringify(car)).toBeGreaterThan(52);
+  expect(car.badge, JSON.stringify(car)).toBeGreaterThan(17);
 });
 
 test('a docked pit tooltip is fully in-viewport and unclipped by the scrolling lane', async ({ page }) => {
