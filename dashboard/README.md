@@ -24,11 +24,12 @@ node dashboard/export-tmux.mjs /tmp/dashboard-tmux-snapshot.json
 
 The collector makes exactly one hardened `list-panes -a` call. It reads pane
 metadata only: socket/server epoch identifiers, tmux IDs, window name, pane
-index, pane title, and current command. It never reads pane content or history.
-The emitted file contains opaque stable IDs, sanitized display names derived
-only from window name plus pane index, inferred state, provenance, confidence,
-and one observation timestamp. Raw titles, commands, sockets, tmux IDs, and
-server times are never emitted.
+index, pane title, current command, and the window's last-activity epoch. It
+never reads pane content or history. The emitted file contains opaque stable
+IDs, sanitized display names derived only from window name plus pane index,
+inferred state, provenance, confidence, one observation timestamp, and one
+last-activity timestamp. Raw titles, commands, sockets, tmux IDs, and server
+times are never emitted.
 
 The exporter writes a same-directory temporary file with mode `0600`, flushes
 and closes the complete snapshot, and then atomically replaces the named
@@ -43,6 +44,31 @@ sockets/server names, alternate tmux paths, unsafe executables/sockets,
 timeouts, stderr, malformed or oversized output, or any validation error. A
 failure writes one closed error code to stderr, exits nonzero, and writes
 nothing to stdout.
+
+## How a session is judged active or idle
+
+The pane title says which agent is attached, never what it is doing: Claude Code
+shows a spinner only while working in the foreground, so a session driving a
+subagent looks the same as one stopped hours ago. Judging on the title alone put
+every tracked pane in the pit.
+
+State therefore comes from **window silence** - how long since the window last
+produced output. A working pane writes continuously, spinner redraws included, so
+recent output is evidence of work even when the title cannot show it; an idle
+pane goes quiet for minutes to hours with no heartbeat. Silence under a minute
+reads active, over it reads idle, and a pane whose title carries stronger
+evidence (a spinner, `Thinking`, `Working`, `Action Required`) still wins on the
+title.
+
+This is why `confidence` is medium and never high. tmux exposes activity per
+**window**, not per pane, so a second pane in the same window - an editor, a
+`tail -f` - marks its neighbour active. Running one agent pane per window is what
+keeps that rare, which makes the convention below load-bearing for accuracy, not
+just for tooltips.
+
+A reading the collector could not stand behind renders as unsettled rather than
+settled: a dashed state ring, a dimmed car, and `unconfirmed` in the tooltip and
+the accessible label.
 
 ## Name your tmux windows so the dashboard can read them
 
@@ -70,10 +96,11 @@ What each name produces:
 The car also wears a small badge (`PR#42` if a PR is open, else the ticket key);
 cars with neither token show no badge.
 
-**Run one agent pane per window.** The tooltip does not show the pane index, so
-two agent panes in the same window produce two identical tooltips. You can still
-tell the cars apart by the code on the car body (`S08`), but the tooltip cannot
-help you.
+**Run one agent pane per window.** Two agent panes in one window produce two
+identical tooltips, since the tooltip does not show the pane index - you can
+still tell the cars apart by the code on the car body (`S08`). More importantly,
+activity is measured per window, so panes sharing a window cannot be told apart
+by whether they are working.
 
 This needs stable window names. tmux auto-rename overwrites a manual name with the
 running command, so set `set -g automatic-rename off` (or have tooling set the

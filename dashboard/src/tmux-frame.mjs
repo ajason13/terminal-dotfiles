@@ -13,6 +13,7 @@ const FIELD_LIMITS = Object.freeze([
   LIVE_CONSTANTS.MAX_NAME_OR_TITLE_BYTES,
   LIVE_CONSTANTS.MAX_NAME_OR_TITLE_BYTES,
   LIVE_CONSTANTS.MAX_COMMAND_BYTES,
+  LIVE_CONSTANTS.MAX_ID_FIELD_BYTES,
 ]);
 
 export class CollectorError extends Error {
@@ -44,9 +45,17 @@ function validateRecord(record, socketPath) {
     || !/^\$[0-9]+$/.test(record.session_id)
     || !/^@[0-9]+$/.test(record.window_id)
     || !/^%[0-9]+$/.test(record.pane_id)
-    || !/^[0-9]+$/.test(record.pane_index)) {
+    || !/^[0-9]+$/.test(record.pane_index)
+    // Empty is tmux's answer for a window that has never produced output, and it
+    // has to survive parsing so the classifier can degrade rather than vanish.
+    || !isEpochOrEmpty(record.window_activity)) {
     fail('TMUX_FIELD_INVALID');
   }
+}
+
+function isEpochOrEmpty(value) {
+  if (value === '') return true;
+  return /^[0-9]{1,20}$/.test(value) && Number.isSafeInteger(Number(value));
 }
 
 export function parseTmuxBuffer(buffer, socketPath) {

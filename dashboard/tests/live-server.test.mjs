@@ -9,7 +9,7 @@ const PORT = 4173;
 
 const OK_SNAPSHOT = {
   schemaVersion: 2,
-  source: { kind: 'tmux_oneshot', collectorVersion: '1.0.0' },
+  source: { kind: 'tmux_oneshot', collectorVersion: LIVE_CONSTANTS.COLLECTOR_VERSION },
   observedAt: '2026-08-03T00:00:00.000Z',
   sessions: [],
 };

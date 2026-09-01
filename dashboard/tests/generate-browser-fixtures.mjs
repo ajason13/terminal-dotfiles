@@ -3,6 +3,8 @@ import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { LIVE_CONSTANTS } from '../src/live-constants.mjs';
+
 function session(index, overrides = {}) {
   return {
     id: `tmux-${index.toString(16).padStart(32, '0')}`,
@@ -46,7 +48,7 @@ export function browserFixturePayloads(observedAt = new Date().toISOString()) {
   return Object.freeze({
     valid: {
       schemaVersion: 2,
-      source: { kind: 'tmux_oneshot', collectorVersion: '1.0.0' },
+      source: { kind: 'tmux_oneshot', collectorVersion: LIVE_CONSTANTS.COLLECTOR_VERSION },
       observedAt,
       sessions,
     },

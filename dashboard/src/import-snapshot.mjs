@@ -14,6 +14,8 @@ export const PROVENANCE_VALUES = Object.freeze([
   'tmux_title_action_required',
   'tmux_title_ready_idle',
   'tmux_title_static_provider',
+  'tmux_activity_recent',
+  'tmux_activity_idle',
   'tmux_command_candidate',
 ]);
 
@@ -53,6 +55,8 @@ function validCombination(session) {
     'waiting_for_permission|observed|requested|low|tmux_title_action_required',
     'idle|observed|unknown|low|tmux_title_ready_idle',
     'idle|observed|unknown|low|tmux_title_static_provider',
+    'active|observed|unknown|medium|tmux_activity_recent',
+    'idle|observed|unknown|medium|tmux_activity_idle',
     'unknown|observed|unknown|none|tmux_command_candidate',
   ]).has(key);
 }
@@ -86,7 +90,10 @@ export function normalizeImportedSnapshot(snapshot, importNow = Date.now()) {
       || session.displayName !== session.displayName.normalize('NFC')
       || session.displayName !== canonicalizeDisplayName(session.displayName)
       || !exactKeys(session.activity, ACTIVITY_KEYS)
-      || session.activity.at !== snapshot.observedAt
+      // Activity may predate the observation by any amount - that gap is the
+      // point - but a stamp after it is incoherent and rejects the file.
+      || !validTimestamp(session.activity.at)
+      || Date.parse(session.activity.at) > observed
       || !validCombination(session)
       || ids.has(session.id)) reject();
     ids.add(session.id);

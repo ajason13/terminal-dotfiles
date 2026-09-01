@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+import { LIVE_CONSTANTS } from '../../src/live-constants.mjs';
+
 // Mirrors app.mjs's real (non-placeholder) token gate: this is injected before any
 // page script runs, then locked read-only so the page's own inline placeholder-setting
 // script (sloppy-mode `window.__LIVE_TOKEN__ = "__LIVE_TOKEN__"`) silently no-ops instead
@@ -21,7 +23,7 @@ async function injectLiveToken(page) {
 function mockSnapshot(observedAt) {
   return {
     schemaVersion: 2,
-    source: { kind: 'tmux_oneshot', collectorVersion: '1.0.0' },
+    source: { kind: 'tmux_oneshot', collectorVersion: LIVE_CONSTANTS.COLLECTOR_VERSION },
     observedAt,
     sessions: [{
       id: 'tmux-a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4',
@@ -90,7 +92,7 @@ test('a second live poll tick updates a persisting session in place without cras
       contentType: 'application/json',
       body: JSON.stringify({
         schemaVersion: 2,
-        source: { kind: 'tmux_oneshot', collectorVersion: '1.0.0' },
+        source: { kind: 'tmux_oneshot', collectorVersion: LIVE_CONSTANTS.COLLECTOR_VERSION },
         observedAt: new Date().toISOString(),
         sessions: [{
           id: sentinelId,

@@ -776,6 +776,26 @@ textarea {
   pointer-events: none;
 }
 
+/* A low/none-confidence reading is the snapshot saying it could not tell. It reuses
+   the state-glyph ring rather than adding a channel: dashed reads as unsettled where
+   solid reads as measured, and it survives colour-blindness and the ~40px car size.
+   Fixture sessions are authoritative, so this never fires outside live mode. */
+.vehicle-anchor:is([data-confidence="low"], [data-confidence="none"])::before,
+.pit-vehicle:is([data-confidence="low"], [data-confidence="none"])::before {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--state-bg) 45%, var(--color-surface-night));
+}
+
+.vehicle-anchor:is([data-confidence="low"], [data-confidence="none"]) .car-body,
+.pit-vehicle:is([data-confidence="low"], [data-confidence="none"]) .car-body {
+  opacity: .62;
+}
+
+.session-tooltip .tooltip-provisional {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
 .dashboard-root:where([data-route-angle-motion="enabled"])[data-track-id]
   .vehicle-anchor.state-active > .car-atmosphere::before {
   width: 5px;

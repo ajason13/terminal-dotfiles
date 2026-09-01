@@ -16,6 +16,14 @@ export const STATE_PRESENTATION = Object.freeze({
   unknown: Object.freeze({ label: 'Unknown', glyph: '?', pool: 'pit' }),
 });
 
+// Below medium the snapshot is recording that it could not tell. Presenting that
+// as a settled state is the overclaim; every surface that shows state consults this.
+const PROVISIONAL_CONFIDENCE = new Set(['low', 'none']);
+
+export function isProvisional(session) {
+  return PROVISIONAL_CONFIDENCE.has(session?.confidence);
+}
+
 const WAITING_PERMISSIONS = new Set(['requested', 'denied']);
 const NON_WAITING_PERMISSIONS = new Set(['not_required', 'granted', 'unknown']);
 const FIXTURE_STATUSES = new Set([
@@ -216,10 +224,13 @@ export function parseWorkRef(name) {
 
 export function buildAccessibleText(session, placement, generatedAt, timestampOptions = {}) {
   const state = STATE_PRESENTATION[session.status];
+  const provisional = isProvisional(session);
   const location = placement.overflow
     ? `Map capacity exceeded for ${placement.poolLabel}`
     : placement.locationLabel;
   const details = [];
+  // Ahead of the activity line: the tooltip renders only what precedes it.
+  if (provisional) details.push('Reading unconfirmed');
   if (session.phase) details.push(`Phase: ${session.phase}`);
   if (session.progress !== undefined) details.push(`Progress: ${Math.round(session.progress * 100)} percent`);
   const relative = formatActivityAge(session.lastActivityAt, generatedAt);
@@ -237,8 +248,10 @@ export function buildAccessibleText(session, placement, generatedAt, timestampOp
   if (session.errorSummary) details.push(`Error: ${session.errorSummary}`);
   const workRef = parseWorkRef(session.displayName);
   return Object.freeze({
-    label: `${session.mapCode}, ${session.displayName}, ${state.label}, ${location}`,
+    label: `${session.mapCode}, ${session.displayName}, ${state.label}`
+      + `${provisional ? ', unconfirmed' : ''}, ${location}`,
     details: details.join('. '),
+    provisional,
     activity,
     workRef: Object.freeze(workRef),
   });

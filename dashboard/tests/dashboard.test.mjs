@@ -351,6 +351,36 @@ test('parseWorkRef strips only the first ▸, which is always the session delimi
   assert.equal(parseWorkRef('E2E ▸ left ▸ right').label, 'left ▸ right');
 });
 
+test('a provisional reading is marked unconfirmed and an evidenced one is not', () => {
+  const data = normalized([session('s1', 'idle')]);
+  const placement = { overflow: false, locationLabel: 'Pit bay 1', poolLabel: 'pit' };
+  const at = data.sessions[0].lastActivityAt;
+  const say = (confidence) => buildAccessibleText(
+    { ...data.sessions[0], status: 'idle', confidence, lastActivityAt: at },
+    placement, data.generatedAt,
+  );
+
+  for (const confidence of ['low', 'none']) {
+    const text = say(confidence);
+    assert.match(text.label, /Idle, unconfirmed,/, confidence);
+    assert.match(text.details, /Reading unconfirmed/, confidence);
+    assert.equal(text.provisional, true, confidence);
+  }
+  for (const confidence of ['authoritative', 'medium']) {
+    const text = say(confidence);
+    assert.doesNotMatch(text.label, /unconfirmed/, confidence);
+    assert.doesNotMatch(text.details, /unconfirmed/, confidence);
+    assert.equal(text.provisional, false, confidence);
+  }
+});
+
+test('the renderer puts confidence on the car wrapper in both build and swap paths', () => {
+  assert.match(RENDERER, /wrapper\.dataset\.confidence = session\.confidence/);
+  // swapStateClass is the in-place update path; a persisting car must not keep a
+  // stale confidence when its reading firms up or degrades between polls.
+  assert.match(RENDERER, /function swapStateClass\(wrapper, session\)/);
+});
+
 test('buildAccessibleText exposes the parsed work-ref for the renderer', () => {
   const data = normalized([session('ref', 'active', { displayName: 'BB-228 PR#42 route tooltip' })]);
   const placement = allocateSessions(data.sessions)[0];
