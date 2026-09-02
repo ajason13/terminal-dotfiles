@@ -318,6 +318,33 @@ validation, source lifecycle, allocation, and rendering are separate modules.
 Tests inject filesystem, process, file-reader, timer, and renderer behavior; the
 test suite never contacts the user's real/default tmux server.
 
+### The one coupling that crosses those module boundaries
+
+`validCombination` (`src/import-snapshot.mjs`) is an exact allowlist of **full
+tuples** - `status | activity.kind | permissionState | confidence | provenance` -
+with one entry per shape `classifyPane` can return. Nothing enforces the link
+between them, and the validator rejects the **whole** snapshot rather than the
+one bad session: a classifier state the allowlist does not carry throws
+`SnapshotValidationError(['LIVE_SNAPSHOT_INVALID'])` and the dashboard falls back
+to fixtures. It goes blank, not wrong, which is why this is easy to ship and hard
+to notice.
+
+So a change to what the classifier can return has to land in all of these in one
+commit:
+
+| Surface | File |
+|---|---|
+| the returned tuples | `src/tmux-classifier.mjs` |
+| the closed provenance enum | `PROVENANCE_VALUES`, `src/import-snapshot.mjs` |
+| the tuple allowlist | `validCombination`, `src/import-snapshot.mjs` |
+| three tuple tables | `tests/live-adapter.test.mjs` |
+
+The two validators also speak different vocabularies: the fixture path uses
+`FIXTURE_STATUSES` (`src/session-contract.mjs`), which omits `unknown` entirely,
+while the live path uses `validCombination`. No single snapshot exercises every
+state, so **a fixture test cannot cover this path** - exercise it against live
+tmux, or with a hand-built schema-v2 payload through `normalizeImportedSnapshot`.
+
 The browser-local catalog contains three original continuous courses:
 **Ridge Pass**, from upper-left High Moor through Pass Ladder, Cedar Chain,
 Cloud Ridge, and Long Arc to lower-right Valley Gate; and **Cypress Run**, from
