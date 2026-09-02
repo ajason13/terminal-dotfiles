@@ -21,6 +21,9 @@ terminal backgrounds.
 - `Ctrl-a h/j/k/l` moves between panes.
 - `Ctrl-a s` picks a session, `Ctrl-a S` creates one (prompts for a name, starts
   in the current pane's directory), `Ctrl-a $` renames the current one.
+- The `Ctrl-a s` picker lists sessions in creation order. `tmux-session-to-end`
+  rebuilds a session under a newer id to reorder that list without losing panes
+  or the processes in them - see tmux Session Order.
 - `Ctrl-Shift-Space` opens selected text paths in a tmux Neovim split, PNG
   images in Preview, and web targets in the browser.
 - WezTerm backgrounds rotate every 15 minutes by default.
@@ -109,6 +112,28 @@ reset a pane. Registering only some is fine - each state degrades to absent
 rather than wrong - but dropping `Stop` leaves every pane spinning until the
 TTL expires.
 
+## tmux Session Order
+
+`Ctrl-a s` (`choose-tree`) lists sessions in creation order, which is session id
+order, and tmux has no command to move a session within it. `choose-tree -O name`
+sorts by name instead - tempting for keeping a prefixed family like `E2E - *`
+adjacent, but the same sort field applies one level down, so every session's
+window list turns alphabetical too. That is why the picker stays on the default.
+
+`tmux-session-to-end` is the other lever: it rebuilds a session around a fresh
+id so the session lands at the end of the list. Windows are relinked with
+`move-window` rather than recreated, so pane processes - agents, dev servers,
+long-running tests - keep running, and window indices survive.
+
+```bash
+tmux-session-to-end Workflow                        # send one session to the end
+tmux-session-to-end Workflow 'Manual Testing' Scrum # tail order follows argument order
+```
+
+To group a family, send everything that sits between its members to the end. It
+holds until the next session is created, since new sessions also land last.
+
+
 ## Layout
 
 ```text
@@ -116,8 +141,10 @@ TTL expires.
 ├── LICENSE
 ├── README.md
 ├── bin
+│   ├── codex-restore
 │   ├── sf-lease
-│   └── sf-org-resolve
+│   ├── sf-org-resolve
+│   └── tmux-session-to-end
 ├── claude
 │   ├── hooks
 │   │   ├── sf-lease-end.sh
@@ -234,6 +261,7 @@ Copy mode installs files into:
 ~/.local/bin/codex-role
 ~/.local/bin/sf-org-resolve
 ~/.local/bin/sf-lease
+~/.local/bin/tmux-session-to-end
 ~/.claude/statusline.sh
 ~/.claude/hooks/sf-lease-{guard,post,end,table}.sh
 ~/.claude/hooks/tmux-agent-depth.sh
@@ -268,6 +296,7 @@ This symlinks:
 ~/.local/bin/codex-role -> codex/bin/codex-role
 ~/.local/bin/sf-org-resolve -> bin/sf-org-resolve
 ~/.local/bin/sf-lease -> bin/sf-lease
+~/.local/bin/tmux-session-to-end -> bin/tmux-session-to-end
 ~/.claude/statusline.sh -> claude/statusline.sh
 ~/.claude/hooks/sf-lease-{guard,post,end,table}.sh -> claude/hooks/*
 ~/.claude/hooks/tmux-agent-depth.sh -> claude/hooks/tmux-agent-depth.sh

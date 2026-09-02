@@ -181,6 +181,7 @@ if [[ "$mode" == "link" ]]; then
   link_path "$root_dir/bin/codex-restore" "$HOME/.local/bin/codex-restore"
   link_path "$root_dir/bin/sf-org-resolve" "$HOME/.local/bin/sf-org-resolve"
   link_path "$root_dir/bin/sf-lease" "$HOME/.local/bin/sf-lease"
+  link_path "$root_dir/bin/tmux-session-to-end" "$HOME/.local/bin/tmux-session-to-end"
   link_path "$root_dir/claude/statusline.sh" "$HOME/.claude/statusline.sh"
   link_path "$root_dir/claude/hooks/sf-lease-guard.sh" "$HOME/.claude/hooks/sf-lease-guard.sh"
   link_path "$root_dir/claude/hooks/sf-lease-post.sh" "$HOME/.claude/hooks/sf-lease-post.sh"
@@ -225,6 +226,7 @@ install_file "$root_dir/codex/bin/codex-role" "$HOME/.local/bin/codex-role" 0755
 install_file "$root_dir/bin/codex-restore" "$HOME/.local/bin/codex-restore" 0755
 install_file "$root_dir/bin/sf-org-resolve" "$HOME/.local/bin/sf-org-resolve" 0755
 install_file "$root_dir/bin/sf-lease" "$HOME/.local/bin/sf-lease" 0755
+install_file "$root_dir/bin/tmux-session-to-end" "$HOME/.local/bin/tmux-session-to-end" 0755
 install_file "$root_dir/claude/statusline.sh" "$HOME/.claude/statusline.sh" 0755
 install_file "$root_dir/claude/hooks/sf-lease-guard.sh" "$HOME/.claude/hooks/sf-lease-guard.sh" 0755
 install_file "$root_dir/claude/hooks/sf-lease-post.sh" "$HOME/.claude/hooks/sf-lease-post.sh" 0755

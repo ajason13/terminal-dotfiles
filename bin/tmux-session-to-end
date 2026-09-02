@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# Move a session to the end of creation order, which is the order `choose-tree`
+# lists sessions in. Session ids are immutable, so repositioning a session means
+# rebuilding it around a newer id - done here with move-window, so the panes and
+# the processes running inside them survive.
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: tmux-session-to-end <session-name> [session-name...]
+
+Rebuilds each named session under a fresh session id so it sorts last in
+`choose-tree`, which orders sessions by creation. Sessions are processed in the
+order given, and that becomes their new tail order. Window indices, panes,
+running processes, and each client's current window are all preserved.
+EOF
+}
+
+# Only a scratch session that never took ownership of a real window is safe to
+# discard on failure; one holding moved windows is left for a human to sort out.
+discard_scratch() {
+  local held
+  held=$(tmux list-windows -t "=$scratch" -F '#{window_index}' 2>/dev/null | tr -d '[:space:]' || true)
+  if [[ "$held" == "999" ]]; then
+    tmux kill-session -t "=$scratch" 2>/dev/null || true
+  elif [[ -n "$held" ]]; then
+    echo "tmux-session-to-end: left scratch session '$scratch' holding windows $held" >&2
+  fi
+}
+
+[[ $# -gt 0 ]] || { usage >&2; exit 1; }
+case "$1" in -h | --help) usage; exit 0 ;; esac
+
+tmux has-session 2>/dev/null || { echo "tmux-session-to-end: no tmux server running" >&2; exit 1; }
+
+for name in "$@"; do
+  tmux has-session -t "=$name" 2>/dev/null ||
+    { echo "tmux-session-to-end: no session named '$name'" >&2; exit 1; }
+done
+
+for name in "$@"; do
+  scratch="__to_end_$$_$RANDOM"
+
+  # Remember where each client is looking: emptying the old session destroys it
+  # and hands its clients elsewhere.
+  clients=()
+  while IFS=$'\t' read -r client window; do
+    clients+=("$client"$'\t'"$window")
+  done < <(tmux list-clients -F '#{client_name}#{l:	}#{client_session}#{l:	}#{window_index}' |
+    awk -F'\t' -v s="$name" '$2 == s { print $1 "\t" $3 }')
+
+  # Park the placeholder at 999 so the real windows keep their own indices.
+  tmux new-session -d -s "$scratch" -n __placeholder
+  tmux move-window -d -s "$scratch:^" -t "$scratch:999"
+  trap discard_scratch ERR
+
+  # Clients ride along on the placeholder, otherwise tmux drops them on an
+  # unrelated session the moment the old one empties out.
+  for entry in ${clients[@]+"${clients[@]}"}; do
+    tmux switch-client -c "${entry%%$'\t'*}" -t "$scratch:999" 2>/dev/null || true
+  done
+
+  while read -r idx; do
+    tmux move-window -d -s "=$name:$idx" -t "$scratch:$idx"
+  done < <(tmux list-windows -t "=$name" -F '#{window_index}')
+
+  tmux kill-window -t "$scratch:999"
+  tmux rename-session -t "$scratch" "$name"
+  trap - ERR
+
+  for entry in ${clients[@]+"${clients[@]}"}; do
+    tmux switch-client -c "${entry%%$'\t'*}" -t "=$name:${entry##*$'\t'}" 2>/dev/null || true
+  done
+
+  printf '%s -> %s\n' "$name" "$(tmux display-message -p -t "=$name:" '#{session_id}')"
+done
