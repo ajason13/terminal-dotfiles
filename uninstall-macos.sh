@@ -102,6 +102,7 @@ targets=(
   "$HOME/.local/bin/codex-restore"
   "$HOME/.local/bin/sf-org-resolve"
   "$HOME/.local/bin/sf-lease"
+  "$HOME/.local/bin/tmux-session-to-end"
   "$HOME/.claude/statusline.sh"
   "$HOME/.claude/hooks/sf-lease-guard.sh"
   "$HOME/.claude/hooks/sf-lease-post.sh"
