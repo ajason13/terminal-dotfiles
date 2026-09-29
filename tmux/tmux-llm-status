@@ -511,21 +511,26 @@ jump_to_pane() {
   tmux_cmd switch-client -t "$1" 2>/dev/null || true
 }
 
-# Popup loop: redraw every 2s until a key jumps or quits.
+# Popup loop: draw once, then wait for a key; r redraws on demand.
 pick() {
-  local key idx rc
+  local key idx rest
   while true; do
     printf '\033[H\033[2J'
     render_table
     printf '\n[key] jump · r refresh · q quit\n'
-    key='' rc=0
-    read -rsn1 -t 2 key || rc=$?
-    # bash 3.2 returns 1 for a timeout as well as EOF, so only a non-terminal stdin
-    # can have ended; on the popup's terminal every failure is a redraw timeout.
-    (( rc == 0 || rc > 128 )) || [[ -t 0 ]] || return 0
+    key=''
+    # No timeout, so a failed read is EOF: piped stdin ran out or the popup closed.
+    read -rsn1 key || return 0
     case "$key" in
-      '' | r) continue ;;
-      q | $'\e') return 0 ;;
+      r) continue ;;
+      q) return 0 ;;
+      $'\e')
+        # An arrow key is ESC plus a buffered tail; only a bare Esc (no tail within 1s) quits.
+        rest=''
+        read -rsn2 -t 1 rest || true
+        [[ -n "$rest" ]] && continue
+        return 0
+        ;;
     esac
     idx="$(key_index "$key")"
     [[ -n "$idx" && -n "${TABLE_PANES[$idx]:-}" ]] || continue
