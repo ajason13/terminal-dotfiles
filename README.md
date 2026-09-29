@@ -19,6 +19,9 @@ terminal backgrounds.
 - `Ctrl-a` is the tmux prefix.
 - `Ctrl-a \` splits horizontally and `Ctrl-a -` splits vertically.
 - `Ctrl-a h/j/k/l` moves between panes.
+- `Ctrl-a A` opens the agent table: every LLM pane across sessions, blocked
+  first, with ctx, model, branch, task and account limits; one key jumps there.
+  `tmux-llm-status table` prints the same view once.
 - `Ctrl-a s` picks a session, `Ctrl-a S` creates one (prompts for a name, starts
   in the current pane's directory), `Ctrl-a $` renames the current one.
 - The `Ctrl-a s` picker lists sessions in creation order. `tmux-session-to-end`

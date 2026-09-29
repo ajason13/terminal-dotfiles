@@ -495,6 +495,35 @@ render_table() {
   done
 }
 
+# switch-client alone lands on the window's active pane, not the one picked.
+jump_to_pane() {
+  tmux_cmd select-window -t "$1" 2>/dev/null || true
+  tmux_cmd select-pane -t "$1" 2>/dev/null || true
+  tmux_cmd switch-client -t "$1" 2>/dev/null || true
+}
+
+# Popup loop: redraw every 2s until a key jumps or quits.
+pick() {
+  local key idx rc
+  while true; do
+    printf '\033[H\033[2J'
+    render_table
+    printf '\n[key] jump · r refresh · q quit\n'
+    key='' rc=0
+    read -rsn1 -t 2 key || rc=$?
+    # >128 is the timeout; anything else non-zero is EOF, so there is no one to wait for
+    (( rc == 0 || rc > 128 )) || return 0
+    case "$key" in
+      '' | r) continue ;;
+      q | $'\e') return 0 ;;
+    esac
+    idx="$(key_index "$key")"
+    [[ -n "$idx" && -n "${TABLE_PANES[$idx]:-}" ]] || continue
+    jump_to_pane "${TABLE_PANES[$idx]}"
+    return 0
+  done
+}
+
 case "${1:-}" in
   window)
     window_status "${2:-}"
@@ -514,6 +543,9 @@ case "${1:-}" in
   table)
     render_table
     ;;
+  pick)
+    pick
+    ;;
   run)
     run_daemon
     ;;
@@ -528,7 +560,7 @@ case "${1:-}" in
     start_daemon
     ;;
   *)
-    printf 'Usage: %s window <target> | summary [session] | next-waiting | once | prune | table | start | stop | restart\n' "${0##*/}" >&2
+    printf 'Usage: %s window <target> | summary [session] | next-waiting | once | prune | table | pick | start | stop | restart\n' "${0##*/}" >&2
     exit 2
     ;;
 esac

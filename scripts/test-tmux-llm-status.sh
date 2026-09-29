@@ -297,6 +297,18 @@ empty="$(TMUX_SOCKET="$test_home/no-such.sock" "$bin" table)"
 check "empty server renders a zero header" "yes" "$(has "$empty" '0 total')"
 check "empty server has no reading" "yes" "$(has "$empty" 'Limits: no reading yet')"
 
+# --- pick: one key jumps, q and EOF leave things alone ------------------------
+current_window() { t display-message -p -t 'E2E - Tbl' '#{window_name}'; }
+t select-window -t 'E2E - Tbl:t1'
+printf 'q' | "$bin" pick >/dev/null 2>&1
+check "q quits without jumping" "t1" "$(current_window)"
+printf 'Z' | "$bin" pick >/dev/null 2>&1
+check "unmapped key then EOF exits without jumping" "t1" "$(current_window)"
+printf '1' | "$bin" pick >/dev/null 2>&1
+check "key 1 jumps to the blocked pane" "t2" "$(current_window)"
+clear_needs_for 'E2E - Tbl:t2'
+t kill-session -t 'E2E - Tbl'
+
 if (( failures > 0 )); then
   printf 'test-tmux-llm-status: %d failure(s)\n' "$failures" >&2
   exit 1
