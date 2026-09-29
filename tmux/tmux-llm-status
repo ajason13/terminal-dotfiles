@@ -166,38 +166,38 @@ is_active_title() {
   esac
 }
 
+# One pane's state into PANE_STATE (waiting|active|present|none), plus AGENT_COUNT.
+# Shared by the status bar and the table so the two can never disagree.
+classify_pane() {
+  local pane_id="$1" command="$2" title="$3"
+  count_agents "$pane_id"
+  # Depth wins over the title: a lead that fanned out and went quiet reports an
+  # idle title while its agents are still running, which is the case this exists for.
+  if (( AGENT_COUNT > 0 )); then PANE_STATE=active
+  # Ahead of every title matcher: a working Claude pane's title is now
+  # indistinguishable from an idle one, so the marker is the only truth.
+  elif is_pane_busy "$pane_id"; then PANE_STATE=active
+  elif has_spinner_title "$title" || is_active_title "$title"; then PANE_STATE=active
+  elif is_waiting_title "$title"; then PANE_STATE=waiting
+  elif is_codex_title "$title" || is_claude_title "$title" || is_llm_command "${command##*/}"; then PANE_STATE=present
+  else PANE_STATE=none
+  fi
+}
+
 # Scan a window's panes and echo four space-separated counts:
 # "<active> <present> <waiting> <depth>" = working / present-but-idle /
 # awaiting-input panes, then total subagents in flight across the window.
 count_window() {
   local target="${1:?window target required}"
-  local active=0 present=0 waiting=0 depth_sum=0 pane_id command title depth
+  local active=0 present=0 waiting=0 depth_sum=0 pane_id command title
 
   while IFS=$'\t' read -r pane_id command title; do
-    count_agents "$pane_id"
-    depth=$AGENT_COUNT
-    # Depth wins over the title: a lead that fanned out and went quiet reports an
-    # idle title while its agents are still running, which is the case this exists for.
-    if (( depth > 0 )); then
-      active=$((active + 1))
-      depth_sum=$((depth_sum + depth))
-    # Ahead of every title matcher: a working Claude pane's title is now
-    # indistinguishable from an idle one, so the marker is the only truth.
-    elif is_pane_busy "$pane_id"; then
-      active=$((active + 1))
-    elif has_spinner_title "${title:-}"; then
-      active=$((active + 1))
-    elif is_active_title "${title:-}"; then
-      active=$((active + 1))
-    elif is_waiting_title "${title:-}"; then
-      waiting=$((waiting + 1))
-    elif is_codex_title "${title:-}"; then
-      present=$((present + 1))
-    elif is_claude_title "${title:-}"; then
-      present=$((present + 1))
-    elif is_llm_command "${command##*/}"; then
-      present=$((present + 1))
-    fi
+    classify_pane "$pane_id" "$command" "${title:-}"
+    case "$PANE_STATE" in
+      active) active=$((active + 1)); depth_sum=$((depth_sum + AGENT_COUNT)) ;;
+      waiting) waiting=$((waiting + 1)) ;;
+      present) present=$((present + 1)) ;;
+    esac
   done < <(tmux_cmd list-panes -t "$target" -F '#{pane_id}	#{pane_current_command}	#{pane_title}' 2>/dev/null || true)
 
   # Trailing newline is required: callers use `read`, which returns non-zero at
