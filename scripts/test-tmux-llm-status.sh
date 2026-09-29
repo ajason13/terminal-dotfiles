@@ -85,7 +85,9 @@ meta_for() {  # target model ctx branch
   printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\n' \
     "$now" "$2" "$3" 5 $((now + 10800)) 3 $((now + 432000)) "$4" > "$f"
 }
-has() { if printf '%s' "$1" | grep -qF -- "$2"; then printf 'yes'; else printf 'no'; fi; }
+# A here-string, not a pipe: grep -q exits on its first match, and under pipefail the
+# writer's SIGPIPE turned a found string into "no" (1 in 8 parallel runs).
+has() { if grep -qF -- "$2" <<< "$1"; then printf 'yes'; else printf 'no'; fi; }
 
 exists() { if [[ -e "$1" ]]; then printf 'present'; else printf 'absent'; fi; }
 
@@ -325,7 +327,7 @@ check "the TASK column is gone" "no" "$(has "$table" 'TASK')"
 check "header counts the blocked pane" "yes" "$(has "$table" '· 1 need you ·')"
 check "limits come from the newest reading" "yes" "$(has "$table" 'Limits: 5h 5% (resets 3h) · 7d 3% (resets 5d)')"
 check "limits carry the reading's clock time" "yes" \
-  "$(if printf '%s\n' "$table" | grep -qE '^Limits: .* as of [0-9]{2}:[0-9]{2}$'; then echo yes; else echo no; fi)"
+  "$(if grep -qE '^Limits: .* as of [0-9]{2}:[0-9]{2}$' <<< "$table"; then echo yes; else echo no; fi)"
 # spaced session name and a pane with no reading must keep columns aligned
 idle_row="$(grep -E '^. +t1 ' <<< "$rows")"
 blocked_row="$(grep -E '^. +t2 ' <<< "$rows")"
@@ -347,6 +349,23 @@ empty="$(TMUX_SOCKET="$test_home/no-such.sock" "$bin" table)"
 meta_for 'E2E - Tbl:t2' opus-5.5 abc bb-391
 check "a corrupt ctx reading does not cut the table short" "$(grep -c . <<< "$rows")" \
   "$(COLUMNS=160 "$bin" table | table_rows | grep -c .)"
+meta_for 'E2E - Tbl:t2' opus-5.5 29.4 bb-391
+
+# BRANCH fits names up to 40, but gives width back before TARGET drops below 24.
+meta_for 'E2E - Tbl:t2' opus-5.5 29.4 chore/dependabot-group-typescript-eslint
+check "a 40-character branch shows in full" "yes" \
+  "$(has "$(COLUMNS=200 "$bin" table)" 'chore/dependabot-group-typescript-eslint')"
+meta_for 'E2E - Tbl:t2' opus-5.5 29.4 chore/dependabot-group-typescript-eslint-plus
+wide="$(COLUMNS=200 "$bin" table)"
+check "a longer branch is cut at 40" "yes-no" \
+  "$(has "$wide" 'chore/dependabot-group-typescript-eslint')-$(has "$wide" 'eslint-plus')"
+# At 110 a 40-wide BRANCH would leave TARGET 10; it gives back 14 instead.
+narrow_head="$(COLUMNS=110 "$bin" table | grep '^KEY ')"
+narrow_head="${narrow_head%%STATE*}"
+check "a long branch leaves TARGET 24 columns in a narrow terminal" "24" "$(( ${#narrow_head} - 5 ))"
+longest=0
+while IFS= read -r line; do (( ${#line} <= longest )) || longest=${#line}; done < <(COLUMNS=110 "$bin" table | table_rows)
+check "a long branch still fits a narrow terminal" "yes" "$(if (( longest <= 110 )); then echo yes; else echo no; fi)"
 meta_for 'E2E - Tbl:t2' opus-5.5 29.4 bb-391
 
 check "empty server renders a zero header" "yes" "$(has "$empty" '0 total')"
@@ -386,8 +405,9 @@ check "an idle popup draws once, with no timed redraw" "1" \
   "$( (sleep 3; printf 'q') | in_tty "$bin" pick 2>/dev/null | grep -o $'\033\\[2J' | wc -l | tr -d ' ')"
 # The popup exports no COLUMNS, so width must come from the terminal itself: a long
 # label fills a 100-column pty to the edge instead of stopping at tput's fallback 80.
-pty_longest="$(in_tty bash -c "stty cols 100 rows 40; unset COLUMNS; '$bin' table" 2>/dev/null \
-  | tr -d '\r' | while IFS= read -r line; do printf '%s\n' "${#line}"; done | sort -n | tail -1)"
+# stdin from /dev/null: script cannot set up a pty over an inherited socket and prints nothing.
+pty_longest="$(in_tty bash -c "stty cols 100 rows 40; unset COLUMNS; '$bin' table" 2>/dev/null </dev/null \
+  | tr -d '\r' | while IFS= read -r line; do printf '%s\n' "${#line}"; done | sort -n | tail -1 || true)"
 check "without COLUMNS the table uses the terminal's width" "100" "$pty_longest"
 
 # After t, keys follow the tree rows: this key names a different pane in urgency order.
