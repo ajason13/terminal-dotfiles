@@ -520,8 +520,9 @@ pick() {
     printf '\n[key] jump · r refresh · q quit\n'
     key='' rc=0
     read -rsn1 -t 2 key || rc=$?
-    # >128 is the timeout; anything else non-zero is EOF, so there is no one to wait for
-    (( rc == 0 || rc > 128 )) || return 0
+    # bash 3.2 returns 1 for a timeout as well as EOF, so only a non-terminal stdin
+    # can have ended; on the popup's terminal every failure is a redraw timeout.
+    (( rc == 0 || rc > 128 )) || [[ -t 0 ]] || return 0
     case "$key" in
       '' | r) continue ;;
       q | $'\e') return 0 ;;
