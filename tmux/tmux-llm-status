@@ -407,8 +407,8 @@ stop_daemon() {
   rm -f "$pidfile"
 }
 
-# Row keys in order; q and r are taken by quit and refresh.
-TABLE_KEYS='123456789abcdefghijklmnopstuvwxyz'
+# Row keys in order; q, r and t are taken by quit, refresh and the tree toggle.
+TABLE_KEYS='123456789abcdefghijklmnopsuvwxyz'
 TABLE_PANES=()
 
 key_index() {
@@ -432,20 +432,25 @@ read_meta() {
     < "$file" 2>/dev/null || true
 }
 
-# Tab-separated rows, most urgent first: rank, age, pane id, window name, state, agents, pane pid, path, title.
+# Tab-separated rows: rank, age, pane id, window name, state, agents, pane pid, path, session,
+# tree key, title. Most urgent first, or with "tree" in choose-tree's session/window/pane order.
 # The title stays last: tab is IFS whitespace, so an empty field mid-row would collapse.
-collect_rows() {
-  local pane_id pane_pid name activity command path title rank age
+collect_rows() {  # [tree]
+  local pane_id pane_pid name activity command path session sid widx pidx title rank age
+  local -a order=('-k1,1n' '-k2,2n')
+  [[ "${1:-}" == tree ]] && order=('-k10,10n')
   refresh_now
-  while IFS=$'\t' read -r pane_id pane_pid name activity command path title; do
+  while IFS=$'\t' read -r pane_id pane_pid name activity command path session sid widx pidx title; do
     classify_pane "$pane_id" "$command" "${title:-}"
     case "$PANE_STATE" in
       waiting) rank=0 ;; active) rank=1 ;; present) rank=2 ;; *) continue ;;
     esac
     age=$(( NOW - ${activity:-$NOW} )); (( age >= 0 )) || age=0
-    printf '%d\t%d\t%s\t%s\t%s\t%d\t%s\t%s\t%s\n' "$rank" "$age" "$pane_id" "$name" "$PANE_STATE" "$AGENT_COUNT" "$pane_pid" "$path" "${title:-}"
-  done < <(tmux_cmd list-panes -a -F '#{pane_id}	#{pane_pid}	#{window_name}	#{window_activity}	#{pane_current_command}	#{pane_current_path}	#{pane_title}' 2>/dev/null || true) \
-    | sort -t "$(printf '\t')" -k1,1n -k2,2n
+    # choose-tree orders sessions by id (creation), then window and pane index.
+    printf '%d\t%d\t%s\t%s\t%s\t%d\t%s\t%s\t%s\t%d\t%s\n' "$rank" "$age" "$pane_id" "$name" "$PANE_STATE" \
+      "$AGENT_COUNT" "$pane_pid" "$path" "$session" $(( ${sid#\$} * 1000000 + widx * 1000 + pidx )) "${title:-}"
+  done < <(tmux_cmd list-panes -a -F '#{pane_id}	#{pane_pid}	#{window_name}	#{window_activity}	#{pane_current_command}	#{pane_current_path}	#{session_name}	#{session_id}	#{window_index}	#{pane_index}	#{pane_title}' 2>/dev/null || true) \
+    | sort -t "$(printf '\t')" "${order[@]}"
 }
 
 limit_part() {  # label pct reset_at
@@ -540,19 +545,20 @@ org_of() {
   done <<< "$ORG_ROWS"
 }
 
-render_table() {
+render_table() {  # [tree]
+  local mode="${1:-}" last_session=''
   local -a rows=() names=() targets=() projects=()
-  local row rank age pane_id name state agents pane_pid path title i=0 key label ctx
+  local row rank age pane_id name state agents pane_pid path session tree title i=0 key label ctx
   local need=0 work=0 subs=0 newest=0 l5='' l5at='' l7='' l7at='' limits target_w=6 project_w=7 branch_w=6
   local locks org_w=0 lock_w=0 branch_pad=0 row_panes=' ' held p a l hp locks_note=''
   local cols="${COLUMNS:-$(tput cols 2>/dev/null || printf 120)}"
   TABLE_PANES=()
   refresh_now
-  while IFS= read -r row; do rows+=("$row"); done < <(collect_rows)
+  while IFS= read -r row; do rows+=("$row"); done < <(collect_rows "$mode")
 
   # bash 3.2: "${rows[@]}" on an empty array is unbound under set -u
   for row in ${rows[@]+"${rows[@]}"}; do
-    IFS=$'\t' read -r rank age pane_id name state agents pane_pid path title <<< "$row"
+    IFS=$'\t' read -r rank age pane_id name state agents pane_pid path session tree title <<< "$row"
     names+=("$name")
     row_panes+="$pane_id "
     case "$state" in waiting) need=$((need + 1)) ;; active) work=$((work + 1)) ;; esac
@@ -567,7 +573,7 @@ render_table() {
   # PROJECT and BRANCH fit their longest value (capped), so TARGET gets every other column
   # up to its own longest label, and rows never wrap.
   for row in ${rows[@]+"${rows[@]}"}; do
-    IFS=$'\t' read -r rank age pane_id name state agents pane_pid path title <<< "$row"
+    IFS=$'\t' read -r rank age pane_id name state agents pane_pid path session tree title <<< "$row"
     target_label "$name" "$title"
     targets+=("$TARGET")
     (( ${#TARGET} <= target_w )) || target_w=${#TARGET}
@@ -621,7 +627,13 @@ render_table() {
   printf '\n'
 
   for row in ${rows[@]+"${rows[@]}"}; do
-    IFS=$'\t' read -r rank age pane_id name state agents pane_pid path title <<< "$row"
+    IFS=$'\t' read -r rank age pane_id name state agents pane_pid path session tree title <<< "$row"
+    if [[ "$mode" == tree && "$session" != "$last_session" ]]; then
+      # The same roll-up choose-tree and the status bar show for this session.
+      printf '%s  %s\n' "$session" \
+        "$(tmux_cmd show-options -qv -t "\$$(( tree / 1000000 ))" @llm_fleet 2>/dev/null || true)"
+      last_session="$session"
+    fi
     read_meta "$pane_id"
     pad TARGET "${targets[i]}" "$target_w"
     pad PROJECT "${projects[i]}" "$project_w"
@@ -650,18 +662,19 @@ jump_to_pane() {
   tmux_cmd switch-client -t "$1" 2>/dev/null || true
 }
 
-# Popup loop: draw once, then wait for a key; r redraws on demand.
+# Popup loop: draw once, then wait for a key; r redraws on demand, t flips to tree order.
 pick() {
-  local key idx rest
+  local key idx rest mode=''
   while true; do
     printf '\033[H\033[2J'
-    render_table
-    printf '\n[key] jump · r refresh · q quit\n'
+    render_table "$mode"
+    printf '\n[key] jump · t %s · r refresh · q quit\n' "$( [[ -n "$mode" ]] && echo 'urgency order' || echo 'tree order')"
     key=''
     # No timeout, so a failed read is EOF: piped stdin ran out or the popup closed.
     read -rsn1 key || return 0
     case "$key" in
       r) continue ;;
+      t) if [[ -n "$mode" ]]; then mode=''; else mode=tree; fi; continue ;;
       q) return 0 ;;
       $'\e')
         # An arrow key is ESC plus a buffered tail; only a bare Esc (no tail within 1s) quits.
@@ -695,7 +708,7 @@ case "${1:-}" in
     prune_dead_panes
     ;;
   table)
-    render_table
+    render_table "${2:-}"
     ;;
   pick)
     pick
@@ -714,7 +727,7 @@ case "${1:-}" in
     start_daemon
     ;;
   *)
-    printf 'Usage: %s window <target> | summary [session] | next-waiting | once | prune | table | pick | start | stop | restart\n' "${0##*/}" >&2
+    printf 'Usage: %s window <target> | summary [session] | next-waiting | once | prune | table [tree] | pick | start | stop | restart\n' "${0##*/}" >&2
     exit 2
     ;;
 esac

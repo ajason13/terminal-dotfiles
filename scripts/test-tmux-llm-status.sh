@@ -352,6 +352,18 @@ meta_for 'E2E - Tbl:t2' opus-5.5 29.4 bb-391
 check "empty server renders a zero header" "yes" "$(has "$empty" '0 total')"
 check "empty server has no reading" "yes" "$(has "$empty" 'Limits: no reading yet')"
 
+# --- tree order: grouped under session headers, in window order -----------------
+tree="$(COLUMNS=160 "$bin" table tree)"
+tbl_rows="$(sed -n '/^E2E - Tbl  /,/^[^ ]* *[^0-9a-z ]/p' <<< "$tree" | sed '1d' | grep -E '^. ')"
+check "tree order puts a session header over its rows" "yes" \
+  "$(if grep -qE '^E2E - Tbl  ' <<< "$tree"; then echo yes; else echo no; fi)"
+check "tree order follows window order, not urgency" "t1 t2" \
+  "$(head -2 <<< "$tbl_rows" | awk '{print $2}' | tr '\n' ' ' | sed 's/ $//')"
+check "urgency order has no session headers" "no" \
+  "$(if grep -qE '^E2E - Tbl  ' <<< "$table"; then echo yes; else echo no; fi)"
+check "t is not a row key" "no" \
+  "$(if grep -qE '^t  ' <<< "$tree"; then echo yes; else echo no; fi)"
+
 # --- pick: one key jumps, q and EOF leave things alone ------------------------
 current_window() { t display-message -p -t 'E2E - Tbl' '#{window_name}'; }
 t select-window -t 'E2E - Tbl:t1'
@@ -372,6 +384,18 @@ t select-window -t 'E2E - Tbl:t1'
 check "pick waits on a terminal for a late key" "t2" "$(current_window)"
 check "an idle popup draws once, with no timed redraw" "1" \
   "$( (sleep 3; printf 'q') | in_tty "$bin" pick 2>/dev/null | grep -o $'\033\\[2J' | wc -l | tr -d ' ')"
+# After t, keys follow the tree rows: this key names a different pane in urgency order.
+tree_key="$(grep -F 'dup · beta' <<< "$tree" | cut -c1)"
+urgent_key="$(COLUMNS=160 "$bin" table | grep -F 'dup · beta' | cut -c1)"
+check "the probe key differs between orders" "yes" "$([[ "$tree_key" != "$urgent_key" ]] && echo yes || echo no)"
+t select-window -t 'E2E - Tbl:t1'
+printf 't%s' "$tree_key" | COLUMNS=160 "$bin" pick >/dev/null 2>&1
+check "t switches keys to tree order" "4" "$(t display-message -p -t 'E2E - Tbl' '#{window_index}')"
+# Re-read: urgency order follows activity, and the jump above just changed it.
+t select-window -t 'E2E - Tbl:t1'
+urgent_key="$(COLUMNS=160 "$bin" table | grep -F 'dup · beta' | cut -c1)"
+printf 'tt%s' "$urgent_key" | COLUMNS=160 "$bin" pick >/dev/null 2>&1
+check "t twice is back to urgency order" "4" "$(t display-message -p -t 'E2E - Tbl' '#{window_index}')"
 t select-window -t 'E2E - Tbl:t1'
 printf 'r1' | "$bin" pick >/dev/null 2>&1
 check "r redraws without leaving" "t2" "$(current_window)"
