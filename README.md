@@ -19,6 +19,9 @@ terminal backgrounds.
 - `Ctrl-a` is the tmux prefix.
 - `Ctrl-a \` splits horizontally and `Ctrl-a -` splits vertically.
 - `Ctrl-a h/j/k/l` moves between panes.
+- `Ctrl-a A` opens the agent table: every LLM pane across sessions, blocked
+  first, with ctx, model, branch, task and account limits; one key jumps there.
+  `tmux-llm-status table` prints the same view once.
 - `Ctrl-a s` picks a session, `Ctrl-a S` creates one (prompts for a name, starts
   in the current pane's directory), `Ctrl-a $` renames the current one.
 - The `Ctrl-a s` picker lists sessions in creation order. `tmux-session-to-end`
@@ -41,7 +44,7 @@ terminal backgrounds.
 | `⠹` | a turn is running, no fan-out |
 | `⠹N` | N subagents in flight |
 | `◆` | agent present, idle |
-| `!` | blocked on you |
+| `!` | a permission or question prompt is waiting on you |
 
 `N` is suppressed at 1. Both working states come from `tmux-agent-depth.sh`,
 under `$TMUX_LLM_STATE_HOME/panes/` (default `~/.local/state/tmux-llm`, override
@@ -102,13 +105,18 @@ appending to any array that already exists:
     ],
     "SessionEnd": [
       { "hooks": [{ "type": "command", "command": "$HOME/.claude/hooks/tmux-agent-depth.sh", "timeout": 5 }] }
+    ],
+    "Notification": [
+      { "matcher": "permission_prompt|elicitation_dialog", "hooks": [{ "type": "command", "command": "$HOME/.claude/hooks/tmux-agent-depth.sh", "timeout": 5 }] }
     ]
   }
 }
 ```
 
-The first four are the busy marker, the next two are depth, and the last two
-reset a pane. Registering only some is fine - each state degrades to absent
+The first four are the busy marker, the next two are depth, the next two
+reset a pane, and `Notification` is the blocked `!`. Esc on a prompt fires no
+hook, so `!` stays until you next type in that pane. No event marks a prompt as
+approved, so an approved long-running tool keeps `!` until its batch finishes. Registering only some is fine - each state degrades to absent
 rather than wrong - but dropping `Stop` leaves every pane spinning until the
 TTL expires.
 

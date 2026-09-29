@@ -179,6 +179,50 @@ rc=0
 printf 'not json at all' | TMUX_PANE='%9' "$hook" >/dev/null 2>&1 || rc=$?
 check "garbage stdin exits 0" "0" "$rc"
 
+# --- blocked: a permission or question prompt parks the turn on you -----------
+fire_notification() {
+  printf '{"hook_event_name":"Notification","notification_type":"%s"}' "$1" \
+    | TMUX_PANE="${2:-%9}" "$hook"
+}
+needs_state() {
+  if [[ -f "$TMUX_LLM_STATE_HOME/panes/9.needs" ]]; then printf 'blocked'; else printf 'clear'; fi
+}
+
+fire_notification permission_prompt
+check "permission prompt marks blocked" "blocked" "$(needs_state)"
+fire_lead PostToolBatch
+check "tool batch after approval clears blocked" "clear" "$(needs_state)"
+fire_notification idle_prompt
+check "idle prompt is not blocked" "clear" "$(needs_state)"
+fire_notification elicitation_dialog
+check "question prompt marks blocked" "blocked" "$(needs_state)"
+fire_lead UserPromptSubmit
+check "typing a prompt clears blocked" "clear" "$(needs_state)"
+fire_notification permission_prompt
+fire Stop sub1
+check "subagent stop keeps lead blocked" "blocked" "$(needs_state)"
+fire_lead Stop
+check "lead stop clears blocked" "clear" "$(needs_state)"
+fire_notification permission_prompt
+fire_lead SessionEnd
+check "session end clears blocked" "clear" "$(needs_state)"
+
+# --- one subagent's tool batch must not clear another subagent's prompt ------
+printf '{"hook_event_name":"Notification","notification_type":"permission_prompt","agent_id":"a1"}' \
+  | TMUX_PANE=%9 "$hook"
+fire PostToolBatch b2
+check "another agent's tool batch keeps blocked" "blocked" "$(needs_state)"
+fire PostToolBatch a1
+check "the blocked agent's own tool batch clears" "clear" "$(needs_state)"
+fire_notification permission_prompt
+fire PostToolBatch b2
+check "a subagent's tool batch keeps the lead blocked" "blocked" "$(needs_state)"
+fire_lead PostToolBatch
+check "the lead's tool batch clears the lead" "clear" "$(needs_state)"
+fire_notification permission_prompt
+fire_with_source SessionStart resume
+check "resume clears a stale prompt" "clear" "$(needs_state)"
+
 if (( failures > 0 )); then
   printf 'test-tmux-agent-depth: %d failure(s)\n' "$failures" >&2
   exit 1

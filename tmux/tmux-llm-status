@@ -66,6 +66,16 @@ is_pane_busy() {
   (( NOW - stamp < BUSY_TTL ))
 }
 
+# Parked on a permission or question prompt? No TTL on purpose: a prompt can wait
+# all night, and the next thing you type in that pane clears it.
+is_pane_blocked() { [[ -f "$STATE_HOME/panes/${1#%}.needs" ]]; }
+
+# A bare shell means the agent is gone (crashed or killed mid-prompt), so any
+# leftover .needs there is stale.
+is_shell_command() {
+  case "${1#-}" in zsh | bash | sh | fish | dash | ksh | tcsh) return 0 ;; *) return 1 ;; esac
+}
+
 # In-flight subagents for one pane, as a file count published by the
 # tmux-agent-depth hook. Globbed rather than `ls`, and assigns into AGENT_COUNT
 # rather than printing, because this runs for every pane on every one-second
@@ -87,11 +97,13 @@ prune_dead_panes() {
   # An empty live set more likely means the socket resolved wrong than that every
   # pane died at once - never let that wipe valid state.
   [[ "$live" != " " ]] || return 0
-  for entry in "$STATE_HOME/panes"/*.agents "$STATE_HOME/panes"/*.busy; do
+  for entry in "$STATE_HOME/panes"/*.agents "$STATE_HOME/panes"/*.busy "$STATE_HOME/panes"/*.meta "$STATE_HOME/panes"/*.needs; do
     [[ -e "$entry" ]] || continue
     id="${entry##*/}"
     id="${id%.agents}"
     id="${id%.busy}"
+    id="${id%.meta}"
+    id="${id%.needs}"
     case "$live" in
       *" $id "*) ;;
       *) rm -rf "$entry" 2>/dev/null || true ;;
@@ -165,38 +177,40 @@ is_active_title() {
   esac
 }
 
+# One pane's state into PANE_STATE (waiting|active|present|none), plus AGENT_COUNT.
+# Shared by the status bar and the table so the two can never disagree.
+classify_pane() {
+  local pane_id="$1" command="$2" title="$3"
+  count_agents "$pane_id"
+  # A blocked prompt outranks every working signal: the turn cannot move without you.
+  if is_pane_blocked "$pane_id" && ! is_shell_command "${command##*/}"; then PANE_STATE=waiting
+  # Depth wins over the title: a lead that fanned out and went quiet reports an
+  # idle title while its agents are still running, which is the case this exists for.
+  elif (( AGENT_COUNT > 0 )); then PANE_STATE=active
+  # Ahead of every title matcher: a working Claude pane's title is now
+  # indistinguishable from an idle one, so the marker is the only truth.
+  elif is_pane_busy "$pane_id"; then PANE_STATE=active
+  elif has_spinner_title "$title" || is_active_title "$title"; then PANE_STATE=active
+  elif is_waiting_title "$title"; then PANE_STATE=waiting
+  elif is_codex_title "$title" || is_claude_title "$title" || is_llm_command "${command##*/}"; then PANE_STATE=present
+  else PANE_STATE=none
+  fi
+}
+
 # Scan a window's panes and echo four space-separated counts:
 # "<active> <present> <waiting> <depth>" = working / present-but-idle /
 # awaiting-input panes, then total subagents in flight across the window.
 count_window() {
   local target="${1:?window target required}"
-  local active=0 present=0 waiting=0 depth_sum=0 pane_id command title depth
+  local active=0 present=0 waiting=0 depth_sum=0 pane_id command title
 
   while IFS=$'\t' read -r pane_id command title; do
-    count_agents "$pane_id"
-    depth=$AGENT_COUNT
-    # Depth wins over the title: a lead that fanned out and went quiet reports an
-    # idle title while its agents are still running, which is the case this exists for.
-    if (( depth > 0 )); then
-      active=$((active + 1))
-      depth_sum=$((depth_sum + depth))
-    # Ahead of every title matcher: a working Claude pane's title is now
-    # indistinguishable from an idle one, so the marker is the only truth.
-    elif is_pane_busy "$pane_id"; then
-      active=$((active + 1))
-    elif has_spinner_title "${title:-}"; then
-      active=$((active + 1))
-    elif is_active_title "${title:-}"; then
-      active=$((active + 1))
-    elif is_waiting_title "${title:-}"; then
-      waiting=$((waiting + 1))
-    elif is_codex_title "${title:-}"; then
-      present=$((present + 1))
-    elif is_claude_title "${title:-}"; then
-      present=$((present + 1))
-    elif is_llm_command "${command##*/}"; then
-      present=$((present + 1))
-    fi
+    classify_pane "$pane_id" "$command" "${title:-}"
+    case "$PANE_STATE" in
+      active) active=$((active + 1)); depth_sum=$((depth_sum + AGENT_COUNT)) ;;
+      waiting) waiting=$((waiting + 1)) ;;
+      present) present=$((present + 1)) ;;
+    esac
   done < <(tmux_cmd list-panes -t "$target" -F '#{pane_id}	#{pane_current_command}	#{pane_title}' 2>/dev/null || true)
 
   # Trailing newline is required: callers use `read`, which returns non-zero at
@@ -204,19 +218,19 @@ count_window() {
   printf '%d %d %d %d\n' "$active" "$present" "$waiting" "$depth_sum"
 }
 
-# Per-window marker, by precedence: working (spinner) > present (diamond) >
-# waiting (bang). The spinner's number is agents-in-flight when we have that
+# Per-window marker, by precedence: blocked (bang) > working (spinner) >
+# present (diamond). The spinner's number is agents-in-flight when we have that
 # count, else panes working - never the two summed, they are different units.
 format_marker() {
   local active="$1" present="$2" waiting="$3" depth="${4:-0}" n
 
-  if (( active > 0 )); then
+  if (( waiting > 0 )); then
+    if (( waiting == 1 )); then printf '!'; else printf '!%d' "$waiting"; fi
+  elif (( active > 0 )); then
     if (( depth > 0 )); then n="$depth"; else n="$active"; fi
     if (( n == 1 )); then spinner_frame; else printf '%s%d' "$(spinner_frame)" "$n"; fi
   elif (( present > 0 )); then
     if (( present == 1 )); then printf '◆'; else printf '◆%d' "$present"; fi
-  elif (( waiting > 0 )); then
-    if (( waiting == 1 )); then printf '!'; else printf '!%d' "$waiting"; fi
   fi
 }
 
@@ -224,9 +238,9 @@ format_marker() {
 # marker, same precedence as format_marker.
 window_category() {
   local active="$1" present="$2" waiting="$3"
-  if (( active > 0 )); then printf 'active'
+  if (( waiting > 0 )); then printf 'waiting'
+  elif (( active > 0 )); then printf 'active'
   elif (( present > 0 )); then printf 'present'
-  elif (( waiting > 0 )); then printf 'waiting'
   else printf 'none'
   fi
 }
@@ -274,8 +288,8 @@ fleet_summary() {
   format_fleet "$active_w" "$present_w" "$waiting_w"
 }
 
-# Jump to the next window (after the current one, wrapping) that has an agent
-# present but NOT actively working - i.e. one likely waiting on your reply.
+# Jump to the next window (after the current one, wrapping) blocked on you, or
+# failing that, one with an agent present but not working.
 next_waiting() {
   local current window active present waiting depth
   local windows=()
@@ -293,15 +307,20 @@ next_waiting() {
     if [[ "${windows[$i]}" == "$current" ]]; then start=$i; break; fi
   done
 
-  local off target
-  for (( off = 1; off <= n; off++ )); do
-    target="${windows[$(( (start + off) % n ))]}"
-    read -r active present waiting depth < <(count_window "$target")
-    if (( active == 0 )) && (( present > 0 || waiting > 0 )); then
+  local off target pass
+  # Blocked panes first; only when none are blocked, fall back to any idle agent.
+  for pass in blocked idle; do
+    for (( off = 1; off <= n; off++ )); do
+      target="${windows[$(( (start + off) % n ))]}"
+      read -r active present waiting depth < <(count_window "$target")
+      case "$pass" in
+        blocked) (( waiting > 0 )) || continue ;;
+        idle) (( active == 0 && present > 0 )) || continue ;;
+      esac
       tmux_cmd select-window -t "$target" 2>/dev/null \
         || tmux_cmd switch-client -t "$target" 2>/dev/null || true
       return 0
-    fi
+    done
   done
 
   tmux_cmd display-message 'No agents waiting on you' 2>/dev/null || true
@@ -388,6 +407,132 @@ stop_daemon() {
   rm -f "$pidfile"
 }
 
+# Row keys in order; q and r are taken by quit and refresh.
+TABLE_KEYS='123456789abcdefghijklmnopstuvwxyz'
+TABLE_PANES=()
+
+key_index() {
+  local prefix="${TABLE_KEYS%%"$1"*}"
+  if [[ -n "$1" && "$prefix" != "$TABLE_KEYS" ]]; then printf '%d' "${#prefix}"; fi
+}
+
+format_span() {
+  local s="$1"
+  if (( s < 60 )); then printf '%ds' "$s"
+  elif (( s < 3600 )); then printf '%dm' $(( s / 60 ))
+  elif (( s < 86400 )); then printf '%dh' $(( (s + 1800) / 3600 ))
+  else printf '%dd' $(( (s + 43200) / 86400 )); fi
+}
+
+read_meta() {
+  local file="$STATE_HOME/panes/${1#%}.meta"
+  META_STAMP='' META_MODEL='' META_CTX='' META_5H='' META_5H_AT='' META_7D='' META_7D_AT='' META_BRANCH=''
+  [[ -f "$file" ]] || return 0
+  IFS=$'\x1f' read -r META_STAMP META_MODEL META_CTX META_5H META_5H_AT META_7D META_7D_AT META_BRANCH \
+    < "$file" 2>/dev/null || true
+}
+
+# Tab-separated rows, most urgent first: rank, age, pane id, target, state, agents, title.
+collect_rows() {
+  local pane_id target activity command title rank age
+  refresh_now
+  while IFS=$'\t' read -r pane_id target activity command title; do
+    classify_pane "$pane_id" "$command" "${title:-}"
+    case "$PANE_STATE" in
+      waiting) rank=0 ;; active) rank=1 ;; present) rank=2 ;; *) continue ;;
+    esac
+    age=$(( NOW - ${activity:-$NOW} )); (( age >= 0 )) || age=0
+    printf '%d\t%d\t%s\t%s\t%s\t%d\t%s\n' "$rank" "$age" "$pane_id" "$target" "$PANE_STATE" "$AGENT_COUNT" "${title:-}"
+  done < <(tmux_cmd list-panes -a -F '#{pane_id}	#{session_name}:#{window_index}.#{pane_index}	#{window_activity}	#{pane_current_command}	#{pane_title}' 2>/dev/null || true) \
+    | sort -t "$(printf '\t')" -k1,1n -k2,2n
+}
+
+limit_part() {  # label pct reset_at
+  [[ "$2" =~ ^[0-9]+([.][0-9]+)?$ ]] || return 0
+  LC_NUMERIC=C printf '%s %.0f%%' "$1" "$2"
+  if [[ -n "$3" ]] && (( $3 > NOW )); then printf ' (resets %s)' "$(format_span $(( $3 - NOW )))"; fi
+}
+
+render_table() {
+  local -a rows=()
+  local row rank age pane_id target state agents title i=0 key label ctx task
+  local need=0 work=0 subs=0 newest=0 l5='' l5at='' l7='' l7at='' limits task_w
+  local cols="${COLUMNS:-$(tput cols 2>/dev/null || printf 120)}"
+  TABLE_PANES=()
+  refresh_now
+  while IFS= read -r row; do rows+=("$row"); done < <(collect_rows)
+
+  # bash 3.2: "${rows[@]}" on an empty array is unbound under set -u
+  for row in ${rows[@]+"${rows[@]}"}; do
+    IFS=$'\t' read -r rank age pane_id target state agents title <<< "$row"
+    case "$state" in waiting) need=$((need + 1)) ;; active) work=$((work + 1)) ;; esac
+    subs=$((subs + agents))
+    read_meta "$pane_id"
+    # Limits are account-wide, so the freshest reading from any pane wins.
+    if [[ -n "$META_5H$META_7D" ]] && (( ${META_STAMP:-0} > newest )); then
+      newest=$META_STAMP l5=$META_5H l5at=$META_5H_AT l7=$META_7D l7at=$META_7D_AT
+    fi
+  done
+
+  printf 'LLM sessions · %d total · %d need you · %d working · %d subagents\n' \
+    "${#rows[@]}" "$need" "$work" "$subs"
+  if (( newest > 0 )); then
+    limits="$(limit_part 5h "$l5" "$l5at")"
+    [[ -n "$l7" ]] && limits="${limits:+$limits · }$(limit_part 7d "$l7" "$l7at")"
+    # BSD date takes -r <epoch>; GNU date (CI) reads -r as a file and wants -d @<epoch>.
+    printf 'Limits: %s · as of %s\n' "$limits" \
+      "$(date -r "$newest" +%H:%M 2>/dev/null || date -d "@$newest" +%H:%M 2>/dev/null)"
+  else
+    printf 'Limits: no reading yet\n'
+  fi
+  printf '%-3s %-28s %-8s %4s %3s %4s %-9s %-16s %s\n' KEY TARGET STATE AGE AG CTX MODEL BRANCH TASK
+  task_w=$(( cols - 83 )); (( task_w > 10 )) || task_w=10
+
+  for row in ${rows[@]+"${rows[@]}"}; do
+    IFS=$'\t' read -r rank age pane_id target state agents title <<< "$row"
+    read_meta "$pane_id"
+    key="${TABLE_KEYS:i:1}"
+    TABLE_PANES+=("$pane_id")
+    case "$state" in waiting) label='! needs' ;; active) label='working' ;; *) label='idle' ;; esac
+    # A corrupt reading must cost one cell, not the table: printf dies on non-numbers.
+    ctx='-'; [[ "$META_CTX" =~ ^[0-9]+([.][0-9]+)?$ ]] && ctx="$(LC_NUMERIC=C printf '%.0f%%' "$META_CTX")"
+    task="${title#✳ }"
+    printf '%-3s %-28.28s %-8s %4s %3s %4s %-9.9s %-16.16s %s\n' \
+      "${key:--}" "$target" "$label" "$(format_span "$age")" "$agents" "$ctx" \
+      "${META_MODEL:--}" "${META_BRANCH:--}" "${task:0:task_w}"
+    i=$((i + 1))
+  done
+}
+
+# switch-client alone lands on the window's active pane, not the one picked.
+jump_to_pane() {
+  tmux_cmd select-window -t "$1" 2>/dev/null || true
+  tmux_cmd select-pane -t "$1" 2>/dev/null || true
+  tmux_cmd switch-client -t "$1" 2>/dev/null || true
+}
+
+# Popup loop: redraw every 2s until a key jumps or quits.
+pick() {
+  local key idx rc
+  while true; do
+    printf '\033[H\033[2J'
+    render_table
+    printf '\n[key] jump · r refresh · q quit\n'
+    key='' rc=0
+    read -rsn1 -t 2 key || rc=$?
+    # >128 is the timeout; anything else non-zero is EOF, so there is no one to wait for
+    (( rc == 0 || rc > 128 )) || return 0
+    case "$key" in
+      '' | r) continue ;;
+      q | $'\e') return 0 ;;
+    esac
+    idx="$(key_index "$key")"
+    [[ -n "$idx" && -n "${TABLE_PANES[$idx]:-}" ]] || continue
+    jump_to_pane "${TABLE_PANES[$idx]}"
+    return 0
+  done
+}
+
 case "${1:-}" in
   window)
     window_status "${2:-}"
@@ -404,6 +549,12 @@ case "${1:-}" in
   prune)
     prune_dead_panes
     ;;
+  table)
+    render_table
+    ;;
+  pick)
+    pick
+    ;;
   run)
     run_daemon
     ;;
@@ -418,7 +569,7 @@ case "${1:-}" in
     start_daemon
     ;;
   *)
-    printf 'Usage: %s window <target> | summary [session] | next-waiting | once | prune | start | stop | restart\n' "${0##*/}" >&2
+    printf 'Usage: %s window <target> | summary [session] | next-waiting | once | prune | table | pick | start | stop | restart\n' "${0##*/}" >&2
     exit 2
     ;;
 esac
