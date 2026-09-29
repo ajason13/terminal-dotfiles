@@ -115,7 +115,8 @@ appending to any array that already exists:
 
 The first four are the busy marker, the next two are depth, the next two
 reset a pane, and `Notification` is the blocked `!`. Esc on a prompt fires no
-hook, so `!` stays until you next type in that pane. Registering only some is fine - each state degrades to absent
+hook, so `!` stays until you next type in that pane. No event marks a prompt as
+approved, so an approved long-running tool keeps `!` until its batch finishes. Registering only some is fine - each state degrades to absent
 rather than wrong - but dropping `Stop` leaves every pane spinning until the
 TTL expires.
 

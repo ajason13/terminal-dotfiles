@@ -247,8 +247,9 @@ clear_agents_for alpha:a1
 clear_busy_for alpha:a1
 
 # --- blocked outranks working and idle, in the pane and in the window ----------
-t -f /dev/null new-session -d -s delta -n d1
-t split-window -d -t delta:d1
+# Agent panes run sleep, not a shell: .needs is ignored on a bare shell prompt.
+t -f /dev/null new-session -d -s delta -n d1 'sleep 600'
+t split-window -d -t delta:d1 'sleep 600'
 t select-pane -t delta:d1.0 -T '✳ claude idle'
 t select-pane -t delta:d1.1 -T '✳ claude idle'
 busy_for delta:d1.0
@@ -265,8 +266,8 @@ clear_busy_for delta:d1.0
 t kill-session -t delta
 
 # --- table: every LLM pane, blocked first, readings where they exist ----------
-t -f /dev/null new-session -d -s 'E2E - Tbl' -n t1
-t -f /dev/null new-window -d -t 'E2E - Tbl:' -n t2
+t -f /dev/null new-session -d -s 'E2E - Tbl' -n t1 'sleep 600'
+t -f /dev/null new-window -d -t 'E2E - Tbl:' -n t2 'sleep 600'
 t -f /dev/null new-window -d -t 'E2E - Tbl:' -n t3
 t select-pane -t 'E2E - Tbl:t1' -T '✳ idle task'
 t select-pane -t 'E2E - Tbl:t2' -T '✳ blocked task'
@@ -294,6 +295,11 @@ i_prefix="${idle_row%%idle task*}"
 check "TASK column starts at the same offset" "${#b_prefix}" "${#i_prefix}"
 
 empty="$(TMUX_SOCKET="$test_home/no-such.sock" "$bin" table)"
+meta_for 'E2E - Tbl:t2' opus-5.5 abc bb-391
+check "a corrupt ctx reading does not cut the table short" "2" \
+  "$(COLUMNS=160 "$bin" table | grep -cF 'E2E - Tbl:')"
+meta_for 'E2E - Tbl:t2' opus-5.5 29.4 bb-391
+
 check "empty server renders a zero header" "yes" "$(has "$empty" '0 total')"
 check "empty server has no reading" "yes" "$(has "$empty" 'Limits: no reading yet')"
 
@@ -308,6 +314,15 @@ printf '1' | "$bin" pick >/dev/null 2>&1
 check "key 1 jumps to the blocked pane" "t2" "$(current_window)"
 clear_needs_for 'E2E - Tbl:t2'
 t kill-session -t 'E2E - Tbl'
+
+# --- a leftover .needs on a bare shell (claude crashed mid-prompt) is not believed
+t -f /dev/null new-session -d -s eps -n e1
+t select-pane -t eps:e1 -T '✳ claude crashed'
+needs_for eps:e1
+"$bin" once
+check "stale needs on a shell pane is ignored" "◆" "$(marker_of eps:e1)"
+clear_needs_for eps:e1
+t kill-session -t eps
 
 if (( failures > 0 )); then
   printf 'test-tmux-llm-status: %d failure(s)\n' "$failures" >&2

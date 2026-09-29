@@ -70,6 +70,12 @@ is_pane_busy() {
 # all night, and the next thing you type in that pane clears it.
 is_pane_blocked() { [[ -f "$STATE_HOME/panes/${1#%}.needs" ]]; }
 
+# A bare shell means the agent is gone (crashed or killed mid-prompt), so any
+# leftover .needs there is stale.
+is_shell_command() {
+  case "${1#-}" in zsh | bash | sh | fish | dash | ksh | tcsh) return 0 ;; *) return 1 ;; esac
+}
+
 # In-flight subagents for one pane, as a file count published by the
 # tmux-agent-depth hook. Globbed rather than `ls`, and assigns into AGENT_COUNT
 # rather than printing, because this runs for every pane on every one-second
@@ -177,7 +183,7 @@ classify_pane() {
   local pane_id="$1" command="$2" title="$3"
   count_agents "$pane_id"
   # A blocked prompt outranks every working signal: the turn cannot move without you.
-  if is_pane_blocked "$pane_id"; then PANE_STATE=waiting
+  if is_pane_blocked "$pane_id" && ! is_shell_command "${command##*/}"; then PANE_STATE=waiting
   # Depth wins over the title: a lead that fanned out and went quiet reports an
   # idle title while its agents are still running, which is the case this exists for.
   elif (( AGENT_COUNT > 0 )); then PANE_STATE=active
@@ -442,8 +448,8 @@ collect_rows() {
 }
 
 limit_part() {  # label pct reset_at
-  [[ -n "$2" ]] || return 0
-  printf '%s %.0f%%' "$1" "$2"
+  [[ "$2" =~ ^[0-9]+([.][0-9]+)?$ ]] || return 0
+  LC_NUMERIC=C printf '%s %.0f%%' "$1" "$2"
   if [[ -n "$3" ]] && (( $3 > NOW )); then printf ' (resets %s)' "$(format_span $(( $3 - NOW )))"; fi
 }
 
@@ -486,7 +492,8 @@ render_table() {
     key="${TABLE_KEYS:i:1}"
     TABLE_PANES+=("$pane_id")
     case "$state" in waiting) label='! needs' ;; active) label='working' ;; *) label='idle' ;; esac
-    ctx='-'; [[ -n "$META_CTX" ]] && ctx="$(printf '%.0f%%' "$META_CTX")"
+    # A corrupt reading must cost one cell, not the table: printf dies on non-numbers.
+    ctx='-'; [[ "$META_CTX" =~ ^[0-9]+([.][0-9]+)?$ ]] && ctx="$(LC_NUMERIC=C printf '%.0f%%' "$META_CTX")"
     task="${title#✳ }"
     printf '%-3s %-28.28s %-8s %4s %3s %4s %-9.9s %-16.16s %s\n' \
       "${key:--}" "$target" "$label" "$(format_span "$age")" "$agents" "$ctx" \

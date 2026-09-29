@@ -28,6 +28,16 @@ mark_busy() {
   printf '%s' "$(date +%s)" > "$BUSY_FILE" 2>/dev/null || true
 }
 
+# The file holds the id of the agent whose prompt it is (empty for the lead), so one
+# subagent's tool batch cannot clear another's prompt during a fan-out.
+clear_needs_if_mine() {
+  local owner=''
+  [[ -f "$NEEDS_FILE" ]] || return 0
+  read -r owner < "$NEEDS_FILE" 2>/dev/null || true
+  [[ "$owner" == "$subagent" ]] && rm -f "$NEEDS_FILE" 2>/dev/null
+  return 0
+}
+
 payload="$(cat 2>/dev/null || true)"
 # One jq call for all five fields, joined on 0x1F not tab: `read` treats tab as
 # IFS whitespace and collapses empty fields regardless of how IFS is set, which
@@ -63,26 +73,29 @@ case "$event" in
     # Heartbeat. Without it a turn longer than the reader's freshness window
     # would age out mid-work and drop back to the idle marker.
     mark_busy
-    rm -f "$NEEDS_FILE" 2>/dev/null || true
+    clear_needs_if_mine
     ;;
   Notification)
     # Only prompts that park the turn count; idle_prompt fires for every finished session.
     case "$ntype" in
       permission_prompt | elicitation_dialog)
         mkdir -p "${NEEDS_FILE%/*}" 2>/dev/null || exit 0
-        printf '%s' "$(date +%s)" > "$NEEDS_FILE" 2>/dev/null || true
+        printf '%s\n' "$subagent" > "$NEEDS_FILE" 2>/dev/null || true
         ;;
     esac
     ;;
   Stop | StopFailure)
     # Subagents share the lead's TMUX_PANE, so an agent_id here means someone
     # else's turn ended, not this pane's.
-    [[ -n "$subagent" ]] || rm -f "$BUSY_FILE" "$NEEDS_FILE" 2>/dev/null || true
+    [[ -n "$subagent" ]] || rm -f "$BUSY_FILE" 2>/dev/null || true
+    clear_needs_if_mine
     ;;
   SessionStart)
     # compact/resume fire mid-turn with agents still in flight; wiping here
     # would strand a busy pane at idle forever, since surviving agents only
     # ever fire SubagentStop.
+    # No prompt survives a restart, so .needs goes on every source.
+    rm -f "$NEEDS_FILE" 2>/dev/null || true
     case "$source" in
       compact | resume) ;;
       *)
