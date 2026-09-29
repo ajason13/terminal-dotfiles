@@ -56,7 +56,7 @@ if [[ "$asset_dir" == "$repo_root/wezterm/assets/backgrounds" ]]; then
     # Warn (non-fatal) on image files not referenced by any manifest.
     while IFS= read -r file; do
       rel="${file#"$asset_dir"/}"
-      printf '%s\n' "$entries" | grep -qxF "$rel" \
+      grep -qxF "$rel" <<< "$entries" \
         || echo "note: $rel present but not listed in any manifest" >&2
     done < <(find "$asset_dir" -type f \( -name '*.png' -o -name '*.jpg' -o -name '*.jpeg' \) | sort)
   fi

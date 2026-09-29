@@ -56,7 +56,7 @@ out="$(nvim --headless \
   +"lua vim.treesitter.get_parser(0, 'markdown'):parse(true)" \
   +"edit $XDG_CONFIG_HOME/nvim/init.lua" \
   +qa 2>&1 >/dev/null)" || true
-if printf '%s' "$out" | grep -qiE 'error|E[0-9]+:|stack traceback'; then
+if grep -qiE 'error|E[0-9]+:|stack traceback' <<< "$out"; then
   echo "test-nvim: startup produced errors:" >&2
   printf '%s\n' "$out" >&2
   exit 1
