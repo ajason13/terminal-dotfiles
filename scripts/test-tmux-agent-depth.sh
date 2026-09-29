@@ -185,7 +185,7 @@ fire_notification() {
     | TMUX_PANE="${2:-%9}" "$hook"
 }
 needs_state() {
-  if [[ -f "$TMUX_LLM_STATE_HOME/panes/${1:-9}.needs" ]]; then printf 'blocked'; else printf 'clear'; fi
+  if [[ -f "$TMUX_LLM_STATE_HOME/panes/9.needs" ]]; then printf 'blocked'; else printf 'clear'; fi
 }
 
 fire_notification permission_prompt

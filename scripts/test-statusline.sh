@@ -47,10 +47,10 @@ check "fields after empty ctx stay aligned" "4102444900" "$week_at"
 
 rm -f "$meta"
 printf '%s' "$full" | env -u TMUX_PANE "$sl" >/dev/null
-check "no pane, no file" "0" "$(ls "$TMUX_LLM_STATE_HOME/panes" 2>/dev/null | wc -l | tr -d ' ')"
+check "no pane, no file" "0" "$(find "$TMUX_LLM_STATE_HOME/panes" -type f 2>/dev/null | wc -l | tr -d ' ')"
 
 printf '%s' "$full" | TMUX_PANE='%../x' "$sl" >/dev/null
-check "hostile pane id writes nothing" "0" "$(ls "$TMUX_LLM_STATE_HOME/panes" 2>/dev/null | wc -l | tr -d ' ')"
+check "hostile pane id writes nothing" "0" "$(find "$TMUX_LLM_STATE_HOME/panes" -type f 2>/dev/null | wc -l | tr -d ' ')"
 
 out="$(printf '%s' "$full" | TMUX_PANE=%7 TMUX_LLM_STATE_HOME=/dev/null/nope "$sl")"; rc=$?
 check "unwritable state dir still renders" "yes" "$([[ "$out" == "opus-5.5 | ctx 29%"* ]] && echo yes || echo no)"
