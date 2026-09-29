@@ -477,9 +477,9 @@ project_of() {
 }
 
 render_table() {
-  local -a rows=() names=() targets=()
+  local -a rows=() names=() targets=() projects=()
   local row rank age pane_id name state agents path title i=0 key label ctx
-  local need=0 work=0 subs=0 newest=0 l5='' l5at='' l7='' l7at='' limits target_w=6
+  local need=0 work=0 subs=0 newest=0 l5='' l5at='' l7='' l7at='' limits target_w=6 project_w=7 branch_w=6
   local cols="${COLUMNS:-$(tput cols 2>/dev/null || printf 120)}"
   TABLE_PANES=()
   refresh_now
@@ -498,14 +498,23 @@ render_table() {
     fi
   done
 
-  # TARGET takes the width TASK used to have: its longest label, capped so rows never wrap.
+  # PROJECT and BRANCH fit their longest value (capped), so TARGET gets every other column
+  # up to its own longest label, and rows never wrap.
   for row in ${rows[@]+"${rows[@]}"}; do
     IFS=$'\t' read -r rank age pane_id name state agents path title <<< "$row"
     target_label "$name" "$title"
     targets+=("$TARGET")
     (( ${#TARGET} <= target_w )) || target_w=${#TARGET}
+    project_of "$path"
+    projects+=("$PROJECT")
+    (( ${#PROJECT} <= project_w )) || project_w=${#PROJECT}
+    read_meta "$pane_id"
+    (( ${#META_BRANCH} <= branch_w )) || branch_w=${#META_BRANCH}
   done
-  (( target_w <= cols - 81 )) || target_w=$(( cols - 81 ))
+  (( project_w <= 22 )) || project_w=22
+  (( branch_w <= 16 )) || branch_w=16
+  # 39 = KEY, STATE, AGE, AG, CTX, MODEL and the gaps between all nine columns.
+  (( target_w <= cols - 39 - project_w - branch_w )) || target_w=$(( cols - 39 - project_w - branch_w ))
   (( target_w >= 12 )) || target_w=12
 
   printf 'LLM sessions · %d total · %d need you · %d working · %d subagents\n' \
@@ -519,22 +528,21 @@ render_table() {
   else
     printf 'Limits: no reading yet\n'
   fi
-  printf '%-3s %-*s %-8s %4s %3s %4s %-9s %-22s %s\n' KEY "$target_w" TARGET STATE AGE AG CTX MODEL PROJECT BRANCH
+  printf '%-3s %-*s %-8s %4s %3s %4s %-9s %-*s %s\n' KEY "$target_w" TARGET STATE AGE AG CTX MODEL "$project_w" PROJECT BRANCH
 
   for row in ${rows[@]+"${rows[@]}"}; do
     IFS=$'\t' read -r rank age pane_id name state agents path title <<< "$row"
     read_meta "$pane_id"
     pad TARGET "${targets[i]}" "$target_w"
-    project_of "$path"
-    pad PROJECT "$PROJECT" 22
+    pad PROJECT "${projects[i]}" "$project_w"
     key="${TABLE_KEYS:i:1}"
     TABLE_PANES+=("$pane_id")
     case "$state" in waiting) label='! needs' ;; active) label='working' ;; *) label='idle' ;; esac
     # A corrupt reading must cost one cell, not the table: printf dies on non-numbers.
     ctx='-'; [[ "$META_CTX" =~ ^[0-9]+([.][0-9]+)?$ ]] && ctx="$(LC_NUMERIC=C printf '%.0f%%' "$META_CTX")"
-    printf '%-3s %s %-8s %4s %3s %4s %-9.9s %s %.16s\n' \
+    printf '%-3s %s %-8s %4s %3s %4s %-9.9s %s %.*s\n' \
       "${key:--}" "$TARGET" "$label" "$(format_span "$age")" "$agents" "$ctx" \
-      "${META_MODEL:--}" "$PROJECT" "${META_BRANCH:--}"
+      "${META_MODEL:--}" "$PROJECT" "$branch_w" "${META_BRANCH:--}"
     i=$((i + 1))
   done
 }
