@@ -272,14 +272,24 @@ t -f /dev/null new-window -d -t 'E2E - Tbl:' -n t3
 t select-pane -t 'E2E - Tbl:t1' -T '✳ idle task'
 t select-pane -t 'E2E - Tbl:t2' -T '✳ blocked task'
 t select-pane -t 'E2E - Tbl:t3' -T 'zsh'
+# Two windows share a name, as one PJM per session does live.
+t -f /dev/null new-window -d -t 'E2E - Tbl:' -n dup 'sleep 600'
+t -f /dev/null new-window -d -t 'E2E - Tbl:' -n dup 'sleep 600'
+t select-pane -t 'E2E - Tbl:3' -T '✳ alpha'
+t select-pane -t 'E2E - Tbl:4' -T '✳ beta'
 needs_for 'E2E - Tbl:t2'
 meta_for 'E2E - Tbl:t2' opus-5.5 29.4 bb-391
 
 table="$(COLUMNS=160 "$bin" table)"
-rows="$(printf '%s\n' "$table" | grep -F 'E2E - Tbl:')"
+table_rows() { sed '1,3d'; }
+rows="$(printf '%s\n' "$table" | table_rows)"
 check "blocked row sorts above idle" "blocked task" \
   "$(printf '%s\n' "$rows" | head -1 | grep -oF 'blocked task')"
-check "non-LLM pane is omitted" "no" "$(has "$rows" 'E2E - Tbl:2.0')"
+check "non-LLM pane is omitted" "no" "$(if grep -qE '^. +t3 ' <<< "$rows"; then echo yes; else echo no; fi)"
+check "target is the window name" "yes" "$(if grep -qE '^. +t1 +idle' <<< "$rows"; then echo yes; else echo no; fi)"
+check "a unique window name carries no title" "no" "$(has "$rows" 't1 · ')"
+check "a repeated window name carries its title" "yes" "$(has "$rows" 'dup · alpha')"
+check "each repeat carries its own title" "yes" "$(has "$rows" 'dup · beta')"
 check "blocked row carries ctx" "yes" "$(has "$rows" '29%')"
 check "blocked row carries model" "yes" "$(has "$rows" 'opus-5.5')"
 check "blocked row carries branch" "yes" "$(has "$rows" 'bb-391')"
@@ -298,8 +308,8 @@ check "TASK column starts at the same offset" "${#b_prefix}" "${#i_prefix}"
 
 empty="$(TMUX_SOCKET="$test_home/no-such.sock" "$bin" table)"
 meta_for 'E2E - Tbl:t2' opus-5.5 abc bb-391
-check "a corrupt ctx reading does not cut the table short" "2" \
-  "$(COLUMNS=160 "$bin" table | grep -cF 'E2E - Tbl:')"
+check "a corrupt ctx reading does not cut the table short" "$(grep -c . <<< "$rows")" \
+  "$(COLUMNS=160 "$bin" table | table_rows | grep -c .)"
 meta_for 'E2E - Tbl:t2' opus-5.5 29.4 bb-391
 
 check "empty server renders a zero header" "yes" "$(has "$empty" '0 total')"
