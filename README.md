@@ -20,7 +20,8 @@ terminal backgrounds.
 - `Ctrl-a \` splits horizontally and `Ctrl-a -` splits vertically.
 - `Ctrl-a h/j/k/l` moves between panes.
 - `Ctrl-a A` opens the agent table: every LLM pane across sessions, blocked
-  first, with ctx, model, branch, task and account limits; one key jumps there.
+  first, by window name, with ctx, model, project, branch and account limits;
+  one key jumps there, `r` redraws.
   `tmux-llm-status table` prints the same view once.
 - `Ctrl-a s` picks a session, `Ctrl-a S` creates one (prompts for a name, starts
   in the current pane's directory), `Ctrl-a $` renames the current one.

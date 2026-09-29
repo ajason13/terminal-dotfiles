@@ -266,40 +266,68 @@ clear_busy_for delta:d1.0
 t kill-session -t delta
 
 # --- table: every LLM pane, blocked first, readings where they exist ----------
-t -f /dev/null new-session -d -s 'E2E - Tbl' -n t1 'sleep 600'
-t -f /dev/null new-window -d -t 'E2E - Tbl:' -n t2 'sleep 600'
+# PROJECT must name the repo from inside a linked worktree, and fall back off-repo.
+repo="$test_home/proj-repo"
+git init -q "$repo"
+git -C "$repo" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
+git -C "$repo" worktree add -q -b bb-1 "$repo/.claude/worktrees/bb-1"
+mkdir -p "$test_home/plain-dir"
+t -f /dev/null new-session -d -s 'E2E - Tbl' -n t1 -c "$repo/.claude/worktrees/bb-1" 'sleep 600'
+t -f /dev/null new-window -d -t 'E2E - Tbl:' -n t2 -c "$test_home/plain-dir" 'sleep 600'
 t -f /dev/null new-window -d -t 'E2E - Tbl:' -n t3
 t select-pane -t 'E2E - Tbl:t1' -T '✳ idle task'
 t select-pane -t 'E2E - Tbl:t2' -T '✳ blocked task'
 t select-pane -t 'E2E - Tbl:t3' -T 'zsh'
+# Two windows share a name, as one PJM per session does live.
+t -f /dev/null new-window -d -t 'E2E - Tbl:' -n dup 'sleep 600'
+t -f /dev/null new-window -d -t 'E2E - Tbl:' -n dup 'sleep 600'
+t select-pane -t 'E2E - Tbl:3' -T '✳ alpha'
+t select-pane -t 'E2E - Tbl:4' -T '✳ beta'
 needs_for 'E2E - Tbl:t2'
 meta_for 'E2E - Tbl:t2' opus-5.5 29.4 bb-391
 
 table="$(COLUMNS=160 "$bin" table)"
-rows="$(printf '%s\n' "$table" | grep -F 'E2E - Tbl:')"
-check "blocked row sorts above idle" "blocked task" \
-  "$(printf '%s\n' "$rows" | head -1 | grep -oF 'blocked task')"
-check "non-LLM pane is omitted" "no" "$(has "$rows" 'E2E - Tbl:2.0')"
+table_rows() { sed '1,3d'; }
+rows="$(printf '%s\n' "$table" | table_rows)"
+check "blocked row sorts above idle" "yes" \
+  "$(if head -1 <<< "$rows" | grep -qE '^1 +t2 +! needs'; then echo yes; else echo no; fi)"
+check "non-LLM pane is omitted" "no" "$(if grep -qE '^. +t3 ' <<< "$rows"; then echo yes; else echo no; fi)"
+check "target is the window name" "yes" "$(if grep -qE '^. +t1 +idle' <<< "$rows"; then echo yes; else echo no; fi)"
+check "a unique window name carries no title" "no" "$(has "$rows" 't1 · ')"
+check "project names the repo from a linked worktree" "yes" \
+  "$(if grep -qE '^. +t1 .* proj-repo ' <<< "$rows"; then echo yes; else echo no; fi)"
+check "project falls back to the directory off-repo" "yes" \
+  "$(if grep -qE '^. +t2 .* plain-dir ' <<< "$rows"; then echo yes; else echo no; fi)"
+check "a repeated window name carries its title" "yes" "$(has "$rows" 'dup · alpha')"
+check "each repeat carries its own title" "yes" "$(has "$rows" 'dup · beta')"
 check "blocked row carries ctx" "yes" "$(has "$rows" '29%')"
 check "blocked row carries model" "yes" "$(has "$rows" 'opus-5.5')"
 check "blocked row carries branch" "yes" "$(has "$rows" 'bb-391')"
-check "task drops the title glyph" "no" "$(has "$rows" '✳')"
+check "a title suffix drops the title glyph" "no" "$(has "$rows" '✳')"
+check "the TASK column is gone" "no" "$(has "$table" 'TASK')"
 check "header counts the blocked pane" "yes" "$(has "$table" '· 1 need you ·')"
 check "limits come from the newest reading" "yes" "$(has "$table" 'Limits: 5h 5% (resets 3h) · 7d 3% (resets 5d)')"
 check "limits carry the reading's clock time" "yes" \
   "$(if printf '%s\n' "$table" | grep -qE '^Limits: .* as of [0-9]{2}:[0-9]{2}$'; then echo yes; else echo no; fi)"
 # spaced session name and a pane with no reading must keep columns aligned
-idle_row="$(printf '%s\n' "$rows" | grep -F 'idle task')"
-blocked_row="$(printf '%s\n' "$rows" | grep -F 'blocked task')"
+idle_row="$(grep -E '^. +t1 ' <<< "$rows")"
+blocked_row="$(grep -E '^. +t2 ' <<< "$rows")"
 check "missing reading renders dashes" "yes" "$(has "$idle_row" ' -  ')"
-b_prefix="${blocked_row%%blocked task*}"
-i_prefix="${idle_row%%idle task*}"
-check "TASK column starts at the same offset" "${#b_prefix}" "${#i_prefix}"
+# ${#} counts characters, so this catches a multibyte · padded by byte.
+dup_row="$(printf '%s\n' "$rows" | grep -F 'dup · alpha')"
+b_prefix="${blocked_row%%! needs*}"
+i_prefix="${idle_row%%idle *}"
+d_prefix="${dup_row%%idle *}"
+check "STATE starts at the same offset after a plain target" "${#b_prefix}" "${#i_prefix}"
+check "STATE starts at the same offset after a · target" "${#i_prefix}" "${#d_prefix}"
+longest=0
+while IFS= read -r line; do (( ${#line} <= longest )) || longest=${#line}; done < <(COLUMNS=90 "$bin" table | table_rows)
+check "a narrow terminal truncates rather than wraps" "yes" "$(if (( longest <= 90 )); then echo yes; else echo no; fi)"
 
 empty="$(TMUX_SOCKET="$test_home/no-such.sock" "$bin" table)"
 meta_for 'E2E - Tbl:t2' opus-5.5 abc bb-391
-check "a corrupt ctx reading does not cut the table short" "2" \
-  "$(COLUMNS=160 "$bin" table | grep -cF 'E2E - Tbl:')"
+check "a corrupt ctx reading does not cut the table short" "$(grep -c . <<< "$rows")" \
+  "$(COLUMNS=160 "$bin" table | table_rows | grep -c .)"
 meta_for 'E2E - Tbl:t2' opus-5.5 29.4 bb-391
 
 check "empty server renders a zero header" "yes" "$(has "$empty" '0 total')"
@@ -314,15 +342,26 @@ printf 'Z' | "$bin" pick >/dev/null 2>&1
 check "unmapped key then EOF exits without jumping" "t1" "$(current_window)"
 printf '1' | "$bin" pick >/dev/null 2>&1
 check "key 1 jumps to the blocked pane" "t2" "$(current_window)"
-# A real popup is a terminal that stays open, so a redraw timeout must not read as EOF
-# (bash 3.2 returns 1 for both). The key arrives after the first 2s timeout.
+# A real popup is a terminal that stays open, so pick must block on it rather than redraw
+# on a timer; the key arrives well after the old 2s redraw would have fired.
 in_tty() {
   if script --version >/dev/null 2>&1; then script -qec "$(printf '%q ' "$@")" /dev/null
   else script -q /dev/null "$@"; fi
 }
 t select-window -t 'E2E - Tbl:t1'
 (sleep 3; printf '1') | in_tty "$bin" pick >/dev/null 2>&1 || true
-check "pick survives a redraw timeout on a terminal" "t2" "$(current_window)"
+check "pick waits on a terminal for a late key" "t2" "$(current_window)"
+check "an idle popup draws once, with no timed redraw" "1" \
+  "$( (sleep 3; printf 'q') | in_tty "$bin" pick 2>/dev/null | grep -o $'\033\\[2J' | wc -l | tr -d ' ')"
+t select-window -t 'E2E - Tbl:t1'
+printf 'r1' | "$bin" pick >/dev/null 2>&1
+check "r redraws without leaving" "t2" "$(current_window)"
+t select-window -t 'E2E - Tbl:t1'
+printf '\033[A1' | "$bin" pick >/dev/null 2>&1
+check "an arrow key does not close the popup" "t2" "$(current_window)"
+t select-window -t 'E2E - Tbl:t1'
+(printf '\033'; sleep 2; printf '1') | in_tty "$bin" pick >/dev/null 2>&1 || true
+check "a bare Esc quits without jumping" "t1" "$(current_window)"
 clear_needs_for 'E2E - Tbl:t2'
 t kill-session -t 'E2E - Tbl'
 

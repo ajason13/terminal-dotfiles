@@ -432,18 +432,19 @@ read_meta() {
     < "$file" 2>/dev/null || true
 }
 
-# Tab-separated rows, most urgent first: rank, age, pane id, target, state, agents, title.
+# Tab-separated rows, most urgent first: rank, age, pane id, window name, state, agents, path, title.
+# The title stays last: tab is IFS whitespace, so an empty field mid-row would collapse.
 collect_rows() {
-  local pane_id target activity command title rank age
+  local pane_id name activity command path title rank age
   refresh_now
-  while IFS=$'\t' read -r pane_id target activity command title; do
+  while IFS=$'\t' read -r pane_id name activity command path title; do
     classify_pane "$pane_id" "$command" "${title:-}"
     case "$PANE_STATE" in
       waiting) rank=0 ;; active) rank=1 ;; present) rank=2 ;; *) continue ;;
     esac
     age=$(( NOW - ${activity:-$NOW} )); (( age >= 0 )) || age=0
-    printf '%d\t%d\t%s\t%s\t%s\t%d\t%s\n' "$rank" "$age" "$pane_id" "$target" "$PANE_STATE" "$AGENT_COUNT" "${title:-}"
-  done < <(tmux_cmd list-panes -a -F '#{pane_id}	#{session_name}:#{window_index}.#{pane_index}	#{window_activity}	#{pane_current_command}	#{pane_title}' 2>/dev/null || true) \
+    printf '%d\t%d\t%s\t%s\t%s\t%d\t%s\t%s\n' "$rank" "$age" "$pane_id" "$name" "$PANE_STATE" "$AGENT_COUNT" "$path" "${title:-}"
+  done < <(tmux_cmd list-panes -a -F '#{pane_id}	#{window_name}	#{window_activity}	#{pane_current_command}	#{pane_current_path}	#{pane_title}' 2>/dev/null || true) \
     | sort -t "$(printf '\t')" -k1,1n -k2,2n
 }
 
@@ -453,10 +454,32 @@ limit_part() {  # label pct reset_at
   if [[ -n "$3" ]] && (( $3 > NOW )); then printf ' (resets %s)' "$(format_span $(( $3 - NOW )))"; fi
 }
 
+# printf pads by byte, so a multibyte glyph such as · would shift every later column.
+pad() {  # var text width
+  local s="${2:0:$3}"
+  printf -v "$1" '%s%*s' "$s" $(( $3 - ${#s} )) ''
+}
+
+# Window names repeat (one PJM per session), so only a repeated name carries its pane title.
+target_label() {  # name title; counts against render_table's names
+  local other n=0 task="${2#✳ }"
+  for other in ${names[@]+"${names[@]}"}; do [[ "$other" == "$1" ]] && n=$((n + 1)); done
+  if (( n > 1 )) && [[ -n "$task" ]]; then TARGET="$1 · $task"; else TARGET="$1"; fi
+}
+
+# The repo, not the worktree: a linked worktree's common dir is the main repo's .git,
+# and BRANCH already names the worktree.
+project_of() {
+  local common
+  common="$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+  if [[ "$common" == */.git ]]; then PROJECT="${common%/.git}"; else PROJECT="$1"; fi
+  PROJECT="${PROJECT##*/}"
+}
+
 render_table() {
-  local -a rows=()
-  local row rank age pane_id target state agents title i=0 key label ctx task
-  local need=0 work=0 subs=0 newest=0 l5='' l5at='' l7='' l7at='' limits task_w
+  local -a rows=() names=() targets=()
+  local row rank age pane_id name state agents path title i=0 key label ctx
+  local need=0 work=0 subs=0 newest=0 l5='' l5at='' l7='' l7at='' limits target_w=6
   local cols="${COLUMNS:-$(tput cols 2>/dev/null || printf 120)}"
   TABLE_PANES=()
   refresh_now
@@ -464,7 +487,8 @@ render_table() {
 
   # bash 3.2: "${rows[@]}" on an empty array is unbound under set -u
   for row in ${rows[@]+"${rows[@]}"}; do
-    IFS=$'\t' read -r rank age pane_id target state agents title <<< "$row"
+    IFS=$'\t' read -r rank age pane_id name state agents path title <<< "$row"
+    names+=("$name")
     case "$state" in waiting) need=$((need + 1)) ;; active) work=$((work + 1)) ;; esac
     subs=$((subs + agents))
     read_meta "$pane_id"
@@ -473,6 +497,16 @@ render_table() {
       newest=$META_STAMP l5=$META_5H l5at=$META_5H_AT l7=$META_7D l7at=$META_7D_AT
     fi
   done
+
+  # TARGET takes the width TASK used to have: its longest label, capped so rows never wrap.
+  for row in ${rows[@]+"${rows[@]}"}; do
+    IFS=$'\t' read -r rank age pane_id name state agents path title <<< "$row"
+    target_label "$name" "$title"
+    targets+=("$TARGET")
+    (( ${#TARGET} <= target_w )) || target_w=${#TARGET}
+  done
+  (( target_w <= cols - 81 )) || target_w=$(( cols - 81 ))
+  (( target_w >= 12 )) || target_w=12
 
   printf 'LLM sessions · %d total · %d need you · %d working · %d subagents\n' \
     "${#rows[@]}" "$need" "$work" "$subs"
@@ -485,21 +519,22 @@ render_table() {
   else
     printf 'Limits: no reading yet\n'
   fi
-  printf '%-3s %-28s %-8s %4s %3s %4s %-9s %-16s %s\n' KEY TARGET STATE AGE AG CTX MODEL BRANCH TASK
-  task_w=$(( cols - 83 )); (( task_w > 10 )) || task_w=10
+  printf '%-3s %-*s %-8s %4s %3s %4s %-9s %-22s %s\n' KEY "$target_w" TARGET STATE AGE AG CTX MODEL PROJECT BRANCH
 
   for row in ${rows[@]+"${rows[@]}"}; do
-    IFS=$'\t' read -r rank age pane_id target state agents title <<< "$row"
+    IFS=$'\t' read -r rank age pane_id name state agents path title <<< "$row"
     read_meta "$pane_id"
+    pad TARGET "${targets[i]}" "$target_w"
+    project_of "$path"
+    pad PROJECT "$PROJECT" 22
     key="${TABLE_KEYS:i:1}"
     TABLE_PANES+=("$pane_id")
     case "$state" in waiting) label='! needs' ;; active) label='working' ;; *) label='idle' ;; esac
     # A corrupt reading must cost one cell, not the table: printf dies on non-numbers.
     ctx='-'; [[ "$META_CTX" =~ ^[0-9]+([.][0-9]+)?$ ]] && ctx="$(LC_NUMERIC=C printf '%.0f%%' "$META_CTX")"
-    task="${title#✳ }"
-    printf '%-3s %-28.28s %-8s %4s %3s %4s %-9.9s %-16.16s %s\n' \
-      "${key:--}" "$target" "$label" "$(format_span "$age")" "$agents" "$ctx" \
-      "${META_MODEL:--}" "${META_BRANCH:--}" "${task:0:task_w}"
+    printf '%-3s %s %-8s %4s %3s %4s %-9.9s %s %.16s\n' \
+      "${key:--}" "$TARGET" "$label" "$(format_span "$age")" "$agents" "$ctx" \
+      "${META_MODEL:--}" "$PROJECT" "${META_BRANCH:--}"
     i=$((i + 1))
   done
 }
@@ -511,21 +546,26 @@ jump_to_pane() {
   tmux_cmd switch-client -t "$1" 2>/dev/null || true
 }
 
-# Popup loop: redraw every 2s until a key jumps or quits.
+# Popup loop: draw once, then wait for a key; r redraws on demand.
 pick() {
-  local key idx rc
+  local key idx rest
   while true; do
     printf '\033[H\033[2J'
     render_table
     printf '\n[key] jump · r refresh · q quit\n'
-    key='' rc=0
-    read -rsn1 -t 2 key || rc=$?
-    # bash 3.2 returns 1 for a timeout as well as EOF, so only a non-terminal stdin
-    # can have ended; on the popup's terminal every failure is a redraw timeout.
-    (( rc == 0 || rc > 128 )) || [[ -t 0 ]] || return 0
+    key=''
+    # No timeout, so a failed read is EOF: piped stdin ran out or the popup closed.
+    read -rsn1 key || return 0
     case "$key" in
-      '' | r) continue ;;
-      q | $'\e') return 0 ;;
+      r) continue ;;
+      q) return 0 ;;
+      $'\e')
+        # An arrow key is ESC plus a buffered tail; only a bare Esc (no tail within 1s) quits.
+        rest=''
+        read -rsn2 -t 1 rest || true
+        [[ -n "$rest" ]] && continue
+        return 0
+        ;;
     esac
     idx="$(key_index "$key")"
     [[ -n "$idx" && -n "${TABLE_PANES[$idx]:-}" ]] || continue
