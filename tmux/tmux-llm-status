@@ -87,11 +87,12 @@ prune_dead_panes() {
   # An empty live set more likely means the socket resolved wrong than that every
   # pane died at once - never let that wipe valid state.
   [[ "$live" != " " ]] || return 0
-  for entry in "$STATE_HOME/panes"/*.agents "$STATE_HOME/panes"/*.busy; do
+  for entry in "$STATE_HOME/panes"/*.agents "$STATE_HOME/panes"/*.busy "$STATE_HOME/panes"/*.meta; do
     [[ -e "$entry" ]] || continue
     id="${entry##*/}"
     id="${id%.agents}"
     id="${id%.busy}"
+    id="${id%.meta}"
     case "$live" in
       *" $id "*) ;;
       *) rm -rf "$entry" 2>/dev/null || true ;;

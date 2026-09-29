@@ -210,6 +210,7 @@ check "an unmarked shell pane stays empty" "" "$(marker_of alpha:a2)"
 mkdir -p "$TMUX_LLM_STATE_HOME/panes/99999.agents"
 : > "$TMUX_LLM_STATE_HOME/panes/99999.agents/ghost"
 : > "$TMUX_LLM_STATE_HOME/panes/99999.busy"
+: > "$TMUX_LLM_STATE_HOME/panes/99999.meta"
 agents_for alpha:a1 2
 busy_for alpha:a1
 "$bin" prune
@@ -217,6 +218,8 @@ check "prune drops dirs for dead panes" "absent" \
   "$(exists "$TMUX_LLM_STATE_HOME/panes/99999.agents")"
 check "prune drops busy markers for dead panes" "absent" \
   "$(exists "$TMUX_LLM_STATE_HOME/panes/99999.busy")"
+check "prune drops readings for dead panes" "absent" \
+  "$(exists "$TMUX_LLM_STATE_HOME/panes/99999.meta")"
 check "prune keeps dirs for live panes" "present" \
   "$(exists "$(agent_dir_for alpha:a1)")"
 check "prune keeps busy markers for live panes" "present" \

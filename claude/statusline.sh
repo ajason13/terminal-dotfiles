@@ -98,6 +98,23 @@ if [ -n "$WEEK" ]; then
   LIMITS="${LIMITS:+$LIMITS · }$WEEK_FMT"
 fi
 
+# Publish this pane's readings for the tmux agent table. Best effort: a failed
+# write must never blank or delay the status line.
+publish_meta() {
+  local pane="${TMUX_PANE:-}" dir file
+  [[ "${pane#%}" =~ ^[0-9]+$ ]] || return 0
+  dir="${TMUX_LLM_STATE_HOME:-$HOME/.local/state/tmux-llm}/panes"
+  file="$dir/${pane#%}.meta"
+  mkdir -p "$dir" 2>/dev/null || return 0
+  # tmp + mv so the table never reads a half-written line
+  if printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\n' \
+      "${NOW:-$(date +%s)}" "$MODEL" "$CTX_PCT" "$FIVE_H" "$FIVE_H_AT" "$WEEK" "$WEEK_AT" "$BRANCH" \
+      > "$file.$$" 2>/dev/null; then
+    mv -f "$file.$$" "$file" 2>/dev/null || rm -f "$file.$$" 2>/dev/null
+  fi
+  return 0
+}
+
 # --- Assemble, omitting any segment whose data wasn't available ---
 SEGMENTS=()
 [ -n "$MODEL" ] && SEGMENTS+=("$MODEL")
@@ -111,3 +128,4 @@ for seg in "${SEGMENTS[@]}"; do
 done
 
 printf "%s" "$OUT"
+publish_meta
