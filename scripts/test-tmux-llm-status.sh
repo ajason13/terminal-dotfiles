@@ -388,8 +388,9 @@ check "an idle popup draws once, with no timed redraw" "1" \
   "$( (sleep 3; printf 'q') | in_tty "$bin" pick 2>/dev/null | grep -o $'\033\\[2J' | wc -l | tr -d ' ')"
 # The popup exports no COLUMNS, so width must come from the terminal itself: a long
 # label fills a 100-column pty to the edge instead of stopping at tput's fallback 80.
-pty_longest="$(in_tty bash -c "stty cols 100 rows 40; unset COLUMNS; '$bin' table" 2>/dev/null \
-  | tr -d '\r' | while IFS= read -r line; do printf '%s\n' "${#line}"; done | sort -n | tail -1)"
+# stdin from /dev/null: script cannot set up a pty over an inherited socket and prints nothing.
+pty_longest="$(in_tty bash -c "stty cols 100 rows 40; unset COLUMNS; '$bin' table" 2>/dev/null </dev/null \
+  | tr -d '\r' | while IFS= read -r line; do printf '%s\n' "${#line}"; done | sort -n | tail -1 || true)"
 check "without COLUMNS the table uses the terminal's width" "100" "$pty_longest"
 
 # After t, keys follow the tree rows: this key names a different pane in urgency order.
