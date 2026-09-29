@@ -1,11 +1,11 @@
 # Agent table: org-lock columns (PR B)
 
-Stacked on PR #72 (`feat/agent-table-r2`). Adds ORG and LOCK columns to `tmux-llm-status table|pick`.
+Stacked on PR #73 (`fix/agent-table-widths`), which is based on the merged PR #72. Adds ORG and LOCK columns to `tmux-llm-status table|pick`. All three decisions went with the recommendation (2026-09-29).
 
 ## Decisions you need from me
 
 1. **ORG shows only while a lock or a wait exists; idle panes show `-`.** Recommended, because nothing readable names an idle pane's org (measured below). The cost if that's wrong: the column is empty most of the day, and you may decide it isn't worth a column. The alternative, reading each worktree's `.env`, breaks the no-`.env` guardrail, so I won't do it.
-2. **Stack on PR #72 instead of branching from `main`.** Recommended: both PRs rewrite `render_table`'s header and row printf, so a parallel branch means a guaranteed conflict. The cost if that's wrong: PR B can't merge before #72, and a rejected commit in #72 means rebasing B.
+2. **Stack on the open table PR instead of branching from `main`** (#72, and #73 once it existed). Recommended: both PRs rewrite `render_table`'s header and row printf, so a parallel branch means a guaranteed conflict. The cost if that's wrong: PR B can't merge before #72, and a rejected commit in #72 means rebasing B.
 3. **Build it now on `org-lock list --json`, not after org-lock grows a queue or the team lock.** Recommended: the only queue work in sight is `org-lock/QUEUE-SNAPSHOT.md` ("a separate session will build the durable version") and the unmerged `worktree-coworkers` design for a Salesforce-backed `Org_Lock__c`. Neither has code. The cost if that's wrong: when the team lock lands, holders move off-host, and this column under-reports exactly the way `org-lock list` already does for the 03:00 daily.
 
 ## Assumptions I have not verified
@@ -14,6 +14,15 @@ Stacked on PR #72 (`feat/agent-table-r2`). Adds ORG and LOCK columns to `tmux-ll
 - **Where `org-lock run` puts its argv.** I assume `node <path>/org-lock run --alias X [--wait N] -- ...`, with the recorded holder pid being the wrapped child, a descendant of the org-lock node process. The README says the holder is the child. I have not observed a live `run` in `ps`.
 - **Long-lived MCP holders stay inside the pane tree.** `~/Apps/CLAUDE.md` says a reused MCP server can hold the lock. I assume it is a descendant of its session's `claude` process, as Bash tool shells are (verified below). Not checked for `run-test-mcp-server`.
 - **`ps eww` sees initial env only.** Anything a process sets after exec (dotenv) is invisible. That's the standard macOS/Linux behaviour; I have not tested it on CI's Ubuntu, and CI never needs it because the tests don't rely on env.
+
+## Corrected during the build
+
+- **An inline `SF_ORG_ALIAS=x npx playwright test` puts the alias in the environment, not argv.** Waiter detection reads `ps axeww` (BSD-style `e` appends each process's env), not argv alone.
+- **macOS hides the environment of SIP platform binaries** (`/bin/bash`, `/bin/sleep`), but not of `node`. A real Playwright run is node, so it's visible; the test double is a node script for the same reason.
+- **org-lock's statuses are `live`, `stale` and `unverified`**, not `held`. Measured with the real `org-lock run` against a private `SCRATCH_POOL_LOCK_DIR`: `live` renders as `held`.
+- **The real `org-lock run` argv is `node <bin>/org-lock run --alias X [--wait N] -- ...`, and the recorded holder is the wrapped child.** This confirms assumption 2.
+- **ORG and LOCK appear only while org-lock reports a lock**, so an idle day costs no width.
+- **BSD awk rejects a newline inside `-v`**, so lock and pane lines are passed joined by `;`.
 
 ## Measured 2026-09-29
 
@@ -34,7 +43,7 @@ So `bin/sf-org-resolve` and the pane env are both dead ends while idle. The hold
 
 | LOCK | Meaning |
 |---|---|
-| `held` | The alias's holder pid is inside this pane's process tree and status is `held`. |
+| `held` | The alias's holder pid is inside this pane's process tree and status is `live`. |
 | `held?` | Same, but status is `unverified` (pid alive, command drifted). Never rendered as free. |
 | `queued` | A process in this pane's tree waits on alias X, and X's holder is outside this tree. |
 | `-` | Neither. ORG is `-` too. |

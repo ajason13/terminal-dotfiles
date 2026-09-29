@@ -21,7 +21,8 @@ terminal backgrounds.
 - `Ctrl-a h/j/k/l` moves between panes.
 - `Ctrl-a A` opens the agent table: every LLM pane across sessions, blocked
   first, by window name, with ctx, model, project, branch and account limits;
-  one key jumps there, `r` redraws.
+  one key jumps there, `r` redraws. While org-lock holds an org, ORG and LOCK
+  show which pane holds it (`held`) or waits on it (`queued`).
   `tmux-llm-status table` prints the same view once.
 - `Ctrl-a s` picks a session, `Ctrl-a S` creates one (prompts for a name, starts
   in the current pane's directory), `Ctrl-a $` renames the current one.
