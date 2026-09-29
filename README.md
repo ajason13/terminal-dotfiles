@@ -41,7 +41,7 @@ terminal backgrounds.
 | `⠹` | a turn is running, no fan-out |
 | `⠹N` | N subagents in flight |
 | `◆` | agent present, idle |
-| `!` | blocked on you |
+| `!` | a permission or question prompt is waiting on you |
 
 `N` is suppressed at 1. Both working states come from `tmux-agent-depth.sh`,
 under `$TMUX_LLM_STATE_HOME/panes/` (default `~/.local/state/tmux-llm`, override
@@ -102,13 +102,17 @@ appending to any array that already exists:
     ],
     "SessionEnd": [
       { "hooks": [{ "type": "command", "command": "$HOME/.claude/hooks/tmux-agent-depth.sh", "timeout": 5 }] }
+    ],
+    "Notification": [
+      { "matcher": "permission_prompt|elicitation_dialog", "hooks": [{ "type": "command", "command": "$HOME/.claude/hooks/tmux-agent-depth.sh", "timeout": 5 }] }
     ]
   }
 }
 ```
 
-The first four are the busy marker, the next two are depth, and the last two
-reset a pane. Registering only some is fine - each state degrades to absent
+The first four are the busy marker, the next two are depth, the next two
+reset a pane, and `Notification` is the blocked `!`. Esc on a prompt fires no
+hook, so `!` stays until you next type in that pane. Registering only some is fine - each state degrades to absent
 rather than wrong - but dropping `Stop` leaves every pane spinning until the
 TTL expires.
 

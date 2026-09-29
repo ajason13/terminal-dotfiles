@@ -19,6 +19,7 @@ command -v jq >/dev/null 2>&1 || exit 0
 STATE_HOME="${TMUX_LLM_STATE_HOME:-${HOME:-}/.local/state/tmux-llm}"
 AGENT_DIR="$STATE_HOME/panes/${TMUX_PANE#%}.agents"
 BUSY_FILE="$STATE_HOME/panes/${TMUX_PANE#%}.busy"
+NEEDS_FILE="$STATE_HOME/panes/${TMUX_PANE#%}.needs"
 
 # The reader ages the marker out, so write the time rather than just touching the
 # file: it must survive an interrupted turn, where no closing event ever fires.
@@ -28,15 +29,15 @@ mark_busy() {
 }
 
 payload="$(cat 2>/dev/null || true)"
-# One jq call for all four fields, joined on 0x1F not tab: `read` treats tab as
+# One jq call for all five fields, joined on 0x1F not tab: `read` treats tab as
 # IFS whitespace and collapses empty fields regardless of how IFS is set, which
 # would misparse an absent .source. Garbage payload -> jq fails silently -> no-op.
 # `subagent` is .agent_id alone, NOT the id fallback chain: it decides whether a
 # turn-ending event belongs to the lead, and a tool_use_id would answer that wrong.
-event="" agent="" source="" subagent=""
-IFS=$'\x1f' read -r event agent source subagent < <(
+event="" agent="" source="" subagent="" ntype=""
+IFS=$'\x1f' read -r event agent source subagent ntype < <(
   printf '%s' "$payload" | jq -r \
-    '[(.hook_event_name // ""), (.agent_id // .subagent_id // .tool_use_id // ""), (.source // ""), (.agent_id // "")] | join("\u001f")' \
+    '[(.hook_event_name // ""), (.agent_id // .subagent_id // .tool_use_id // ""), (.source // ""), (.agent_id // ""), (.notification_type // "")] | join("\u001f")' \
     2>/dev/null || true
 )
 
@@ -56,16 +57,27 @@ case "$event" in
     ;;
   UserPromptSubmit)
     mark_busy
+    rm -f "$NEEDS_FILE" 2>/dev/null || true
     ;;
   PostToolBatch)
     # Heartbeat. Without it a turn longer than the reader's freshness window
     # would age out mid-work and drop back to the idle marker.
     mark_busy
+    rm -f "$NEEDS_FILE" 2>/dev/null || true
+    ;;
+  Notification)
+    # Only prompts that park the turn count; idle_prompt fires for every finished session.
+    case "$ntype" in
+      permission_prompt | elicitation_dialog)
+        mkdir -p "${NEEDS_FILE%/*}" 2>/dev/null || exit 0
+        printf '%s' "$(date +%s)" > "$NEEDS_FILE" 2>/dev/null || true
+        ;;
+    esac
     ;;
   Stop | StopFailure)
     # Subagents share the lead's TMUX_PANE, so an agent_id here means someone
     # else's turn ended, not this pane's.
-    [[ -n "$subagent" ]] || rm -f "$BUSY_FILE" 2>/dev/null || true
+    [[ -n "$subagent" ]] || rm -f "$BUSY_FILE" "$NEEDS_FILE" 2>/dev/null || true
     ;;
   SessionStart)
     # compact/resume fire mid-turn with agents still in flight; wiping here
@@ -75,13 +87,13 @@ case "$event" in
       compact | resume) ;;
       *)
         rm -rf "$AGENT_DIR" 2>/dev/null || true
-        rm -f "$BUSY_FILE" 2>/dev/null || true
+        rm -f "$BUSY_FILE" "$NEEDS_FILE" 2>/dev/null || true
         ;;
     esac
     ;;
   SessionEnd)
     rm -rf "$AGENT_DIR" 2>/dev/null || true
-    rm -f "$BUSY_FILE" 2>/dev/null || true
+    rm -f "$BUSY_FILE" "$NEEDS_FILE" 2>/dev/null || true
     ;;
 esac
 

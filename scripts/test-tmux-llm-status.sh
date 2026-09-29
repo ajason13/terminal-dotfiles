@@ -52,6 +52,14 @@ busy_for() {
 
 clear_busy_for() { rm -f "$(busy_file_for "$1")"; }
 
+needs_file_for() {
+  local id
+  id="$(t display-message -p -t "$1" '#{pane_id}')"
+  printf '%s' "$TMUX_LLM_STATE_HOME/panes/${id#%}.needs"
+}
+needs_for() { local f; f="$(needs_file_for "$1")"; mkdir -p "${f%/*}"; date +%s > "$f"; }
+clear_needs_for() { rm -f "$(needs_file_for "$1")"; }
+
 exists() { if [[ -e "$1" ]]; then printf 'present'; else printf 'absent'; fi; }
 
 # -f /dev/null on every server-creating call: the real tmux.conf restarts the
@@ -226,6 +234,24 @@ check "prune keeps busy markers for live panes" "present" \
   "$(exists "$(busy_file_for alpha:a1)")"
 clear_agents_for alpha:a1
 clear_busy_for alpha:a1
+
+# --- blocked outranks working and idle, in the pane and in the window ----------
+t -f /dev/null new-session -d -s delta -n d1
+t split-window -d -t delta:d1
+t select-pane -t delta:d1.0 -T '✳ claude idle'
+t select-pane -t delta:d1.1 -T '✳ claude idle'
+busy_for delta:d1.0
+agents_for delta:d1.1 2
+needs_for delta:d1.1
+"$bin" once
+check "blocked beats a working neighbour" "!" "$(marker_of delta:d1)"
+check "blocked window rolls up as waiting" "!1" "$(fleet_of delta)"
+clear_needs_for delta:d1.1
+"$bin" once
+check "cleared needs falls back to working" "S2" "$(marker_of delta:d1)"
+clear_agents_for delta:d1.1
+clear_busy_for delta:d1.0
+t kill-session -t delta
 
 if (( failures > 0 )); then
   printf 'test-tmux-llm-status: %d failure(s)\n' "$failures" >&2

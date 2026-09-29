@@ -66,6 +66,10 @@ is_pane_busy() {
   (( NOW - stamp < BUSY_TTL ))
 }
 
+# Parked on a permission or question prompt? No TTL on purpose: a prompt can wait
+# all night, and the next thing you type in that pane clears it.
+is_pane_blocked() { [[ -f "$STATE_HOME/panes/${1#%}.needs" ]]; }
+
 # In-flight subagents for one pane, as a file count published by the
 # tmux-agent-depth hook. Globbed rather than `ls`, and assigns into AGENT_COUNT
 # rather than printing, because this runs for every pane on every one-second
@@ -87,12 +91,13 @@ prune_dead_panes() {
   # An empty live set more likely means the socket resolved wrong than that every
   # pane died at once - never let that wipe valid state.
   [[ "$live" != " " ]] || return 0
-  for entry in "$STATE_HOME/panes"/*.agents "$STATE_HOME/panes"/*.busy "$STATE_HOME/panes"/*.meta; do
+  for entry in "$STATE_HOME/panes"/*.agents "$STATE_HOME/panes"/*.busy "$STATE_HOME/panes"/*.meta "$STATE_HOME/panes"/*.needs; do
     [[ -e "$entry" ]] || continue
     id="${entry##*/}"
     id="${id%.agents}"
     id="${id%.busy}"
     id="${id%.meta}"
+    id="${id%.needs}"
     case "$live" in
       *" $id "*) ;;
       *) rm -rf "$entry" 2>/dev/null || true ;;
@@ -171,9 +176,11 @@ is_active_title() {
 classify_pane() {
   local pane_id="$1" command="$2" title="$3"
   count_agents "$pane_id"
+  # A blocked prompt outranks every working signal: the turn cannot move without you.
+  if is_pane_blocked "$pane_id"; then PANE_STATE=waiting
   # Depth wins over the title: a lead that fanned out and went quiet reports an
   # idle title while its agents are still running, which is the case this exists for.
-  if (( AGENT_COUNT > 0 )); then PANE_STATE=active
+  elif (( AGENT_COUNT > 0 )); then PANE_STATE=active
   # Ahead of every title matcher: a working Claude pane's title is now
   # indistinguishable from an idle one, so the marker is the only truth.
   elif is_pane_busy "$pane_id"; then PANE_STATE=active
@@ -205,19 +212,19 @@ count_window() {
   printf '%d %d %d %d\n' "$active" "$present" "$waiting" "$depth_sum"
 }
 
-# Per-window marker, by precedence: working (spinner) > present (diamond) >
-# waiting (bang). The spinner's number is agents-in-flight when we have that
+# Per-window marker, by precedence: blocked (bang) > working (spinner) >
+# present (diamond). The spinner's number is agents-in-flight when we have that
 # count, else panes working - never the two summed, they are different units.
 format_marker() {
   local active="$1" present="$2" waiting="$3" depth="${4:-0}" n
 
-  if (( active > 0 )); then
+  if (( waiting > 0 )); then
+    if (( waiting == 1 )); then printf '!'; else printf '!%d' "$waiting"; fi
+  elif (( active > 0 )); then
     if (( depth > 0 )); then n="$depth"; else n="$active"; fi
     if (( n == 1 )); then spinner_frame; else printf '%s%d' "$(spinner_frame)" "$n"; fi
   elif (( present > 0 )); then
     if (( present == 1 )); then printf '◆'; else printf '◆%d' "$present"; fi
-  elif (( waiting > 0 )); then
-    if (( waiting == 1 )); then printf '!'; else printf '!%d' "$waiting"; fi
   fi
 }
 
@@ -225,9 +232,9 @@ format_marker() {
 # marker, same precedence as format_marker.
 window_category() {
   local active="$1" present="$2" waiting="$3"
-  if (( active > 0 )); then printf 'active'
+  if (( waiting > 0 )); then printf 'waiting'
+  elif (( active > 0 )); then printf 'active'
   elif (( present > 0 )); then printf 'present'
-  elif (( waiting > 0 )); then printf 'waiting'
   else printf 'none'
   fi
 }
@@ -275,8 +282,8 @@ fleet_summary() {
   format_fleet "$active_w" "$present_w" "$waiting_w"
 }
 
-# Jump to the next window (after the current one, wrapping) that has an agent
-# present but NOT actively working - i.e. one likely waiting on your reply.
+# Jump to the next window (after the current one, wrapping) blocked on you, or
+# failing that, one with an agent present but not working.
 next_waiting() {
   local current window active present waiting depth
   local windows=()
@@ -294,15 +301,20 @@ next_waiting() {
     if [[ "${windows[$i]}" == "$current" ]]; then start=$i; break; fi
   done
 
-  local off target
-  for (( off = 1; off <= n; off++ )); do
-    target="${windows[$(( (start + off) % n ))]}"
-    read -r active present waiting depth < <(count_window "$target")
-    if (( active == 0 )) && (( present > 0 || waiting > 0 )); then
+  local off target pass
+  # Blocked panes first; only when none are blocked, fall back to any idle agent.
+  for pass in blocked idle; do
+    for (( off = 1; off <= n; off++ )); do
+      target="${windows[$(( (start + off) % n ))]}"
+      read -r active present waiting depth < <(count_window "$target")
+      case "$pass" in
+        blocked) (( waiting > 0 )) || continue ;;
+        idle) (( active == 0 && present > 0 )) || continue ;;
+      esac
       tmux_cmd select-window -t "$target" 2>/dev/null \
         || tmux_cmd switch-client -t "$target" 2>/dev/null || true
       return 0
-    fi
+    done
   done
 
   tmux_cmd display-message 'No agents waiting on you' 2>/dev/null || true
