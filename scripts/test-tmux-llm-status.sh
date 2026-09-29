@@ -289,8 +289,8 @@ meta_for 'E2E - Tbl:t2' opus-5.5 29.4 bb-391
 table="$(COLUMNS=160 "$bin" table)"
 table_rows() { sed '1,3d'; }
 rows="$(printf '%s\n' "$table" | table_rows)"
-check "blocked row sorts above idle" "blocked task" \
-  "$(printf '%s\n' "$rows" | head -1 | grep -oF 'blocked task')"
+check "blocked row sorts above idle" "yes" \
+  "$(if head -1 <<< "$rows" | grep -qE '^1 +t2 +! needs'; then echo yes; else echo no; fi)"
 check "non-LLM pane is omitted" "no" "$(if grep -qE '^. +t3 ' <<< "$rows"; then echo yes; else echo no; fi)"
 check "target is the window name" "yes" "$(if grep -qE '^. +t1 +idle' <<< "$rows"; then echo yes; else echo no; fi)"
 check "a unique window name carries no title" "no" "$(has "$rows" 't1 · ')"
@@ -303,18 +303,26 @@ check "each repeat carries its own title" "yes" "$(has "$rows" 'dup · beta')"
 check "blocked row carries ctx" "yes" "$(has "$rows" '29%')"
 check "blocked row carries model" "yes" "$(has "$rows" 'opus-5.5')"
 check "blocked row carries branch" "yes" "$(has "$rows" 'bb-391')"
-check "task drops the title glyph" "no" "$(has "$rows" '✳')"
+check "a title suffix drops the title glyph" "no" "$(has "$rows" '✳')"
+check "the TASK column is gone" "no" "$(has "$table" 'TASK')"
 check "header counts the blocked pane" "yes" "$(has "$table" '· 1 need you ·')"
 check "limits come from the newest reading" "yes" "$(has "$table" 'Limits: 5h 5% (resets 3h) · 7d 3% (resets 5d)')"
 check "limits carry the reading's clock time" "yes" \
   "$(if printf '%s\n' "$table" | grep -qE '^Limits: .* as of [0-9]{2}:[0-9]{2}$'; then echo yes; else echo no; fi)"
 # spaced session name and a pane with no reading must keep columns aligned
-idle_row="$(printf '%s\n' "$rows" | grep -F 'idle task')"
-blocked_row="$(printf '%s\n' "$rows" | grep -F 'blocked task')"
+idle_row="$(grep -E '^. +t1 ' <<< "$rows")"
+blocked_row="$(grep -E '^. +t2 ' <<< "$rows")"
 check "missing reading renders dashes" "yes" "$(has "$idle_row" ' -  ')"
-b_prefix="${blocked_row%%blocked task*}"
-i_prefix="${idle_row%%idle task*}"
-check "TASK column starts at the same offset" "${#b_prefix}" "${#i_prefix}"
+# ${#} counts characters, so this catches a multibyte · padded by byte.
+dup_row="$(printf '%s\n' "$rows" | grep -F 'dup · alpha')"
+b_prefix="${blocked_row%%! needs*}"
+i_prefix="${idle_row%%idle *}"
+d_prefix="${dup_row%%idle *}"
+check "STATE starts at the same offset after a plain target" "${#b_prefix}" "${#i_prefix}"
+check "STATE starts at the same offset after a · target" "${#i_prefix}" "${#d_prefix}"
+longest=0
+while IFS= read -r line; do (( ${#line} <= longest )) || longest=${#line}; done < <(COLUMNS=90 "$bin" table | table_rows)
+check "a narrow terminal truncates rather than wraps" "yes" "$(if (( longest <= 90 )); then echo yes; else echo no; fi)"
 
 empty="$(TMUX_SOCKET="$test_home/no-such.sock" "$bin" table)"
 meta_for 'E2E - Tbl:t2' opus-5.5 abc bb-391

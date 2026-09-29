@@ -477,9 +477,9 @@ project_of() {
 }
 
 render_table() {
-  local -a rows=() names=()
-  local row rank age pane_id name state agents path title i=0 key label ctx task
-  local need=0 work=0 subs=0 newest=0 l5='' l5at='' l7='' l7at='' limits task_w
+  local -a rows=() names=() targets=()
+  local row rank age pane_id name state agents path title i=0 key label ctx
+  local need=0 work=0 subs=0 newest=0 l5='' l5at='' l7='' l7at='' limits target_w=6
   local cols="${COLUMNS:-$(tput cols 2>/dev/null || printf 120)}"
   TABLE_PANES=()
   refresh_now
@@ -498,6 +498,16 @@ render_table() {
     fi
   done
 
+  # TARGET takes the width TASK used to have: its longest label, capped so rows never wrap.
+  for row in ${rows[@]+"${rows[@]}"}; do
+    IFS=$'\t' read -r rank age pane_id name state agents path title <<< "$row"
+    target_label "$name" "$title"
+    targets+=("$TARGET")
+    (( ${#TARGET} <= target_w )) || target_w=${#TARGET}
+  done
+  (( target_w <= cols - 81 )) || target_w=$(( cols - 81 ))
+  (( target_w >= 12 )) || target_w=12
+
   printf 'LLM sessions · %d total · %d need you · %d working · %d subagents\n' \
     "${#rows[@]}" "$need" "$work" "$subs"
   if (( newest > 0 )); then
@@ -509,14 +519,12 @@ render_table() {
   else
     printf 'Limits: no reading yet\n'
   fi
-  printf '%-3s %-28s %-8s %4s %3s %4s %-9s %-22s %-16s %s\n' KEY TARGET STATE AGE AG CTX MODEL PROJECT BRANCH TASK
-  task_w=$(( cols - 106 )); (( task_w > 10 )) || task_w=10
+  printf '%-3s %-*s %-8s %4s %3s %4s %-9s %-22s %s\n' KEY "$target_w" TARGET STATE AGE AG CTX MODEL PROJECT BRANCH
 
   for row in ${rows[@]+"${rows[@]}"}; do
     IFS=$'\t' read -r rank age pane_id name state agents path title <<< "$row"
     read_meta "$pane_id"
-    target_label "$name" "$title"
-    pad TARGET "$TARGET" 28
+    pad TARGET "${targets[i]}" "$target_w"
     project_of "$path"
     pad PROJECT "$PROJECT" 22
     key="${TABLE_KEYS:i:1}"
@@ -524,10 +532,9 @@ render_table() {
     case "$state" in waiting) label='! needs' ;; active) label='working' ;; *) label='idle' ;; esac
     # A corrupt reading must cost one cell, not the table: printf dies on non-numbers.
     ctx='-'; [[ "$META_CTX" =~ ^[0-9]+([.][0-9]+)?$ ]] && ctx="$(LC_NUMERIC=C printf '%.0f%%' "$META_CTX")"
-    task="${title#✳ }"
-    printf '%-3s %s %-8s %4s %3s %4s %-9.9s %s %-16.16s %s\n' \
+    printf '%-3s %s %-8s %4s %3s %4s %-9.9s %s %.16s\n' \
       "${key:--}" "$TARGET" "$label" "$(format_span "$age")" "$agents" "$ctx" \
-      "${META_MODEL:--}" "$PROJECT" "${META_BRANCH:--}" "${task:0:task_w}"
+      "${META_MODEL:--}" "$PROJECT" "${META_BRANCH:--}"
     i=$((i + 1))
   done
 }
