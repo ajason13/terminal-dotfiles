@@ -432,18 +432,19 @@ read_meta() {
     < "$file" 2>/dev/null || true
 }
 
-# Tab-separated rows, most urgent first: rank, age, pane id, window name, state, agents, title.
+# Tab-separated rows, most urgent first: rank, age, pane id, window name, state, agents, path, title.
+# The title stays last: tab is IFS whitespace, so an empty field mid-row would collapse.
 collect_rows() {
-  local pane_id name activity command title rank age
+  local pane_id name activity command path title rank age
   refresh_now
-  while IFS=$'\t' read -r pane_id name activity command title; do
+  while IFS=$'\t' read -r pane_id name activity command path title; do
     classify_pane "$pane_id" "$command" "${title:-}"
     case "$PANE_STATE" in
       waiting) rank=0 ;; active) rank=1 ;; present) rank=2 ;; *) continue ;;
     esac
     age=$(( NOW - ${activity:-$NOW} )); (( age >= 0 )) || age=0
-    printf '%d\t%d\t%s\t%s\t%s\t%d\t%s\n' "$rank" "$age" "$pane_id" "$name" "$PANE_STATE" "$AGENT_COUNT" "${title:-}"
-  done < <(tmux_cmd list-panes -a -F '#{pane_id}	#{window_name}	#{window_activity}	#{pane_current_command}	#{pane_title}' 2>/dev/null || true) \
+    printf '%d\t%d\t%s\t%s\t%s\t%d\t%s\t%s\n' "$rank" "$age" "$pane_id" "$name" "$PANE_STATE" "$AGENT_COUNT" "$path" "${title:-}"
+  done < <(tmux_cmd list-panes -a -F '#{pane_id}	#{window_name}	#{window_activity}	#{pane_current_command}	#{pane_current_path}	#{pane_title}' 2>/dev/null || true) \
     | sort -t "$(printf '\t')" -k1,1n -k2,2n
 }
 
@@ -466,9 +467,18 @@ target_label() {  # name title; counts against render_table's names
   if (( n > 1 )) && [[ -n "$task" ]]; then TARGET="$1 · $task"; else TARGET="$1"; fi
 }
 
+# The repo, not the worktree: a linked worktree's common dir is the main repo's .git,
+# and BRANCH already names the worktree.
+project_of() {
+  local common
+  common="$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+  if [[ "$common" == */.git ]]; then PROJECT="${common%/.git}"; else PROJECT="$1"; fi
+  PROJECT="${PROJECT##*/}"
+}
+
 render_table() {
   local -a rows=() names=()
-  local row rank age pane_id name state agents title i=0 key label ctx task
+  local row rank age pane_id name state agents path title i=0 key label ctx task
   local need=0 work=0 subs=0 newest=0 l5='' l5at='' l7='' l7at='' limits task_w
   local cols="${COLUMNS:-$(tput cols 2>/dev/null || printf 120)}"
   TABLE_PANES=()
@@ -477,7 +487,7 @@ render_table() {
 
   # bash 3.2: "${rows[@]}" on an empty array is unbound under set -u
   for row in ${rows[@]+"${rows[@]}"}; do
-    IFS=$'\t' read -r rank age pane_id name state agents title <<< "$row"
+    IFS=$'\t' read -r rank age pane_id name state agents path title <<< "$row"
     names+=("$name")
     case "$state" in waiting) need=$((need + 1)) ;; active) work=$((work + 1)) ;; esac
     subs=$((subs + agents))
@@ -499,23 +509,25 @@ render_table() {
   else
     printf 'Limits: no reading yet\n'
   fi
-  printf '%-3s %-28s %-8s %4s %3s %4s %-9s %-16s %s\n' KEY TARGET STATE AGE AG CTX MODEL BRANCH TASK
-  task_w=$(( cols - 83 )); (( task_w > 10 )) || task_w=10
+  printf '%-3s %-28s %-8s %4s %3s %4s %-9s %-22s %-16s %s\n' KEY TARGET STATE AGE AG CTX MODEL PROJECT BRANCH TASK
+  task_w=$(( cols - 106 )); (( task_w > 10 )) || task_w=10
 
   for row in ${rows[@]+"${rows[@]}"}; do
-    IFS=$'\t' read -r rank age pane_id name state agents title <<< "$row"
+    IFS=$'\t' read -r rank age pane_id name state agents path title <<< "$row"
     read_meta "$pane_id"
     target_label "$name" "$title"
     pad TARGET "$TARGET" 28
+    project_of "$path"
+    pad PROJECT "$PROJECT" 22
     key="${TABLE_KEYS:i:1}"
     TABLE_PANES+=("$pane_id")
     case "$state" in waiting) label='! needs' ;; active) label='working' ;; *) label='idle' ;; esac
     # A corrupt reading must cost one cell, not the table: printf dies on non-numbers.
     ctx='-'; [[ "$META_CTX" =~ ^[0-9]+([.][0-9]+)?$ ]] && ctx="$(LC_NUMERIC=C printf '%.0f%%' "$META_CTX")"
     task="${title#✳ }"
-    printf '%-3s %s %-8s %4s %3s %4s %-9.9s %-16.16s %s\n' \
+    printf '%-3s %s %-8s %4s %3s %4s %-9.9s %s %-16.16s %s\n' \
       "${key:--}" "$TARGET" "$label" "$(format_span "$age")" "$agents" "$ctx" \
-      "${META_MODEL:--}" "${META_BRANCH:--}" "${task:0:task_w}"
+      "${META_MODEL:--}" "$PROJECT" "${META_BRANCH:--}" "${task:0:task_w}"
     i=$((i + 1))
   done
 }

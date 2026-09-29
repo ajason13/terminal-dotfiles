@@ -266,8 +266,14 @@ clear_busy_for delta:d1.0
 t kill-session -t delta
 
 # --- table: every LLM pane, blocked first, readings where they exist ----------
-t -f /dev/null new-session -d -s 'E2E - Tbl' -n t1 'sleep 600'
-t -f /dev/null new-window -d -t 'E2E - Tbl:' -n t2 'sleep 600'
+# PROJECT must name the repo from inside a linked worktree, and fall back off-repo.
+repo="$test_home/proj-repo"
+git init -q "$repo"
+git -C "$repo" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
+git -C "$repo" worktree add -q -b bb-1 "$repo/.claude/worktrees/bb-1"
+mkdir -p "$test_home/plain-dir"
+t -f /dev/null new-session -d -s 'E2E - Tbl' -n t1 -c "$repo/.claude/worktrees/bb-1" 'sleep 600'
+t -f /dev/null new-window -d -t 'E2E - Tbl:' -n t2 -c "$test_home/plain-dir" 'sleep 600'
 t -f /dev/null new-window -d -t 'E2E - Tbl:' -n t3
 t select-pane -t 'E2E - Tbl:t1' -T '✳ idle task'
 t select-pane -t 'E2E - Tbl:t2' -T '✳ blocked task'
@@ -288,6 +294,10 @@ check "blocked row sorts above idle" "blocked task" \
 check "non-LLM pane is omitted" "no" "$(if grep -qE '^. +t3 ' <<< "$rows"; then echo yes; else echo no; fi)"
 check "target is the window name" "yes" "$(if grep -qE '^. +t1 +idle' <<< "$rows"; then echo yes; else echo no; fi)"
 check "a unique window name carries no title" "no" "$(has "$rows" 't1 · ')"
+check "project names the repo from a linked worktree" "yes" \
+  "$(if grep -qE '^. +t1 .* proj-repo ' <<< "$rows"; then echo yes; else echo no; fi)"
+check "project falls back to the directory off-repo" "yes" \
+  "$(if grep -qE '^. +t2 .* plain-dir ' <<< "$rows"; then echo yes; else echo no; fi)"
 check "a repeated window name carries its title" "yes" "$(has "$rows" 'dup · alpha')"
 check "each repeat carries its own title" "yes" "$(has "$rows" 'dup · beta')"
 check "blocked row carries ctx" "yes" "$(has "$rows" '29%')"
