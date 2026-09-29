@@ -282,7 +282,7 @@ t select-pane -t 'E2E - Tbl:t3' -T 'zsh'
 t -f /dev/null new-window -d -t 'E2E - Tbl:' -n dup 'sleep 600'
 t -f /dev/null new-window -d -t 'E2E - Tbl:' -n dup 'sleep 600'
 t select-pane -t 'E2E - Tbl:3' -T '✳ alpha'
-t select-pane -t 'E2E - Tbl:4' -T '✳ beta'
+t select-pane -t 'E2E - Tbl:4' -T '✳ beta with a pane title long enough to outgrow any narrow terminal'
 needs_for 'E2E - Tbl:t2'
 meta_for 'E2E - Tbl:t2' opus-5.5 29.4 bb-391
 
@@ -323,6 +323,8 @@ check "STATE starts at the same offset after a · target" "${#i_prefix}" "${#d_p
 longest=0
 while IFS= read -r line; do (( ${#line} <= longest )) || longest=${#line}; done < <(COLUMNS=90 "$bin" table | table_rows)
 check "a narrow terminal truncates rather than wraps" "yes" "$(if (( longest <= 90 )); then echo yes; else echo no; fi)"
+# Exactly 90: PROJECT and BRANCH shrink to their values and TARGET takes the rest.
+check "a long target fills a narrow terminal to the edge" "90" "$longest"
 
 empty="$(TMUX_SOCKET="$test_home/no-such.sock" "$bin" table)"
 meta_for 'E2E - Tbl:t2' opus-5.5 abc bb-391
