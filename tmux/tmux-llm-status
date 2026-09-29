@@ -401,6 +401,100 @@ stop_daemon() {
   rm -f "$pidfile"
 }
 
+# Row keys in order; q and r are taken by quit and refresh.
+TABLE_KEYS='123456789abcdefghijklmnopstuvwxyz'
+TABLE_PANES=()
+
+key_index() {
+  local prefix="${TABLE_KEYS%%"$1"*}"
+  if [[ -n "$1" && "$prefix" != "$TABLE_KEYS" ]]; then printf '%d' "${#prefix}"; fi
+}
+
+format_span() {
+  local s="$1"
+  if (( s < 60 )); then printf '%ds' "$s"
+  elif (( s < 3600 )); then printf '%dm' $(( s / 60 ))
+  elif (( s < 86400 )); then printf '%dh' $(( (s + 1800) / 3600 ))
+  else printf '%dd' $(( (s + 43200) / 86400 )); fi
+}
+
+read_meta() {
+  local file="$STATE_HOME/panes/${1#%}.meta"
+  META_STAMP='' META_MODEL='' META_CTX='' META_5H='' META_5H_AT='' META_7D='' META_7D_AT='' META_BRANCH=''
+  [[ -f "$file" ]] || return 0
+  IFS=$'\x1f' read -r META_STAMP META_MODEL META_CTX META_5H META_5H_AT META_7D META_7D_AT META_BRANCH \
+    < "$file" 2>/dev/null || true
+}
+
+# Tab-separated rows, most urgent first: rank, age, pane id, target, state, agents, title.
+collect_rows() {
+  local pane_id target activity command title rank age
+  refresh_now
+  while IFS=$'\t' read -r pane_id target activity command title; do
+    classify_pane "$pane_id" "$command" "${title:-}"
+    case "$PANE_STATE" in
+      waiting) rank=0 ;; active) rank=1 ;; present) rank=2 ;; *) continue ;;
+    esac
+    age=$(( NOW - ${activity:-$NOW} )); (( age >= 0 )) || age=0
+    printf '%d\t%d\t%s\t%s\t%s\t%d\t%s\n' "$rank" "$age" "$pane_id" "$target" "$PANE_STATE" "$AGENT_COUNT" "${title:-}"
+  done < <(tmux_cmd list-panes -a -F '#{pane_id}	#{session_name}:#{window_index}.#{pane_index}	#{window_activity}	#{pane_current_command}	#{pane_title}' 2>/dev/null || true) \
+    | sort -t "$(printf '\t')" -k1,1n -k2,2n
+}
+
+limit_part() {  # label pct reset_at
+  [[ -n "$2" ]] || return 0
+  printf '%s %.0f%%' "$1" "$2"
+  if [[ -n "$3" ]] && (( $3 > NOW )); then printf ' (resets %s)' "$(format_span $(( $3 - NOW )))"; fi
+}
+
+render_table() {
+  local -a rows=()
+  local row rank age pane_id target state agents title i=0 key label ctx task
+  local need=0 work=0 subs=0 newest=0 l5='' l5at='' l7='' l7at='' limits task_w
+  local cols="${COLUMNS:-$(tput cols 2>/dev/null || printf 120)}"
+  TABLE_PANES=()
+  refresh_now
+  while IFS= read -r row; do rows+=("$row"); done < <(collect_rows)
+
+  # bash 3.2: "${rows[@]}" on an empty array is unbound under set -u
+  for row in ${rows[@]+"${rows[@]}"}; do
+    IFS=$'\t' read -r rank age pane_id target state agents title <<< "$row"
+    case "$state" in waiting) need=$((need + 1)) ;; active) work=$((work + 1)) ;; esac
+    subs=$((subs + agents))
+    read_meta "$pane_id"
+    # Limits are account-wide, so the freshest reading from any pane wins.
+    if [[ -n "$META_5H$META_7D" ]] && (( ${META_STAMP:-0} > newest )); then
+      newest=$META_STAMP l5=$META_5H l5at=$META_5H_AT l7=$META_7D l7at=$META_7D_AT
+    fi
+  done
+
+  printf 'LLM sessions · %d total · %d need you · %d working · %d subagents\n' \
+    "${#rows[@]}" "$need" "$work" "$subs"
+  if (( newest > 0 )); then
+    limits="$(limit_part 5h "$l5" "$l5at")"
+    [[ -n "$l7" ]] && limits="${limits:+$limits · }$(limit_part 7d "$l7" "$l7at")"
+    printf 'Limits: %s · as of %s\n' "$limits" "$(date -r "$newest" +%H:%M)"
+  else
+    printf 'Limits: no reading yet\n'
+  fi
+  printf '%-3s %-28s %-8s %4s %3s %4s %-9s %-16s %s\n' KEY TARGET STATE AGE AG CTX MODEL BRANCH TASK
+  task_w=$(( cols - 83 )); (( task_w > 10 )) || task_w=10
+
+  for row in ${rows[@]+"${rows[@]}"}; do
+    IFS=$'\t' read -r rank age pane_id target state agents title <<< "$row"
+    read_meta "$pane_id"
+    key="${TABLE_KEYS:i:1}"
+    TABLE_PANES+=("$pane_id")
+    case "$state" in waiting) label='! needs' ;; active) label='working' ;; *) label='idle' ;; esac
+    ctx='-'; [[ -n "$META_CTX" ]] && ctx="$(printf '%.0f%%' "$META_CTX")"
+    task="${title#✳ }"
+    printf '%-3s %-28.28s %-8s %4s %3s %4s %-9.9s %-16.16s %s\n' \
+      "${key:--}" "$target" "$label" "$(format_span "$age")" "$agents" "$ctx" \
+      "${META_MODEL:--}" "${META_BRANCH:--}" "${task:0:task_w}"
+    i=$((i + 1))
+  done
+}
+
 case "${1:-}" in
   window)
     window_status "${2:-}"
@@ -417,6 +511,9 @@ case "${1:-}" in
   prune)
     prune_dead_panes
     ;;
+  table)
+    render_table
+    ;;
   run)
     run_daemon
     ;;
@@ -431,7 +528,7 @@ case "${1:-}" in
     start_daemon
     ;;
   *)
-    printf 'Usage: %s window <target> | summary [session] | next-waiting | once | prune | start | stop | restart\n' "${0##*/}" >&2
+    printf 'Usage: %s window <target> | summary [session] | next-waiting | once | prune | table | start | stop | restart\n' "${0##*/}" >&2
     exit 2
     ;;
 esac

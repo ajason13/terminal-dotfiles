@@ -60,6 +60,17 @@ needs_file_for() {
 needs_for() { local f; f="$(needs_file_for "$1")"; mkdir -p "${f%/*}"; date +%s > "$f"; }
 clear_needs_for() { rm -f "$(needs_file_for "$1")"; }
 
+meta_for() {  # target model ctx branch
+  local id f now
+  id="$(t display-message -p -t "$1" '#{pane_id}')"
+  f="$TMUX_LLM_STATE_HOME/panes/${id#%}.meta"
+  now="$(date +%s)"
+  mkdir -p "${f%/*}"
+  printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\n' \
+    "$now" "$2" "$3" 5 $((now + 10800)) 3 $((now + 432000)) "$4" > "$f"
+}
+has() { if printf '%s' "$1" | grep -qF -- "$2"; then printf 'yes'; else printf 'no'; fi; }
+
 exists() { if [[ -e "$1" ]]; then printf 'present'; else printf 'absent'; fi; }
 
 # -f /dev/null on every server-creating call: the real tmux.conf restarts the
@@ -252,6 +263,39 @@ check "cleared needs falls back to working" "S2" "$(marker_of delta:d1)"
 clear_agents_for delta:d1.1
 clear_busy_for delta:d1.0
 t kill-session -t delta
+
+# --- table: every LLM pane, blocked first, readings where they exist ----------
+t -f /dev/null new-session -d -s 'E2E - Tbl' -n t1
+t -f /dev/null new-window -d -t 'E2E - Tbl:' -n t2
+t -f /dev/null new-window -d -t 'E2E - Tbl:' -n t3
+t select-pane -t 'E2E - Tbl:t1' -T '✳ idle task'
+t select-pane -t 'E2E - Tbl:t2' -T '✳ blocked task'
+t select-pane -t 'E2E - Tbl:t3' -T 'zsh'
+needs_for 'E2E - Tbl:t2'
+meta_for 'E2E - Tbl:t2' opus-5.5 29.4 bb-391
+
+table="$(COLUMNS=160 "$bin" table)"
+rows="$(printf '%s\n' "$table" | grep -F 'E2E - Tbl:')"
+check "blocked row sorts above idle" "blocked task" \
+  "$(printf '%s\n' "$rows" | head -1 | grep -oF 'blocked task')"
+check "non-LLM pane is omitted" "no" "$(has "$rows" 'E2E - Tbl:2.0')"
+check "blocked row carries ctx" "yes" "$(has "$rows" '29%')"
+check "blocked row carries model" "yes" "$(has "$rows" 'opus-5.5')"
+check "blocked row carries branch" "yes" "$(has "$rows" 'bb-391')"
+check "task drops the title glyph" "no" "$(has "$rows" '✳')"
+check "header counts the blocked pane" "yes" "$(has "$table" '· 1 need you ·')"
+check "limits come from the newest reading" "yes" "$(has "$table" 'Limits: 5h 5% (resets 3h) · 7d 3% (resets 5d)')"
+# spaced session name and a pane with no reading must keep columns aligned
+idle_row="$(printf '%s\n' "$rows" | grep -F 'idle task')"
+blocked_row="$(printf '%s\n' "$rows" | grep -F 'blocked task')"
+check "missing reading renders dashes" "yes" "$(has "$idle_row" ' -  ')"
+b_prefix="${blocked_row%%blocked task*}"
+i_prefix="${idle_row%%idle task*}"
+check "TASK column starts at the same offset" "${#b_prefix}" "${#i_prefix}"
+
+empty="$(TMUX_SOCKET="$test_home/no-such.sock" "$bin" table)"
+check "empty server renders a zero header" "yes" "$(has "$empty" '0 total')"
+check "empty server has no reading" "yes" "$(has "$empty" 'Limits: no reading yet')"
 
 if (( failures > 0 )); then
   printf 'test-tmux-llm-status: %d failure(s)\n' "$failures" >&2
