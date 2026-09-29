@@ -351,6 +351,23 @@ check "a corrupt ctx reading does not cut the table short" "$(grep -c . <<< "$ro
   "$(COLUMNS=160 "$bin" table | table_rows | grep -c .)"
 meta_for 'E2E - Tbl:t2' opus-5.5 29.4 bb-391
 
+# BRANCH fits names up to 40, but gives width back before TARGET drops below 24.
+meta_for 'E2E - Tbl:t2' opus-5.5 29.4 chore/dependabot-group-typescript-eslint
+check "a 40-character branch shows in full" "yes" \
+  "$(has "$(COLUMNS=200 "$bin" table)" 'chore/dependabot-group-typescript-eslint')"
+meta_for 'E2E - Tbl:t2' opus-5.5 29.4 chore/dependabot-group-typescript-eslint-plus
+wide="$(COLUMNS=200 "$bin" table)"
+check "a longer branch is cut at 40" "yes-no" \
+  "$(has "$wide" 'chore/dependabot-group-typescript-eslint')-$(has "$wide" 'eslint-plus')"
+# At 110 a 40-wide BRANCH would leave TARGET 10; it gives back 14 instead.
+narrow_head="$(COLUMNS=110 "$bin" table | grep '^KEY ')"
+narrow_head="${narrow_head%%STATE*}"
+check "a long branch leaves TARGET 24 columns in a narrow terminal" "24" "$(( ${#narrow_head} - 5 ))"
+longest=0
+while IFS= read -r line; do (( ${#line} <= longest )) || longest=${#line}; done < <(COLUMNS=110 "$bin" table | table_rows)
+check "a long branch still fits a narrow terminal" "yes" "$(if (( longest <= 110 )); then echo yes; else echo no; fi)"
+meta_for 'E2E - Tbl:t2' opus-5.5 29.4 bb-391
+
 check "empty server renders a zero header" "yes" "$(has "$empty" '0 total')"
 check "empty server has no reading" "yes" "$(has "$empty" 'Limits: no reading yet')"
 
