@@ -314,6 +314,15 @@ printf 'Z' | "$bin" pick >/dev/null 2>&1
 check "unmapped key then EOF exits without jumping" "t1" "$(current_window)"
 printf '1' | "$bin" pick >/dev/null 2>&1
 check "key 1 jumps to the blocked pane" "t2" "$(current_window)"
+# A real popup is a terminal that stays open, so a redraw timeout must not read as EOF
+# (bash 3.2 returns 1 for both). The key arrives after the first 2s timeout.
+in_tty() {
+  if script --version >/dev/null 2>&1; then script -qec "$(printf '%q ' "$@")" /dev/null
+  else script -q /dev/null "$@"; fi
+}
+t select-window -t 'E2E - Tbl:t1'
+(sleep 3; printf '1') | in_tty "$bin" pick >/dev/null 2>&1 || true
+check "pick survives a redraw timeout on a terminal" "t2" "$(current_window)"
 clear_needs_for 'E2E - Tbl:t2'
 t kill-session -t 'E2E - Tbl'
 
