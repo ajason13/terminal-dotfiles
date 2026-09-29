@@ -384,6 +384,12 @@ t select-window -t 'E2E - Tbl:t1'
 check "pick waits on a terminal for a late key" "t2" "$(current_window)"
 check "an idle popup draws once, with no timed redraw" "1" \
   "$( (sleep 3; printf 'q') | in_tty "$bin" pick 2>/dev/null | grep -o $'\033\\[2J' | wc -l | tr -d ' ')"
+# The popup exports no COLUMNS, so width must come from the terminal itself: a long
+# label fills a 100-column pty to the edge instead of stopping at tput's fallback 80.
+pty_longest="$(in_tty bash -c "stty cols 100 rows 40; unset COLUMNS; '$bin' table" 2>/dev/null \
+  | tr -d '\r' | while IFS= read -r line; do printf '%s\n' "${#line}"; done | sort -n | tail -1)"
+check "without COLUMNS the table uses the terminal's width" "100" "$pty_longest"
+
 # After t, keys follow the tree rows: this key names a different pane in urgency order.
 tree_key="$(grep -F 'dup · beta' <<< "$tree" | cut -c1)"
 urgent_key="$(COLUMNS=160 "$bin" table | grep -F 'dup · beta' | cut -c1)"

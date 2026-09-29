@@ -545,13 +545,21 @@ org_of() {
   done <<< "$ORG_ROWS"
 }
 
+# Inside $(...) tput sees neither stdout nor stderr as a terminal and answers 80, which
+# squeezed TARGET to its floor in the popup; ask the controlling terminal directly.
+term_cols() {
+  local cols=''
+  { read -r _ cols < <(stty size < /dev/tty); } 2>/dev/null || true
+  if [[ "$cols" =~ ^[0-9]+$ ]] && (( cols > 0 )); then printf '%s' "$cols"; else printf 120; fi
+}
+
 render_table() {  # [tree]
   local mode="${1:-}" last_session=''
   local -a rows=() names=() targets=() projects=()
   local row rank age pane_id name state agents pane_pid path session tree title i=0 key label ctx
   local need=0 work=0 subs=0 newest=0 l5='' l5at='' l7='' l7at='' limits target_w=6 project_w=7 branch_w=6
   local locks org_w=0 lock_w=0 branch_pad=0 row_panes=' ' held p a l hp locks_note=''
-  local cols="${COLUMNS:-$(tput cols 2>/dev/null || printf 120)}"
+  local cols="${COLUMNS:-$(term_cols)}"
   TABLE_PANES=()
   refresh_now
   while IFS= read -r row; do rows+=("$row"); done < <(collect_rows "$mode")
