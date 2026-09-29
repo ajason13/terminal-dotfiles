@@ -21,6 +21,22 @@ export TMUX_SOCKET
 TMUX_LLM_STATE_HOME="$test_home/llm-state"
 export TMUX_LLM_STATE_HOME
 
+# A fake org-lock for the whole run, so the table never reads the real lock directory.
+# list replays a fixture; any other subcommand sleeps like a waiter blocked on a claim.
+fake_bin="$test_home/bin"
+mkdir -p "$fake_bin"
+FAKE_LOCKS="$test_home/locks.json"
+printf '[]\n' > "$FAKE_LOCKS"
+cat > "$fake_bin/org-lock" <<'FAKE'
+#!/usr/bin/env bash
+case "${1:-}" in list) cat "$FAKE_LOCKS" ;; *) sleep 600; : ;; esac
+FAKE
+# An e2e run polling for a busy org at config load; its alias is in the environment only.
+# node, as in a real run: macOS hides the environment of SIP binaries such as /bin/bash.
+printf '#!/usr/bin/env node\nsetTimeout(() => {}, 600000);\n' > "$fake_bin/playwright"
+chmod +x "$fake_bin/org-lock" "$fake_bin/playwright"
+export FAKE_LOCKS TMUX_LLM_ORG_LOCK="$fake_bin/org-lock" SCRATCH_POOL_LOCK_DIR="$test_home/no-locks"
+
 agent_dir_for() {
   local id
   id="$(t display-message -p -t "$1" '#{pane_id}')"
@@ -78,6 +94,7 @@ exists() { if [[ -e "$1" ]]; then printf 'present'; else printf 'absent'; fi; }
 t() { tmux -S "$TMUX_SOCKET" "$@"; }
 cleanup() {
   t kill-server 2>/dev/null || true
+  [[ -z "${outside_pid:-}" ]] || kill "$outside_pid" 2>/dev/null || true
   rm -rf "$test_home"
 }
 trap cleanup EXIT
@@ -287,7 +304,7 @@ needs_for 'E2E - Tbl:t2'
 meta_for 'E2E - Tbl:t2' opus-5.5 29.4 bb-391
 
 table="$(COLUMNS=160 "$bin" table)"
-table_rows() { sed '1,3d'; }
+table_rows() { sed '1,/^KEY /d'; }
 rows="$(printf '%s\n' "$table" | table_rows)"
 check "blocked row sorts above idle" "yes" \
   "$(if head -1 <<< "$rows" | grep -qE '^1 +t2 +! needs'; then echo yes; else echo no; fi)"
@@ -366,6 +383,68 @@ t select-window -t 'E2E - Tbl:t1'
 check "a bare Esc quits without jumping" "t1" "$(current_window)"
 clear_needs_for 'E2E - Tbl:t2'
 t kill-session -t 'E2E - Tbl'
+
+# --- org-lock: holders and inferred waiters land on the pane that owns them ------
+t -f /dev/null new-session -d -s 'E2E - Org' -n holder "sh -c 'sleep 600 & wait'"
+t -f /dev/null new-window -d -t 'E2E - Org:' -n waiter "$fake_bin/org-lock run --alias canarys --wait 5 -- true"
+t -f /dev/null new-window -d -t 'E2E - Org:' -n e2e "env SF_ORG_ALIAS=canarys $fake_bin/playwright test"
+t -f /dev/null new-window -d -t 'E2E - Org:' -n bystander 'sleep 600'
+t -f /dev/null new-window -d -t 'E2E - Org:' -n drifted "sh -c 'sleep 600 & wait'"
+t -f /dev/null new-window -d -t 'E2E - Org:' -n plain "sh -c 'sleep 600 & wait'"
+for w in holder waiter e2e bystander drifted; do t select-pane -t "E2E - Org:$w" -T "✳ $w"; done
+t select-pane -t 'E2E - Org:plain' -T 'zsh'
+child_of() {  # window -> its pane's sleep child, once it has started
+  local pp kid n
+  pp="$(t display-message -p -t "E2E - Org:$1" '#{pane_pid}')"
+  for (( n = 0; n < 50; n++ )); do
+    kid="$(pgrep -P "$pp" sleep | head -1 || true)"
+    [[ -n "$kid" ]] && { printf '%s' "$kid"; return 0; }
+    sleep 0.1
+  done
+}
+holder_pid="$(child_of holder)"
+drifted_pid="$(child_of drifted)"
+plain_pid="$(child_of plain)"
+# Detached from stdout, or a caller piping this suite waits the full 600s for EOF.
+sleep 600 >/dev/null 2>&1 &
+outside_pid=$!
+disown "$outside_pid"
+cat > "$FAKE_LOCKS" <<JSON
+[{"alias":"canarys","pid":$holder_pid,"status":"live"},
+ {"alias":"fe-automation","pid":$drifted_pid,"status":"unverified"},
+ {"alias":"canaryp","pid":$outside_pid,"status":"live"},
+ {"alias":"old-org","pid":999999,"status":"stale"},
+ {"alias":"devorg","pid":$plain_pid,"status":"live"}]
+JSON
+org_table="$(COLUMNS=200 "$bin" table)"
+# Squeezed, because ORG pads every alias to the longest one.
+org_row() { grep -E "^. +$1 " <<< "$org_table" | tr -s ' ' | sed -E 's/ $//'; }
+ends() { if [[ "$1" == *"$2" ]]; then echo yes; else echo no; fi; }
+check "holder pane shows its org held" "yes" "$(ends "$(org_row holder)" 'canarys held')"
+check "org-lock waiter pane shows queued" "yes" "$(ends "$(org_row waiter)" 'canarys queued')"
+if command -v node >/dev/null 2>&1; then
+  check "e2e waiter with an inline alias shows queued" "yes" "$(ends "$(org_row e2e)" 'canarys queued')"
+fi
+check "an uninvolved pane shows dashes" "yes" \
+  "$(ends "$(org_row bystander)" ' - -')"
+check "an unverified holder is never shown as free" "yes" "$(ends "$(org_row drifted)" 'fe-automation held?')"
+check "a holder outside every pane is in the header" "yes" \
+  "$(has "$org_table" "canaryp held by pid $outside_pid, not in a pane")"
+check "a stale lock is in the header" "yes" "$(has "$org_table" 'old-org stale, pid 999999 gone')"
+check "a holder in a non-agent pane is in the header" "yes" \
+  "$(has "$org_table" "devorg held by pid $plain_pid, in a non-agent pane")"
+longest=0
+while IFS= read -r line; do (( ${#line} <= longest )) || longest=${#line}; done < <(COLUMNS=100 "$bin" table | table_rows)
+check "org columns still fit a narrow terminal" "yes" "$(if (( longest <= 100 )); then echo yes; else echo no; fi)"
+no_lock="$(TMUX_LLM_ORG_LOCK="$test_home/no-such-org-lock" COLUMNS=200 "$bin" table)"
+check "a missing org-lock drops the org columns" "no" "$(has "$no_lock" 'LOCK')"
+check "a missing org-lock keeps the rows" "yes" "$(if grep -qE '^. +holder ' <<< "$no_lock"; then echo yes; else echo no; fi)"
+printf '[]\n' > "$FAKE_LOCKS"
+no_held="$(COLUMNS=200 "$bin" table)"
+check "no locks means no org columns" "no" "$(has "$no_held" 'LOCK')"
+check "no locks means no Locks line" "no" "$(has "$no_held" 'Locks:')"
+kill "$outside_pid" 2>/dev/null || true
+t kill-session -t 'E2E - Org'
 
 # --- a leftover .needs on a bare shell (claude crashed mid-prompt) is not believed
 t -f /dev/null new-session -d -s eps -n e1

@@ -476,10 +476,75 @@ project_of() {
   PROJECT="${PROJECT##*/}"
 }
 
+ORG_LOCK_BIN="${TMUX_LLM_ORG_LOCK:-org-lock}"
+
+# Locks as "alias<TAB>pid<TAB>status"; nothing when org-lock or jq is missing or fails.
+lock_rows() {
+  command -v "$ORG_LOCK_BIN" >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || return 0
+  "$ORG_LOCK_BIN" list --json 2>/dev/null \
+    | jq -r '.[] | [.alias, (.pid | tostring), .status] | @tsv' 2>/dev/null || true
+}
+
+# Locks onto panes as "pane_id<TAB>alias<TAB>lock<TAB>pid", holders first; pane "-" when
+# no pane owns the holder. org-lock records no waiters, so "queued" is inferred: a waiting
+# process in one pane's tree while another tree holds that alias.
+org_rows() {  # lock_rows output, "pane_id<TAB>pane_pid" lines
+  [[ -n "$1" ]] || return 0
+  # BSD-style `e` appends each process's environment, where an inline SF_ORG_ALIAS lives.
+  # BSD awk rejects a newline inside -v, so the lines travel joined by ;.
+  ps axeww -o pid=,ppid=,command= 2>/dev/null | awk -v locks="${1//$'\n'/;}" -v panes="${2//$'\n'/;}" '
+    function pane_of(p,   hops) {
+      for (hops = 0; hops < 32 && p > 1; hops++) { if (p in root) return root[p]; p = ppid[p] }
+      return ""
+    }
+    function after(c, re, cut,   t) {
+      if (!match(c, re)) return ""
+      t = substr(c, RSTART, RLENGTH); sub(cut, "", t); return t
+    }
+    function waiter_alias(c,   a) {
+      a = after(c, tool " run .*--alias [^ ]+", ".*--alias ")
+      if (a == "") a = after(c, tool " claim [^ -][^ ]*", ".* claim ")
+      if (a == "" && c ~ ("playwright" " test")) a = after(c, "SF_ORG" "_ALIAS=[^ ]+", "^[^=]*=")
+      return a
+    }
+    BEGIN {
+      # Split literals: this program is itself in the ps output and must not match itself.
+      tool = "org" "-lock[^ ]*"
+      n = split(panes, pl, ";")
+      for (i = 1; i <= n; i++) { split(pl[i], f, "\t"); if (f[2] != "") root[f[2]] = f[1] }
+      nl = split(locks, ll, ";")
+    }
+    { ppid[$1] = $2; c = $0; sub(/^ *[0-9]+ +[0-9]+ /, "", c); cmd[$1] = c }
+    END {
+      for (i = 1; i <= nl; i++) {
+        if (split(ll[i], f, "\t") < 3) continue
+        pn = pane_of(f[2]); owner[f[1]] = (pn == "" ? "-" : pn)
+        # org-lock says live/unverified/stale; unverified is alive and mid-run, never free.
+        lk = f[3] == "live" ? "held" : f[3] == "unverified" ? "held?" : f[3]
+        print owner[f[1]] "\t" f[1] "\t" lk "\t" f[2]
+      }
+      for (p in cmd) {
+        a = waiter_alias(cmd[p]); if (a == "" || !(a in owner)) continue
+        pn = pane_of(p); if (pn == "" || pn == owner[a] || ((pn, a) in seen)) continue
+        seen[pn, a] = 1; print pn "\t" a "\tqueued\t" p
+      }
+    }'
+}
+
+# One pane's ORG and LOCK from org_rows; the first line wins, so held beats queued.
+org_of() {
+  local p a l
+  ORG='-' LOCK='-'
+  while IFS=$'\t' read -r p a l _; do
+    if [[ "$p" == "$1" ]]; then ORG="$a" LOCK="$l"; return 0; fi
+  done <<< "$ORG_ROWS"
+}
+
 render_table() {
   local -a rows=() names=() targets=() projects=()
   local row rank age pane_id name state agents pane_pid path title i=0 key label ctx
   local need=0 work=0 subs=0 newest=0 l5='' l5at='' l7='' l7at='' limits target_w=6 project_w=7 branch_w=6
+  local locks org_w=0 lock_w=0 branch_pad=0 row_panes=' ' held p a l hp locks_note=''
   local cols="${COLUMNS:-$(tput cols 2>/dev/null || printf 120)}"
   TABLE_PANES=()
   refresh_now
@@ -489,6 +554,7 @@ render_table() {
   for row in ${rows[@]+"${rows[@]}"}; do
     IFS=$'\t' read -r rank age pane_id name state agents pane_pid path title <<< "$row"
     names+=("$name")
+    row_panes+="$pane_id "
     case "$state" in waiting) need=$((need + 1)) ;; active) work=$((work + 1)) ;; esac
     subs=$((subs + agents))
     read_meta "$pane_id"
@@ -513,8 +579,28 @@ render_table() {
   done
   (( project_w <= 22 )) || project_w=22
   (( branch_w <= 16 )) || branch_w=16
+
+  # ORG and LOCK exist only while org-lock reports a lock: no idle pane names its org.
+  ORG_ROWS=''
+  locks="$(lock_rows)"
+  if [[ -n "$locks" ]]; then
+    ORG_ROWS="$(org_rows "$locks" "$(tmux_cmd list-panes -a -F '#{pane_id}	#{pane_pid}' 2>/dev/null || true)")"
+    org_w=3 lock_w=6 branch_pad=$branch_w
+    while IFS=$'\t' read -r p a l hp; do
+      (( ${#a} <= org_w )) || org_w=${#a}
+      # A holder with no agent row would be invisible, and it is the one that surprises you.
+      [[ "$l" == queued || "$row_panes" == *" $p "* ]] && continue
+      if [[ "$l" == stale ]]; then held="$a stale, pid $hp gone"
+      elif [[ "$p" == - ]]; then held="$a $l by pid $hp, not in a pane"
+      else held="$a $l by pid $hp, in a non-agent pane"; fi
+      locks_note="${locks_note:+$locks_note · }$held"
+    done <<< "$ORG_ROWS"
+    (( org_w <= 16 )) || org_w=16
+  fi
   # 39 = KEY, STATE, AGE, AG, CTX, MODEL and the gaps between all nine columns.
-  (( target_w <= cols - 39 - project_w - branch_w )) || target_w=$(( cols - 39 - project_w - branch_w ))
+  local fixed=$(( 39 + project_w + branch_w ))
+  (( org_w == 0 )) || fixed=$(( fixed + 2 + org_w + lock_w ))
+  (( target_w <= cols - fixed )) || target_w=$(( cols - fixed ))
   (( target_w >= 12 )) || target_w=12
 
   printf 'LLM sessions · %d total · %d need you · %d working · %d subagents\n' \
@@ -528,7 +614,11 @@ render_table() {
   else
     printf 'Limits: no reading yet\n'
   fi
-  printf '%-3s %-*s %-8s %4s %3s %4s %-9s %-*s %s\n' KEY "$target_w" TARGET STATE AGE AG CTX MODEL "$project_w" PROJECT BRANCH
+  [[ -z "$locks_note" ]] || printf 'Locks: %s\n' "$locks_note"
+  printf '%-3s %-*s %-8s %4s %3s %4s %-9s %-*s %-*s' KEY "$target_w" TARGET STATE AGE AG CTX MODEL \
+    "$project_w" PROJECT "$branch_pad" BRANCH
+  (( org_w == 0 )) || printf ' %-*s LOCK' "$org_w" ORG
+  printf '\n'
 
   for row in ${rows[@]+"${rows[@]}"}; do
     IFS=$'\t' read -r rank age pane_id name state agents pane_pid path title <<< "$row"
@@ -540,9 +630,15 @@ render_table() {
     case "$state" in waiting) label='! needs' ;; active) label='working' ;; *) label='idle' ;; esac
     # A corrupt reading must cost one cell, not the table: printf dies on non-numbers.
     ctx='-'; [[ "$META_CTX" =~ ^[0-9]+([.][0-9]+)?$ ]] && ctx="$(LC_NUMERIC=C printf '%.0f%%' "$META_CTX")"
-    printf '%-3s %s %-8s %4s %3s %4s %-9.9s %s %.*s\n' \
+    printf '%-3s %s %-8s %4s %3s %4s %-9.9s %s %-*.*s' \
       "${key:--}" "$TARGET" "$label" "$(format_span "$age")" "$agents" "$ctx" \
-      "${META_MODEL:--}" "$PROJECT" "$branch_w" "${META_BRANCH:--}"
+      "${META_MODEL:--}" "$PROJECT" "$branch_pad" "$branch_w" "${META_BRANCH:--}"
+    if (( org_w > 0 )); then
+      org_of "$pane_id"
+      pad ORG "$ORG" "$org_w"
+      printf ' %s %s' "$ORG" "$LOCK"
+    fi
+    printf '\n'
     i=$((i + 1))
   done
 }
