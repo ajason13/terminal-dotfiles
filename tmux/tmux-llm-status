@@ -479,7 +479,9 @@ render_table() {
   if (( newest > 0 )); then
     limits="$(limit_part 5h "$l5" "$l5at")"
     [[ -n "$l7" ]] && limits="${limits:+$limits · }$(limit_part 7d "$l7" "$l7at")"
-    printf 'Limits: %s · as of %s\n' "$limits" "$(date -r "$newest" +%H:%M)"
+    # BSD date takes -r <epoch>; GNU date (CI) reads -r as a file and wants -d @<epoch>.
+    printf 'Limits: %s · as of %s\n' "$limits" \
+      "$(date -r "$newest" +%H:%M 2>/dev/null || date -d "@$newest" +%H:%M 2>/dev/null)"
   else
     printf 'Limits: no reading yet\n'
   fi

@@ -286,6 +286,8 @@ check "blocked row carries branch" "yes" "$(has "$rows" 'bb-391')"
 check "task drops the title glyph" "no" "$(has "$rows" '✳')"
 check "header counts the blocked pane" "yes" "$(has "$table" '· 1 need you ·')"
 check "limits come from the newest reading" "yes" "$(has "$table" 'Limits: 5h 5% (resets 3h) · 7d 3% (resets 5d)')"
+check "limits carry the reading's clock time" "yes" \
+  "$(if printf '%s\n' "$table" | grep -qE '^Limits: .* as of [0-9]{2}:[0-9]{2}$'; then echo yes; else echo no; fi)"
 # spaced session name and a pane with no reading must keep columns aligned
 idle_row="$(printf '%s\n' "$rows" | grep -F 'idle task')"
 blocked_row="$(printf '%s\n' "$rows" | grep -F 'blocked task')"
