@@ -31,6 +31,7 @@ Follows PR #74 (ORG/LOCK columns, merged). Adds a numbered queue (`wait 1`, `wai
 - **Commits 1 and 2 merged into one.** The suite tests only through `table`, and `wait_rows` has no visible effect without the wiring. A debug subcommand just to split them wasn't worth it.
 - **The "dropped" checks were vacuous at first.** They grepped for session names the table never prints for pane-tagged waits. Mutation runs (cutoff, live-pane, close-on-CLAIM and sort each disabled) showed that. Each check now fails under exactly its own mutation.
 - **The existing "missing org-lock drops the columns" check now also points the log at a missing file.** With waits present, the columns showing is correct.
+- **Legacy lines resolve through the agent name.** In practice a wait with no `pane=` still sat on the `Locks:` line. `~/.claude/sessions/<pid>.json` holds each live session's agent name and pane, and the logged name is that agent name, sometimes minus its two-character suffix (bb-624 is bb-624-7b on %212, confirmed by the pid tree). Matching exactly, or by suffix when only one agent fits, placed 3 of 4 live waits. The fourth, bb-741-job-setting-rest, matches no live session and reads `(no session)`.
 - **`pane=` adoption started within minutes.** firstuser-avail logged `RELEASE`/`ACTUAL` with `pane=%226` at 09:39.
 
 ## Done already (outside this repo)
