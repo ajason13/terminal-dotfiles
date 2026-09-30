@@ -12,6 +12,20 @@ TMUX_LLM_STATE_HOME="$test_home/state"
 export TMUX_LLM_STATE_HOME
 trap 'rm -rf "$test_home"' EXIT
 
+# Every run records notifications instead of raising them, and never asks the live
+# tmux server where a pane is: a stub answers with a fixed session and window.
+fake_bin="$test_home/bin"
+mkdir -p "$fake_bin"
+NOTIFY_LOG="$test_home/notify.log"
+: > "$NOTIFY_LOG"
+cat > "$fake_bin/record-notify" <<REC
+#!/usr/bin/env bash
+printf '%s\x1f%s\n' "\$1" "\$2" >> "$NOTIFY_LOG"
+REC
+printf '#!/usr/bin/env bash\nprintf "Sess › Win\\n"\n' > "$fake_bin/tmux"
+chmod +x "$fake_bin/record-notify" "$fake_bin/tmux"
+export PATH="$fake_bin:$PATH" TMUX_LLM_NOTIFY_CMD="$fake_bin/record-notify"
+
 failures=0
 check() {
   local label="$1" want="$2" got="$3"
@@ -206,6 +220,36 @@ check "lead stop clears blocked" "clear" "$(needs_state)"
 fire_notification permission_prompt
 fire_lead SessionEnd
 check "session end clears blocked" "clear" "$(needs_state)"
+
+# --- a newly parked pane raises one desktop notification -----------------------
+# The notifier runs in the background, so wait for it rather than racing it.
+notified() {
+  local n
+  for (( n = 0; n < 40; n++ )); do
+    (( $(grep -c . "$NOTIFY_LOG") >= $1 )) && break
+    sleep 0.05
+  done
+  sleep 0.2
+  grep -c . "$NOTIFY_LOG" || true
+}
+fire_message() {
+  jq -nc --arg t "$1" --arg m "$2" '{hook_event_name:"Notification",notification_type:$t,message:$m}' \
+    | TMUX_PANE=%9 "$hook"
+}
+: > "$NOTIFY_LOG"
+fire_message permission_prompt 'Claude needs your permission to use "Bash"'
+check "a new prompt notifies once" "1" "$(notified 1)"
+check "the title names the session and window" "Claude needs you · Sess › Win" "$(cut -d$'\x1f' -f1 "$NOTIFY_LOG")"
+check "the body is Claude's message, quotes intact" 'Claude needs your permission to use "Bash"' \
+  "$(cut -d$'\x1f' -f2 "$NOTIFY_LOG")"
+fire_message elicitation_dialog 'A question'
+check "a second prompt while parked does not notify again" "1" "$(notified 2)"
+fire_lead PostToolBatch
+fire_message idle_prompt 'Claude is waiting for your input'
+check "an idle prompt does not notify" "1" "$(notified 2)"
+TMUX_LLM_NOTIFY=0 fire_message permission_prompt 'muted'
+check "TMUX_LLM_NOTIFY=0 mutes it" "1" "$(notified 2)"
+fire_lead PostToolBatch
 
 # --- one subagent's tool batch must not clear another subagent's prompt ------
 printf '{"hook_event_name":"Notification","notification_type":"permission_prompt","agent_id":"a1"}' \

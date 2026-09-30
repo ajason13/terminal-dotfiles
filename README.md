@@ -19,6 +19,11 @@ terminal backgrounds.
 - `Ctrl-a` is the tmux prefix.
 - `Ctrl-a \` splits horizontally and `Ctrl-a -` splits vertically.
 - `Ctrl-a h/j/k/l` moves between panes.
+- `Ctrl-a P` copies the current pane's whole scrollback to the clipboard. While a
+  pane is scrolled back, the status bar shows `SCROLLBACK` until `q` returns you to
+  typing.
+- A Claude pane that parks on a permission prompt or question raises a macOS
+  notification naming its session and window (`TMUX_LLM_NOTIFY=0` mutes it).
 - `Ctrl-a A` opens the agent table: every LLM pane across sessions, blocked
   first, by window name, with ctx, model, project, branch and account limits;
   one key jumps there, `r` redraws, `t` flips to tree order (grouped by
