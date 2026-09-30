@@ -36,6 +36,10 @@ FAKE
 printf '#!/usr/bin/env node\nsetTimeout(() => {}, 600000);\n' > "$fake_bin/playwright"
 chmod +x "$fake_bin/org-lock" "$fake_bin/playwright"
 export FAKE_LOCKS TMUX_LLM_ORG_LOCK="$fake_bin/org-lock" SCRATCH_POOL_LOCK_DIR="$test_home/no-locks"
+# Absent until a test writes it, so the real announce log is never read.
+TMUX_LLM_ANNOUNCE_LOG="$test_home/announce.log"
+TMUX_LLM_CLAUDE_SESSIONS="$test_home/claude-sessions"
+export TMUX_LLM_ANNOUNCE_LOG TMUX_LLM_CLAUDE_SESSIONS
 
 agent_dir_for() {
   local id
@@ -441,7 +445,8 @@ t -f /dev/null new-window -d -t 'E2E - Org:' -n e2e "env SF_ORG_ALIAS=canarys $f
 t -f /dev/null new-window -d -t 'E2E - Org:' -n bystander 'sleep 600'
 t -f /dev/null new-window -d -t 'E2E - Org:' -n drifted "sh -c 'sleep 600 & wait'"
 t -f /dev/null new-window -d -t 'E2E - Org:' -n plain "sh -c 'sleep 600 & wait'"
-for w in holder waiter e2e bystander drifted; do t select-pane -t "E2E - Org:$w" -T "✳ $w"; done
+for w in qa qb qc qd qe qf qg; do t -f /dev/null new-window -d -t 'E2E - Org:' -n "$w" 'sleep 600'; done
+for w in holder waiter e2e bystander drifted qa qb qc qd qe qf qg; do t select-pane -t "E2E - Org:$w" -T "✳ $w"; done
 t select-pane -t 'E2E - Org:plain' -T 'zsh'
 child_of() {  # window -> its pane's sleep child, once it has started
   local pp kid n
@@ -466,6 +471,31 @@ cat > "$FAKE_LOCKS" <<JSON
  {"alias":"old-org","pid":999999,"status":"stale"},
  {"alias":"devorg","pid":$plain_pid,"status":"live"}]
 JSON
+pane_of() { t display-message -p -t "E2E - Org:$1" '#{pane_id}'; }
+ts_ago() { date -v-"$1"M +%FT%T 2>/dev/null || date -d "$1 minutes ago" +%FT%T; }
+# qd waits first and re-logs last: an update keeps its place. qb's P1 jumps the P2s.
+# Claude's own session records: the agent name a legacy WAIT line uses, and its pane.
+mkdir -p "$TMUX_LLM_CLAUDE_SESSIONS"
+printf '{"pid":%s,"name":"legacy-sess-3f","tmux":"E2E - Org:@1.%s"}\n' "$$" "$(pane_of qg)" \
+  > "$TMUX_LLM_CLAUDE_SESSIONS/1.json"
+printf '{"pid":999999,"name":"phantom-sess","tmux":"E2E - Org:@1.%s"}\n' "$(pane_of bystander)" \
+  > "$TMUX_LLM_CLAUDE_SESSIONS/2.json"
+cat > "$TMUX_LLM_ANNOUNCE_LOG" <<LOG
+2020-01-01T00:00:00 WAIT canarys ancient pane=$(pane_of bystander) P1 long gone
+$(ts_ago 800) WAIT canarys qf-sess pane=$(pane_of qf) P2 yesterday, then silent
+$(ts_ago 60) WAIT canarys qc-sess pane=$(pane_of qc) P1 then claimed
+$(ts_ago 55) CLAIM canarys qc-sess pane=$(pane_of qc) P1 ~5m
+$(ts_ago 50) WAIT canarys qd-sess pane=$(pane_of qd) P2 first in line
+$(ts_ago 45) NOTE canarys qa-sess pane=$(pane_of qa) not a wait
+$(ts_ago 40) WAIT canarys qa-sess pane=$(pane_of qa) P2 ~10m
+$(ts_ago 35) WAIT canarys gone-sess pane=%99999 P1 pane closed
+$(ts_ago 30) WAIT canarys legacy-sess P2 no pane logged
+$(ts_ago 25) WAIT canarys phantom-sess P2 no pane, no live session
+$(ts_ago 10) WAIT canarys qb-sess pane=$(pane_of qb) P1 restoring the daily
+$(ts_ago 5) WAIT canarys qd-sess pane=$(pane_of qd) P2 UPDATE supersedes
+$(ts_ago 2) WAIT canarys qf-sess pane=$(pane_of qf) P2 back today
+$(ts_ago 3) WAIT scratch1 qe-sess pane=$(pane_of qe) P3 nobody holds it
+LOG
 org_table="$(COLUMNS=200 "$bin" table)"
 # Squeezed, because ORG pads every alias to the longest one.
 org_row() { grep -E "^. +$1 " <<< "$org_table" | tr -s ' ' | sed -E 's/ $//'; }
@@ -483,13 +513,32 @@ check "a holder outside every pane is in the header" "yes" \
 check "a stale lock is in the header" "yes" "$(has "$org_table" 'old-org stale, pid 999999 gone')"
 check "a holder in a non-agent pane is in the header" "yes" \
   "$(has "$org_table" "devorg held by pid $plain_pid, in a non-agent pane")"
+check "a P1 waiter is first in line" "yes" "$(ends "$(org_row qb)" 'canarys wait 1')"
+check "a re-logged WAIT keeps its place" "yes" "$(ends "$(org_row qd)" 'canarys wait 2')"
+check "a later P2 waiter queues behind it" "yes" "$(ends "$(org_row qa)" 'canarys wait 3')"
+check "a wait revived after the cutoff joins the back" "yes" "$(ends "$(org_row qf)" 'canarys wait 6')"
+check "a WAIT followed by CLAIM is no longer waiting" "yes" "$(ends "$(org_row qc)" ' - -')"
+# A leaked wait shows on the pane it names, or in the header when no row owns it.
+check "a wait older than the cutoff is dropped" "yes" "$(ends "$(org_row bystander)" ' - -')"
+check "a wait from a closed pane is dropped" "no" \
+  "$(if grep -qE 'canarys wait [0-9]+, in a non-agent pane' <<< "$org_table"; then echo yes; else echo no; fi)"
+check "a wait with no pane lands on its session's row" "yes" "$(ends "$(org_row qg)" 'canarys wait 4')"
+check "a wait naming no live agent is unmatched in the header" "yes" \
+  "$(has "$org_table" 'phantom-sess wait 5 on canarys (unmatched)')"
+check "an unheld org with waiters says it is free" "yes" "$(has "$org_table" 'scratch1 free, 1 waiting')"
+check "a waiter on an unheld org is numbered" "yes" "$(ends "$(org_row qe)" 'scratch1 wait 1')"
 longest=0
 while IFS= read -r line; do (( ${#line} <= longest )) || longest=${#line}; done < <(COLUMNS=100 "$bin" table | table_rows)
 check "org columns still fit a narrow terminal" "yes" "$(if (( longest <= 100 )); then echo yes; else echo no; fi)"
-no_lock="$(TMUX_LLM_ORG_LOCK="$test_home/no-such-org-lock" COLUMNS=200 "$bin" table)"
+no_lock="$(TMUX_LLM_ORG_LOCK="$test_home/no-such-org-lock" TMUX_LLM_ANNOUNCE_LOG="$test_home/no-log" \
+  COLUMNS=200 "$bin" table)"
 check "a missing org-lock drops the org columns" "no" "$(has "$no_lock" 'LOCK')"
 check "a missing org-lock keeps the rows" "yes" "$(if grep -qE '^. +holder ' <<< "$no_lock"; then echo yes; else echo no; fi)"
 printf '[]\n' > "$FAKE_LOCKS"
+waits_only="$(COLUMNS=200 "$bin" table)"
+check "waits alone show the org columns" "yes" "$(has "$waits_only" 'LOCK')"
+check "waits alone put a free org in the header" "yes" "$(has "$waits_only" 'canarys free, 6 waiting')"
+rm -f "$TMUX_LLM_ANNOUNCE_LOG"
 no_held="$(COLUMNS=200 "$bin" table)"
 check "no locks means no org columns" "no" "$(has "$no_held" 'LOCK')"
 check "no locks means no Locks line" "no" "$(has "$no_held" 'Locks:')"

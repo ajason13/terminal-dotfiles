@@ -28,8 +28,11 @@ terminal backgrounds.
   first, by window name, with ctx, model, project, branch and account limits;
   one key jumps there, `r` redraws, `t` flips to tree order (grouped by
   session, as in `Ctrl-a s`, whose rows now carry the same agent markers).
-  While org-lock holds an org, ORG and LOCK show which pane holds it (`held`)
-  or waits on it (`queued`).
+  While org-lock holds an org or the announce log has a `WAIT`, ORG and LOCK
+  show which pane holds it (`held`) and each waiter's place (`wait N`, by tier
+  then arrival, keyed by the line's `pane=$TMUX_PANE`, else by the session's
+  agent name). The place is the
+  agreed order, not a reservation: first to claim still wins.
   `tmux-llm-status table` prints the same view once.
 - `Ctrl-a s` picks a session, `Ctrl-a S` creates one (prompts for a name, starts
   in the current pane's directory), `Ctrl-a $` renames the current one.
