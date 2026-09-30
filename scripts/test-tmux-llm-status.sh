@@ -538,6 +538,11 @@ printf '[]\n' > "$FAKE_LOCKS"
 waits_only="$(COLUMNS=200 "$bin" table)"
 check "waits alone show the org columns" "yes" "$(has "$waits_only" 'LOCK')"
 check "waits alone put a free org in the header" "yes" "$(has "$waits_only" 'canarys free, 6 waiting')"
+# An unreadable lock state must never read as free: "free" is the go-ahead signal.
+unknown="$(TMUX_LLM_ORG_LOCK="$test_home/no-such-org-lock" COLUMNS=200 "$bin" table)"
+check "a missing org-lock never calls a waited-on org free" "no" "$(has "$unknown" 'canarys free')"
+check "a missing org-lock says the lock state is unknown" "yes" \
+  "$(has "$unknown" 'canarys lock unknown (org-lock unavailable), 6 waiting')"
 rm -f "$TMUX_LLM_ANNOUNCE_LOG"
 no_held="$(COLUMNS=200 "$bin" table)"
 check "no locks means no org columns" "no" "$(has "$no_held" 'LOCK')"

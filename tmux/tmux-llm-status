@@ -483,11 +483,12 @@ project_of() {
 
 ORG_LOCK_BIN="${TMUX_LLM_ORG_LOCK:-org-lock}"
 
-# Locks as "alias<TAB>pid<TAB>status"; nothing when org-lock or jq is missing or fails.
+# Locks as "alias<TAB>pid<TAB>status"; returns 1 when org-lock or jq is missing or fails.
 lock_rows() {
-  command -v "$ORG_LOCK_BIN" >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || return 0
-  "$ORG_LOCK_BIN" list --json 2>/dev/null \
-    | jq -r '.[] | [.alias, (.pid | tostring), .status] | @tsv' 2>/dev/null || true
+  local json
+  command -v "$ORG_LOCK_BIN" >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || return 1
+  json="$("$ORG_LOCK_BIN" list --json 2>/dev/null)" || return 1
+  jq -r '.[] | [.alias, (.pid | tostring), .status] | @tsv' <<< "$json" 2>/dev/null || return 1
 }
 
 # Locks onto panes as "pane_id<TAB>alias<TAB>lock<TAB>pid", holders first; pane "-" when
@@ -688,7 +689,8 @@ render_table() {  # [tree]
   # ORG and LOCK exist only while org-lock reports a lock or the log a wait: no idle pane
   # names its org.
   ORG_ROWS=''
-  locks="$(lock_rows)"
+  locks_known=1
+  locks="$(lock_rows)" || locks_known=0
   if [[ -n "$locks" || -r "$ANNOUNCE_LOG" ]]; then
     all_panes="$(tmux_cmd list-panes -a -F '#{pane_id}	#{pane_pid}' 2>/dev/null || true)"
     [[ -z "$locks" ]] || ORG_ROWS="$(org_rows "$locks" "$all_panes")"
@@ -702,7 +704,9 @@ render_table() {  # [tree]
       # A holder or waiter with no agent row would be invisible, and it is the one that
       # surprises you.
       [[ "$l" == queued || "$row_panes" == *" $p "* ]] && continue
-      if [[ "$l" == free ]]; then held="$a free, $hp waiting"
+      # With no lock reading, "free" only means no holder was seen - the go-ahead a peer acts on.
+      if [[ "$l" == free && "$locks_known" == 0 ]]; then held="$a lock unknown (org-lock unavailable), $hp waiting"
+      elif [[ "$l" == free ]]; then held="$a free, $hp waiting"
       elif [[ "$l" == wait* && "$p" == - ]]; then held="$hp $l on $a ($why)"
       elif [[ "$l" == wait* ]]; then held="$a $l, in a non-agent pane"
       elif [[ "$l" == stale ]]; then held="$a stale, pid $hp gone"
