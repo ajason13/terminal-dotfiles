@@ -536,6 +536,70 @@ org_rows() {  # lock_rows output, "pane_id<TAB>pane_pid" lines
     }'
 }
 
+ANNOUNCE_LOG="${TMUX_LLM_ANNOUNCE_LOG:-/tmp/e2e-scratch-pool/announce.log}"
+
+# Sessions queue by logging WAIT, not by running a process, so the order lives in the
+# announce log: "pane<TAB>alias<TAB>wait N<TAB>-", pane "-" plus session when none was logged,
+# and "-<TAB>alias<TAB>free<TAB>count" for an unheld org. Tier first, then first WAIT.
+wait_rows() {  # org_rows output, live "pane_id<TAB>pane_pid" lines
+  [[ -r "$ANNOUNCE_LOG" ]] || return 0
+  local cutoff
+  # BSD date takes -v; GNU date (CI) wants -d.
+  cutoff="$(date -v-12H +%FT%T 2>/dev/null || date -d '12 hours ago' +%FT%T 2>/dev/null)" || return 0
+  tail -n 2000 "$ANNOUNCE_LOG" 2>/dev/null | awk -v held="${1//$'\n'/;}" -v panes="${2//$'\n'/;}" \
+    -v cutoff="$cutoff" '
+    BEGIN {
+      n = split(panes, pl, ";"); for (i = 1; i <= n; i++) { split(pl[i], f, "\t"); live[f[1]] = 1 }
+      n = split(held, hl, ";")
+      for (i = 1; i <= n; i++) {
+        split(hl[i], f, "\t")
+        if (f[3] == "held" || f[3] == "held?") { holds[f[1], f[2]] = 1; taken[f[2]] = 1 }
+      }
+    }
+    $2 !~ /^(CLAIM|WAIT|RELEASE|ACTUAL)$/ || NF < 4 { next }
+    {
+      pane = ""; tier = ""
+      for (i = 5; i <= NF; i++) {
+        if (pane == "" && $i ~ /^pane=%[0-9]+$/) pane = substr($i, 6)
+        else if (tier == "" && $i ~ /^P[0-3]$/) tier = $i
+      }
+      # One open wait per session and alias; a later line naming either the pane or the
+      # session is the same waiter. One silent past the cutoff was dead and keeps no place.
+      k = ""
+      for (j = 1; j <= nw; j++) if (open[j] && last[j] < cutoff) open[j] = 0
+      for (j = 1; j <= nw; j++)
+        if (open[j] && alias[j] == $3 && ((pane != "" && wpane[j] == pane) || sess[j] == $4)) { k = j; break }
+      if ($2 != "WAIT") { if (k != "") open[k] = 0; next }
+      if (k == "") { k = ++nw; open[k] = 1; alias[k] = $3; sess[k] = $4; since[k] = $1; rank[k] = 4 }
+      if (pane != "") wpane[k] = pane
+      if (tier != "") rank[k] = substr(tier, 2)
+      last[k] = $1
+    }
+    END {
+      for (j = 1; j <= nw; j++) {
+        if (!open[j] || last[j] < cutoff) continue
+        if (wpane[j] != "" && (!(wpane[j] in live) || ((wpane[j], alias[j]) in holds))) continue
+        a = alias[j]; c = ++count[a]; q[a, c] = j
+        if (c == 1) order[++na] = a
+      }
+      for (x = 1; x <= na; x++) {
+        a = order[x]
+        # Insertion sort: tier, then first WAIT, then log order. A queue is a handful of lines.
+        for (i = 2; i <= count[a]; i++) {
+          j = q[a, i]; key = rank[j] " " since[j]
+          for (m = i - 1; m >= 1 && rank[q[a, m]] " " since[q[a, m]] > key; m--) q[a, m + 1] = q[a, m]
+          q[a, m + 1] = j
+        }
+        if (!(a in taken)) print "-\t" a "\tfree\t" count[a]
+        for (i = 1; i <= count[a]; i++) {
+          j = q[a, i]
+          if (wpane[j] != "") print wpane[j] "\t" a "\twait " i "\t-"
+          else print "-\t" a "\twait " i "\t" sess[j]
+        }
+      }
+    }'
+}
+
 # One pane's ORG and LOCK from org_rows; the first line wins, so held beats queued.
 org_of() {
   local p a l
@@ -558,7 +622,7 @@ render_table() {  # [tree]
   local -a rows=() names=() targets=() projects=()
   local row rank age pane_id name state agents pane_pid path session tree title i=0 key label ctx
   local need=0 work=0 subs=0 newest=0 l5='' l5at='' l7='' l7at='' limits target_w=6 project_w=7 branch_w=6
-  local locks org_w=0 lock_w=0 branch_pad=0 row_panes=' ' held p a l hp locks_note=''
+  local locks org_w=0 lock_w=0 branch_pad=0 row_panes=' ' held p a l hp locks_note='' all_panes waits
   local cols="${COLUMNS:-$(term_cols)}"
   TABLE_PANES=()
   refresh_now
@@ -594,17 +658,27 @@ render_table() {  # [tree]
   (( project_w <= 22 )) || project_w=22
   (( branch_w <= 40 )) || branch_w=40
 
-  # ORG and LOCK exist only while org-lock reports a lock: no idle pane names its org.
+  # ORG and LOCK exist only while org-lock reports a lock or the log a wait: no idle pane
+  # names its org.
   ORG_ROWS=''
   locks="$(lock_rows)"
-  if [[ -n "$locks" ]]; then
-    ORG_ROWS="$(org_rows "$locks" "$(tmux_cmd list-panes -a -F '#{pane_id}	#{pane_pid}' 2>/dev/null || true)")"
-    org_w=3 lock_w=6 branch_pad=1
+  if [[ -n "$locks" || -r "$ANNOUNCE_LOG" ]]; then
+    all_panes="$(tmux_cmd list-panes -a -F '#{pane_id}	#{pane_pid}' 2>/dev/null || true)"
+    [[ -z "$locks" ]] || ORG_ROWS="$(org_rows "$locks" "$all_panes")"
+    waits="$(wait_rows "$ORG_ROWS" "$all_panes")"
+    [[ -z "$waits" ]] || ORG_ROWS="${ORG_ROWS:+$ORG_ROWS$'\n'}$waits"
+  fi
+  if [[ -n "$ORG_ROWS" ]]; then
+    org_w=3 lock_w=7 branch_pad=1
     while IFS=$'\t' read -r p a l hp; do
       (( ${#a} <= org_w )) || org_w=${#a}
-      # A holder with no agent row would be invisible, and it is the one that surprises you.
+      # A holder or waiter with no agent row would be invisible, and it is the one that
+      # surprises you.
       [[ "$l" == queued || "$row_panes" == *" $p "* ]] && continue
-      if [[ "$l" == stale ]]; then held="$a stale, pid $hp gone"
+      if [[ "$l" == free ]]; then held="$a free, $hp waiting"
+      elif [[ "$l" == wait* && "$p" == - ]]; then held="$hp $l on $a (no pane)"
+      elif [[ "$l" == wait* ]]; then held="$a $l, in a non-agent pane"
+      elif [[ "$l" == stale ]]; then held="$a stale, pid $hp gone"
       elif [[ "$p" == - ]]; then held="$a $l by pid $hp, not in a pane"
       else held="$a $l by pid $hp, in a non-agent pane"; fi
       locks_note="${locks_note:+$locks_note · }$held"
