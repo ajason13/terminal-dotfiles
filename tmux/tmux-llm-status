@@ -481,7 +481,8 @@ project_of() {
   PROJECT="${PROJECT##*/}"
 }
 
-ORG_LOCK_BIN="${TMUX_LLM_ORG_LOCK:-org-lock}"
+# tmux's global PATH omits ~/.local/bin, where org-lock installs, so the popup fell back to "free".
+ORG_LOCK_BIN="${TMUX_LLM_ORG_LOCK:-$(command -v org-lock 2>/dev/null || printf '%s' "${HOME:-}/.local/bin/org-lock")}"
 
 # Locks as "alias<TAB>pid<TAB>status"; returns 1 when org-lock or jq is missing or fails.
 lock_rows() {

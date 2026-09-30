@@ -543,6 +543,17 @@ unknown="$(TMUX_LLM_ORG_LOCK="$test_home/no-such-org-lock" COLUMNS=200 "$bin" ta
 check "a missing org-lock never calls a waited-on org free" "no" "$(has "$unknown" 'canarys free')"
 check "a missing org-lock says the lock state is unknown" "yes" \
   "$(has "$unknown" 'canarys lock unknown (org-lock unavailable), 6 waiting')"
+# tmux's global PATH omits ~/.local/bin, where org-lock is installed.
+mkdir -p "$test_home/.local/bin"
+cp "$fake_bin/org-lock" "$test_home/.local/bin/org-lock"
+printf '[{"alias":"canarys","pid":%s,"status":"live"}]\n' "$outside_pid" > "$FAKE_LOCKS"
+home_bin="$(
+  unset TMUX_LLM_ORG_LOCK
+  HOME="$test_home" PATH="/usr/bin:/bin:$(dirname "$(command -v tmux)"):$(dirname "$(command -v jq)")" \
+    COLUMNS=200 "$bin" table
+)"
+check "org-lock is found in ~/.local/bin off PATH" "yes" "$(has "$home_bin" "canarys held by pid $outside_pid, not in a pane")"
+printf '[]\n' > "$FAKE_LOCKS"
 rm -f "$TMUX_LLM_ANNOUNCE_LOG"
 no_held="$(COLUMNS=200 "$bin" table)"
 check "no locks means no org columns" "no" "$(has "$no_held" 'LOCK')"
