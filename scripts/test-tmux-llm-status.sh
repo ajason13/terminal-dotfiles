@@ -474,7 +474,7 @@ cat > "$FAKE_LOCKS" <<JSON
  {"alias":"canaryp","pid":$outside_pid,"status":"live"},
  {"alias":"old-org","pid":999999,"status":"stale"},
  {"alias":"devorg","pid":$plain_pid,"status":"live"},
- {"alias":"scratchx","pid":$parked_pid,"status":"live"}]
+ {"alias":"qa.pack.prod-early.n-1","pid":$parked_pid,"status":"live"}]
 JSON
 pane_of() { t display-message -p -t "E2E - Org:$1" '#{pane_id}'; }
 ts_ago() { date -v-"$1"M +%FT%T 2>/dev/null || date -d "$1 minutes ago" +%FT%T; }
@@ -521,7 +521,9 @@ check "a stale lock is in the header" "yes" "$(has "$org_table" 'old-org stale, 
 check "a holder in a non-agent pane is in the header" "yes" \
   "$(has "$org_table" "devorg held by pid $plain_pid, in a non-agent pane")"
 check "a parked session's pane is a row, found by its session record" "yes" \
-  "$(ends "$(org_row parked)" 'scratchx held')"
+  "$(ends "$(org_row parked)" 'qa.pack.prod-early.n-1 held')"
+check "a 22-char qa.pack alias fits ORG untruncated when wide" "yes" \
+  "$(has "$org_table" ' qa.pack.prod-early.n-1 held')"
 check "a P1 waiter is first in line" "yes" "$(ends "$(org_row qb)" 'canarys wait 1')"
 check "a re-logged WAIT keeps its place" "yes" "$(ends "$(org_row qd)" 'canarys wait 2')"
 check "a later P2 waiter queues behind it" "yes" "$(ends "$(org_row qa)" 'canarys wait 3')"
@@ -539,6 +541,9 @@ check "a waiter on an unheld org is numbered" "yes" "$(ends "$(org_row qe)" 'scr
 longest=0
 while IFS= read -r line; do (( ${#line} <= longest )) || longest=${#line}; done < <(COLUMNS=100 "$bin" table | table_rows)
 check "org columns still fit a narrow terminal" "yes" "$(if (( longest <= 100 )); then echo yes; else echo no; fi)"
+# A squeezed alias keeps both ends: qa.pack.prod-early.n and .n-1 differ only in the tail.
+check "a squeezed ORG keeps the alias head and tail" "yes" \
+  "$(has "$(COLUMNS=100 "$bin" table | table_rows)" 'qa.pa~ly.n-1 held')"
 no_lock="$(TMUX_LLM_ORG_LOCK="$test_home/no-such-org-lock" TMUX_LLM_ANNOUNCE_LOG="$test_home/no-log" \
   COLUMNS=200 "$bin" table)"
 check "a missing org-lock drops the org columns" "no" "$(has "$no_lock" 'LOCK')"

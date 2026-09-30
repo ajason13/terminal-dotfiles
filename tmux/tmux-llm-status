@@ -721,16 +721,23 @@ render_table() {  # [tree]
       else held="$a $l by pid $hp, in a non-agent pane"; fi
       locks_note="${locks_note:+$locks_note · }$held"
     done <<< "$ORG_ROWS"
-    (( org_w <= 16 )) || org_w=16
+    # qa.pack.* aliases run to 22.
+    (( org_w <= 24 )) || org_w=24
   fi
   # 39 = KEY, STATE, AGE, AG, CTX, MODEL and the gaps between all nine columns.
-  local fixed=$(( 39 + project_w + branch_w ))
+  local fixed=$(( 39 + project_w + branch_w )) give
   (( org_w == 0 )) || fixed=$(( fixed + 2 + org_w + lock_w ))
   # A long BRANCH gives width back, down to 16, before TARGET drops below 24.
   if (( cols - fixed < 24 && branch_w > 16 )); then
-    local give=$(( 24 - (cols - fixed) ))
+    give=$(( 24 - (cols - fixed) ))
     (( give <= branch_w - 16 )) || give=$(( branch_w - 16 ))
     branch_w=$(( branch_w - give )) fixed=$(( fixed - give ))
+  fi
+  # Then a long ORG, down to 12.
+  if (( cols - fixed < 24 && org_w > 12 )); then
+    give=$(( 24 - (cols - fixed) ))
+    (( give <= org_w - 12 )) || give=$(( org_w - 12 ))
+    org_w=$(( org_w - give )) fixed=$(( fixed - give ))
   fi
   # BRANCH is padded only when ORG and LOCK follow it.
   (( branch_pad == 0 )) || branch_pad=$branch_w
@@ -775,6 +782,10 @@ render_table() {  # [tree]
       "${META_MODEL:--}" "$PROJECT" "$branch_pad" "$branch_w" "${META_BRANCH:--}"
     if (( org_w > 0 )); then
       org_of "$pane_id"
+      # Cut from the middle: sibling aliases differ at both ends (qa.pack vs qa.dev, .n vs .n-1).
+      if (( ${#ORG} > org_w )); then
+        ORG="${ORG:0:$(( (org_w - 1) / 2 ))}~${ORG: -$(( org_w - 1 - (org_w - 1) / 2 ))}"
+      fi
       pad ORG "$ORG" "$org_w"
       printf ' %s %s' "$ORG" "$LOCK"
     fi
