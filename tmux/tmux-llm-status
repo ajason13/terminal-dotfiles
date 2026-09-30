@@ -43,6 +43,8 @@ is_llm_command() {
 }
 
 STATE_HOME="${TMUX_LLM_STATE_HOME:-${HOME:-}/.local/state/tmux-llm}"
+# Panes of live Claude sessions, " %1 %2 "; filled by collect_rows only.
+SESSION_PANES=' '
 
 # How long a busy marker stays believable without a heartbeat. `Stop` does not
 # fire when you interrupt a turn, so freshness - not mere existence - is what
@@ -193,6 +195,8 @@ classify_pane() {
   elif has_spinner_title "$title" || is_active_title "$title"; then PANE_STATE=active
   elif is_waiting_title "$title"; then PANE_STATE=waiting
   elif is_codex_title "$title" || is_claude_title "$title" || is_llm_command "${command##*/}"; then PANE_STATE=present
+  # A parked session drops the ✳ title; its session record still names the pane.
+  elif [[ "$SESSION_PANES" == *" $pane_id "* ]]; then PANE_STATE=present
   else PANE_STATE=none
   fi
 }
@@ -440,6 +444,8 @@ collect_rows() {  # [tree]
   local -a order=('-k1,1n' '-k2,2n')
   [[ "${1:-}" == tree ]] && order=('-k10,10n')
   refresh_now
+  # Once per render, not per pane: the one-second status path stays fork-free and title-only.
+  SESSION_PANES=" $(agent_panes | cut -f1 | tr '\n' ' ')"
   while IFS=$'\t' read -r pane_id pane_pid name activity command path session sid widx pidx title; do
     classify_pane "$pane_id" "$command" "${title:-}"
     case "$PANE_STATE" in
@@ -481,13 +487,15 @@ project_of() {
   PROJECT="${PROJECT##*/}"
 }
 
-ORG_LOCK_BIN="${TMUX_LLM_ORG_LOCK:-org-lock}"
+# tmux's global PATH omits ~/.local/bin, where org-lock installs, so the popup fell back to "free".
+ORG_LOCK_BIN="${TMUX_LLM_ORG_LOCK:-$(command -v org-lock 2>/dev/null || printf '%s' "${HOME:-}/.local/bin/org-lock")}"
 
-# Locks as "alias<TAB>pid<TAB>status"; nothing when org-lock or jq is missing or fails.
+# Locks as "alias<TAB>pid<TAB>status"; returns 1 when org-lock or jq is missing or fails.
 lock_rows() {
-  command -v "$ORG_LOCK_BIN" >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || return 0
-  "$ORG_LOCK_BIN" list --json 2>/dev/null \
-    | jq -r '.[] | [.alias, (.pid | tostring), .status] | @tsv' 2>/dev/null || true
+  local json
+  command -v "$ORG_LOCK_BIN" >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || return 1
+  json="$("$ORG_LOCK_BIN" list --json 2>/dev/null)" || return 1
+  jq -r '.[] | [.alias, (.pid | tostring), .status] | @tsv' <<< "$json" 2>/dev/null || return 1
 }
 
 # Locks onto panes as "pane_id<TAB>alias<TAB>lock<TAB>pid", holders first; pane "-" when
@@ -688,7 +696,8 @@ render_table() {  # [tree]
   # ORG and LOCK exist only while org-lock reports a lock or the log a wait: no idle pane
   # names its org.
   ORG_ROWS=''
-  locks="$(lock_rows)"
+  locks_known=1
+  locks="$(lock_rows)" || locks_known=0
   if [[ -n "$locks" || -r "$ANNOUNCE_LOG" ]]; then
     all_panes="$(tmux_cmd list-panes -a -F '#{pane_id}	#{pane_pid}' 2>/dev/null || true)"
     [[ -z "$locks" ]] || ORG_ROWS="$(org_rows "$locks" "$all_panes")"
@@ -702,7 +711,9 @@ render_table() {  # [tree]
       # A holder or waiter with no agent row would be invisible, and it is the one that
       # surprises you.
       [[ "$l" == queued || "$row_panes" == *" $p "* ]] && continue
-      if [[ "$l" == free ]]; then held="$a free, $hp waiting"
+      # With no lock reading, "free" only means no holder was seen - the go-ahead a peer acts on.
+      if [[ "$l" == free && "$locks_known" == 0 ]]; then held="$a lock unknown (org-lock unavailable), $hp waiting"
+      elif [[ "$l" == free ]]; then held="$a free, $hp waiting"
       elif [[ "$l" == wait* && "$p" == - ]]; then held="$hp $l on $a ($why)"
       elif [[ "$l" == wait* ]]; then held="$a $l, in a non-agent pane"
       elif [[ "$l" == stale ]]; then held="$a stale, pid $hp gone"
