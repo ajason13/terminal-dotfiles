@@ -43,6 +43,8 @@ is_llm_command() {
 }
 
 STATE_HOME="${TMUX_LLM_STATE_HOME:-${HOME:-}/.local/state/tmux-llm}"
+# Panes of live Claude sessions, " %1 %2 "; filled by collect_rows only.
+SESSION_PANES=' '
 
 # How long a busy marker stays believable without a heartbeat. `Stop` does not
 # fire when you interrupt a turn, so freshness - not mere existence - is what
@@ -193,6 +195,8 @@ classify_pane() {
   elif has_spinner_title "$title" || is_active_title "$title"; then PANE_STATE=active
   elif is_waiting_title "$title"; then PANE_STATE=waiting
   elif is_codex_title "$title" || is_claude_title "$title" || is_llm_command "${command##*/}"; then PANE_STATE=present
+  # A parked session drops the ✳ title; its session record still names the pane.
+  elif [[ "$SESSION_PANES" == *" $pane_id "* ]]; then PANE_STATE=present
   else PANE_STATE=none
   fi
 }
@@ -440,6 +444,8 @@ collect_rows() {  # [tree]
   local -a order=('-k1,1n' '-k2,2n')
   [[ "${1:-}" == tree ]] && order=('-k10,10n')
   refresh_now
+  # Once per render, not per pane: the one-second status path stays fork-free and title-only.
+  SESSION_PANES=" $(agent_panes | cut -f1 | tr '\n' ' ')"
   while IFS=$'\t' read -r pane_id pane_pid name activity command path session sid widx pidx title; do
     classify_pane "$pane_id" "$command" "${title:-}"
     case "$PANE_STATE" in

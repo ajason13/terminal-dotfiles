@@ -445,9 +445,12 @@ t -f /dev/null new-window -d -t 'E2E - Org:' -n e2e "env SF_ORG_ALIAS=canarys $f
 t -f /dev/null new-window -d -t 'E2E - Org:' -n bystander 'sleep 600'
 t -f /dev/null new-window -d -t 'E2E - Org:' -n drifted "sh -c 'sleep 600 & wait'"
 t -f /dev/null new-window -d -t 'E2E - Org:' -n plain "sh -c 'sleep 600 & wait'"
+t -f /dev/null new-window -d -t 'E2E - Org:' -n parked "sh -c 'sleep 600 & wait'"
 for w in qa qb qc qd qe qf qg; do t -f /dev/null new-window -d -t 'E2E - Org:' -n "$w" 'sleep 600'; done
 for w in holder waiter e2e bystander drifted qa qb qc qd qe qf qg; do t select-pane -t "E2E - Org:$w" -T "✳ $w"; done
 t select-pane -t 'E2E - Org:plain' -T 'zsh'
+# A parked Claude session (work moved to a background job) drops the ✳ from its title.
+t select-pane -t 'E2E - Org:parked' -T 'Decisions with recommended'
 child_of() {  # window -> its pane's sleep child, once it has started
   local pp kid n
   pp="$(t display-message -p -t "E2E - Org:$1" '#{pane_pid}')"
@@ -460,6 +463,7 @@ child_of() {  # window -> its pane's sleep child, once it has started
 holder_pid="$(child_of holder)"
 drifted_pid="$(child_of drifted)"
 plain_pid="$(child_of plain)"
+parked_pid="$(child_of parked)"
 # Detached from stdout, or a caller piping this suite waits the full 600s for EOF.
 sleep 600 >/dev/null 2>&1 &
 outside_pid=$!
@@ -469,7 +473,8 @@ cat > "$FAKE_LOCKS" <<JSON
  {"alias":"fe-automation","pid":$drifted_pid,"status":"unverified"},
  {"alias":"canaryp","pid":$outside_pid,"status":"live"},
  {"alias":"old-org","pid":999999,"status":"stale"},
- {"alias":"devorg","pid":$plain_pid,"status":"live"}]
+ {"alias":"devorg","pid":$plain_pid,"status":"live"},
+ {"alias":"scratchx","pid":$parked_pid,"status":"live"}]
 JSON
 pane_of() { t display-message -p -t "E2E - Org:$1" '#{pane_id}'; }
 ts_ago() { date -v-"$1"M +%FT%T 2>/dev/null || date -d "$1 minutes ago" +%FT%T; }
@@ -480,6 +485,8 @@ printf '{"pid":%s,"name":"legacy-sess-3f","tmux":"E2E - Org:@1.%s"}\n' "$$" "$(p
   > "$TMUX_LLM_CLAUDE_SESSIONS/1.json"
 printf '{"pid":999999,"name":"phantom-sess","tmux":"E2E - Org:@1.%s"}\n' "$(pane_of bystander)" \
   > "$TMUX_LLM_CLAUDE_SESSIONS/2.json"
+printf '{"pid":%s,"name":"parked-sess","tmux":"E2E - Org:@1.%s"}\n' "$$" "$(pane_of parked)" \
+  > "$TMUX_LLM_CLAUDE_SESSIONS/3.json"
 cat > "$TMUX_LLM_ANNOUNCE_LOG" <<LOG
 2020-01-01T00:00:00 WAIT canarys ancient pane=$(pane_of bystander) P1 long gone
 $(ts_ago 800) WAIT canarys qf-sess pane=$(pane_of qf) P2 yesterday, then silent
@@ -513,6 +520,8 @@ check "a holder outside every pane is in the header" "yes" \
 check "a stale lock is in the header" "yes" "$(has "$org_table" 'old-org stale, pid 999999 gone')"
 check "a holder in a non-agent pane is in the header" "yes" \
   "$(has "$org_table" "devorg held by pid $plain_pid, in a non-agent pane")"
+check "a parked session's pane is a row, found by its session record" "yes" \
+  "$(ends "$(org_row parked)" 'scratchx held')"
 check "a P1 waiter is first in line" "yes" "$(ends "$(org_row qb)" 'canarys wait 1')"
 check "a re-logged WAIT keeps its place" "yes" "$(ends "$(org_row qd)" 'canarys wait 2')"
 check "a later P2 waiter queues behind it" "yes" "$(ends "$(org_row qa)" 'canarys wait 3')"
