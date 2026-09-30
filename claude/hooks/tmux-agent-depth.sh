@@ -38,16 +38,29 @@ clear_needs_if_mine() {
   return 0
 }
 
+# A prompt parks its turn silently in whatever pane it is in, so say so outside tmux
+# too. Backgrounded: the hook has a 5s budget and must not wait on the notifier.
+notify() {  # title body
+  [[ "${TMUX_LLM_NOTIFY:-1}" != 0 ]] || return 0
+  if [[ -n "${TMUX_LLM_NOTIFY_CMD:-}" ]]; then
+    ("$TMUX_LLM_NOTIFY_CMD" "$1" "$2" </dev/null >/dev/null 2>&1 &)
+  elif command -v osascript >/dev/null 2>&1; then
+    # Passed as argv, never spliced into the script: the body is upstream text.
+    (osascript -e 'on run argv' -e 'display notification (item 2 of argv) with title (item 1 of argv)' \
+      -e 'end run' "$1" "$2" </dev/null >/dev/null 2>&1 &)
+  fi
+}
+
 payload="$(cat 2>/dev/null || true)"
-# One jq call for all five fields, joined on 0x1F not tab: `read` treats tab as
+# One jq call for all six fields, joined on 0x1F not tab: `read` treats tab as
 # IFS whitespace and collapses empty fields regardless of how IFS is set, which
 # would misparse an absent .source. Garbage payload -> jq fails silently -> no-op.
 # `subagent` is .agent_id alone, NOT the id fallback chain: it decides whether a
 # turn-ending event belongs to the lead, and a tool_use_id would answer that wrong.
-event="" agent="" source="" subagent="" ntype=""
-IFS=$'\x1f' read -r event agent source subagent ntype < <(
+event="" agent="" source="" subagent="" ntype="" message=""
+IFS=$'\x1f' read -r event agent source subagent ntype message < <(
   printf '%s' "$payload" | jq -r \
-    '[(.hook_event_name // ""), (.agent_id // .subagent_id // .tool_use_id // ""), (.source // ""), (.agent_id // ""), (.notification_type // "")] | join("\u001f")' \
+    '[(.hook_event_name // ""), (.agent_id // .subagent_id // .tool_use_id // ""), (.source // ""), (.agent_id // ""), (.notification_type // ""), ((.message // "") | gsub("[\n\u001f]"; " "))] | join("\u001f")' \
     2>/dev/null || true
 )
 
@@ -79,8 +92,14 @@ case "$event" in
     # Only prompts that park the turn count; idle_prompt fires for every finished session.
     case "$ntype" in
       permission_prompt | elicitation_dialog)
+        # Only a newly parked pane notifies, so a burst of prompts raises one alert.
+        fresh=1; [[ -f "$NEEDS_FILE" ]] && fresh=0
         mkdir -p "${NEEDS_FILE%/*}" 2>/dev/null || exit 0
         printf '%s\n' "$subagent" > "$NEEDS_FILE" 2>/dev/null || true
+        if (( fresh )); then
+          where="$(tmux display-message -p -t "$TMUX_PANE" '#{session_name} › #{window_name}' 2>/dev/null || true)"
+          notify "Claude needs you · ${where:-pane $TMUX_PANE}" "${message:-Waiting on a prompt}"
+        fi
         ;;
     esac
     ;;
