@@ -24,6 +24,15 @@ Follows PR #74 (ORG/LOCK columns, merged). Adds a numbered queue (`wait 1`, `wai
 | Queue rebuilt from the log (latest verb per session is WAIT, tier then time) | bg-96-drift P1, bb-391-06, bb-12, bb-624, plus 2 from yesterday. Matches bb-624's self-declared "behind firstuser-avail, bg-96-drift, bb-391-06, bb-12, bb-741". |
 | Log session names vs table rows | 3 of 5 waiters matched by name. That is why the convention now carries the pane. |
 
+## Corrected during the build
+
+- **All three decisions went with the recommendation** (2026-09-30).
+- **A wait silent past the cutoff keeps no place when revived.** The first build kept the first WAIT's time across a 14h gap. That put bb-741 (WAIT yesterday 19:35, again today 09:28) first, where bb-624's own list had it fourth. Expired waits now close during the scan, and the live order matches bb-624's list exactly.
+- **Commits 1 and 2 merged into one.** The suite tests only through `table`, and `wait_rows` has no visible effect without the wiring. A debug subcommand just to split them wasn't worth it.
+- **The "dropped" checks were vacuous at first.** They grepped for session names the table never prints for pane-tagged waits. Mutation runs (cutoff, live-pane, close-on-CLAIM and sort each disabled) showed that. Each check now fails under exactly its own mutation.
+- **The existing "missing org-lock drops the columns" check now also points the log at a missing file.** With waits present, the columns showing is correct.
+- **`pane=` adoption started within minutes.** firstuser-avail logged `RELEASE`/`ACTUAL` with `pane=%226` at 09:39.
+
 ## Done already (outside this repo)
 
 - `~/Apps/CLAUDE.md`: the example line carries `pane=$TMUX_PANE`, plus one comment line. Committed locally as `0f22346` (the repo has no remote). Other sessions' unstaged edits there were left alone.
