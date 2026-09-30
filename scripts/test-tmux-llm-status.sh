@@ -523,8 +523,8 @@ check "a wait older than the cutoff is dropped" "yes" "$(ends "$(org_row bystand
 check "a wait from a closed pane is dropped" "no" \
   "$(if grep -qE 'canarys wait [0-9]+, in a non-agent pane' <<< "$org_table"; then echo yes; else echo no; fi)"
 check "a wait with no pane lands on its session's row" "yes" "$(ends "$(org_row qg)" 'canarys wait 4')"
-check "a wait naming no live session is flagged in the header" "yes" \
-  "$(has "$org_table" 'phantom-sess wait 5 on canarys (no session)')"
+check "a wait naming no live agent is unmatched in the header" "yes" \
+  "$(has "$org_table" 'phantom-sess wait 5 on canarys (unmatched)')"
 check "an unheld org with waiters says it is free" "yes" "$(has "$org_table" 'scratch1 free, 1 waiting')"
 check "a waiter on an unheld org is numbered" "yes" "$(ends "$(org_row qe)" 'scratch1 wait 1')"
 longest=0

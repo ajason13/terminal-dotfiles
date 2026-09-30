@@ -555,7 +555,8 @@ agent_panes() {
 # Sessions queue by logging WAIT, not by running a process, so the order lives in the
 # announce log: "pane<TAB>alias<TAB>wait N<TAB>-", pane "-" plus session when none was logged,
 # and "-<TAB>alias<TAB>free<TAB>count" for an unheld org. Tier first, then first WAIT.
-# A line with no pane= finds its pane through the agent name the session logged.
+# A line with no pane= finds its pane through the agent name the session logged; a
+# hand-picked name finds none, which says nothing about whether that session is alive.
 wait_rows() {  # org_rows output, live "pane_id<TAB>pane_pid" lines, agent_panes output
   [[ -r "$ANNOUNCE_LOG" ]] || return 0
   local cutoff
@@ -602,7 +603,7 @@ wait_rows() {  # org_rows output, live "pane_id<TAB>pane_pid" lines, agent_panes
         if (wpane[j] == "") {
           s = sess[j]
           if (s in exact) pn = exact[s]; else if (nbase[s] == 1) pn = base[s]; else pn = ""
-          if (pn == "") why[j] = "no session"; else if (pn == "-") why[j] = "no pane"; else wpane[j] = pn
+          if (pn == "") why[j] = "unmatched"; else if (pn == "-") why[j] = "no pane"; else wpane[j] = pn
         }
         if (wpane[j] != "" && (!(wpane[j] in live) || ((wpane[j], alias[j]) in holds))) continue
         a = alias[j]; c = ++count[a]; q[a, c] = j
