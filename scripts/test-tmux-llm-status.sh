@@ -495,6 +495,8 @@ $(ts_ago 55) CLAIM canarys qc-sess pane=$(pane_of qc) P1 ~5m
 $(ts_ago 50) WAIT canarys qd-sess pane=$(pane_of qd) P2 first in line
 $(ts_ago 45) NOTE canarys qa-sess pane=$(pane_of qa) not a wait
 $(ts_ago 40) WAIT canarys qa-sess pane=$(pane_of qa) P2 ~10m
+$(ts_ago 39) INTENT - qa-sess pane=$(pane_of qa) pid=$$ - planning, no org yet
+$(ts_ago 38) RELEASE - qa-sess pane=$(pane_of qa) pid=$$ - closeout
 $(ts_ago 35) WAIT canarys gone-sess pane=%99999 P1 pane closed
 $(ts_ago 30) WAIT canarys legacy-sess P2 no pane logged
 $(ts_ago 25) WAIT canarys phantom-sess P2 no pane, no live session
@@ -528,6 +530,9 @@ check "a P1 waiter is first in line" "yes" "$(ends "$(org_row qb)" 'canarys wait
 check "a re-logged WAIT keeps its place" "yes" "$(ends "$(org_row qd)" 'canarys wait 2')"
 check "a later P2 waiter queues behind it" "yes" "$(ends "$(org_row qa)" 'canarys wait 3')"
 check "a wait revived after the cutoff joins the back" "yes" "$(ends "$(org_row qf)" 'canarys wait 6')"
+# Intent lines use "-" for the alias, so a session's closeout RELEASE never ends its real wait.
+check "an intent RELEASE leaves the same session's WAIT queued" "yes" "$(ends "$(org_row qa)" 'canarys wait 3')"
+check "an intent line opens no org queue" "no" "$(has "$org_table" ' - free')"
 check "a WAIT followed by CLAIM is no longer waiting" "yes" "$(ends "$(org_row qc)" ' - -')"
 # A leaked wait shows on the pane it names, or in the header when no row owns it.
 check "a wait older than the cutoff is dropped" "yes" "$(ends "$(org_row bystander)" ' - -')"
