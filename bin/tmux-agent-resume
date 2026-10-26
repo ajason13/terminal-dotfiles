@@ -10,12 +10,12 @@ command -v jq >/dev/null || exit 0
 
 # pane_id<TAB>session_id for each live interactive Claude; oldest first so the newest wins.
 live_sessions() {
-  local f pid pane sid updated
+  local f pid pane sid _
   for f in "$SESSIONS_DIR"/*.json; do
     [[ -f "$f" ]] || continue
     jq -r 'select(.kind == "interactive" and ((.tmux // "") | test("\\.%[0-9]+$")))
       | [.pid, (.tmux | sub(".*\\."; "")), .sessionId, (.updatedAt // 0)] | @tsv' "$f" 2>/dev/null || true
-  done | sort -t $'\t' -k4,4n | while IFS=$'\t' read -r pid pane sid updated; do
+  done | sort -t $'\t' -k4,4n | while IFS=$'\t' read -r pid pane sid _; do
     [[ "$sid" =~ ^[0-9a-fA-F-]{36}$ ]] || continue
     kill -0 "$pid" 2>/dev/null && printf '%s\t%s\n' "$pane" "$sid"
   done
