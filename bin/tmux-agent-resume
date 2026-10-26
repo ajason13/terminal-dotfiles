@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# tmux-resurrect post-save-layout hook: pin each Claude pane's saved command to its
+# live session ID, since the launch command goes stale after /clear or /resume.
+set -euo pipefail
+
+save_file="${1:?usage: tmux-agent-resume <resurrect save file>}"
+SESSIONS_DIR="${CLAUDE_SESSIONS_DIR:-$HOME/.claude/sessions}"
+[[ -f "$save_file" ]] || exit 0
+command -v jq >/dev/null || exit 0
+
+# pane_id<TAB>session_id for each live interactive Claude; oldest first so the newest wins.
+live_sessions() {
+  local f pid pane sid _
+  for f in "$SESSIONS_DIR"/*.json; do
+    [[ -f "$f" ]] || continue
+    jq -r 'select(.kind == "interactive" and ((.tmux // "") | test("\\.%[0-9]+$")))
+      | [.pid, (.tmux | sub(".*\\."; "")), .sessionId, (.updatedAt // 0)] | @tsv' "$f" 2>/dev/null || true
+  done | sort -t $'\t' -k4,4n | while IFS=$'\t' read -r pid pane sid _; do
+    [[ "$sid" =~ ^[0-9a-fA-F-]{36}$ ]] || continue
+    kill -0 "$pid" 2>/dev/null && printf '%s\t%s\n' "$pane" "$sid"
+  done
+}
+
+panes="$(tmux list-panes -a -F $'#{session_name}\t#{window_index}\t#{pane_index}\t#{pane_id}' 2>/dev/null)" || exit 0
+tmp="$(mktemp "$save_file.XXXXXX")"
+trap 'rm -f "$tmp"' EXIT
+
+# Unmatched Claude commands are blanked: restoring them would open a fresh or wrong conversation.
+PANES="$panes" LIVE="$(live_sessions)" awk -F'\t' -v OFS='\t' '
+  BEGIN {
+    n = split(ENVIRON["PANES"], rows, "\n")
+    for (i = 1; i <= n; i++) { split(rows[i], c, "\t"); pane_of[c[1] SUBSEP c[2] SUBSEP c[3]] = c[4] }
+    n = split(ENVIRON["LIVE"], rows, "\n")
+    for (i = 1; i <= n; i++) { split(rows[i], c, "\t"); sid_of[c[1]] = c[2] }
+  }
+  $1 == "pane" {
+    sid = sid_of[pane_of[$2 SUBSEP $3 SUBSEP $6]]
+    if (sid != "") $11 = ":claude --resume " sid
+    else if ($11 ~ /^:-?claude( |$)/) $11 = ":"
+  }
+  { print }
+' "$save_file" >"$tmp"
+mv "$tmp" "$save_file"

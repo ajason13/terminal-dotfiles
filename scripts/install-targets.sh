@@ -17,6 +17,7 @@ file|codex/bin/codex-budget.mjs|.local/bin/codex-budget|0755
 file|bin/codex-restore|.local/bin/codex-restore|0755
 file|bin/sf-org-resolve|.local/bin/sf-org-resolve|0755
 file|bin/sf-lease|.local/bin/sf-lease|0755
+file|bin/tmux-agent-resume|.local/bin/tmux-agent-resume|0755
 file|bin/tmux-session-to-end|.local/bin/tmux-session-to-end|0755
 file|claude/statusline.sh|.claude/statusline.sh|0755
 file|claude/hooks/sf-lease-guard.sh|.claude/hooks/sf-lease-guard.sh|0755

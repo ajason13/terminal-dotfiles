@@ -164,6 +164,7 @@ holds until the next session is created, since new sessions also land last.
 │   ├── codex-restore
 │   ├── sf-lease
 │   ├── sf-org-resolve
+│   ├── tmux-agent-resume
 │   └── tmux-session-to-end
 ├── claude
 │   ├── hooks
@@ -958,14 +959,25 @@ tmux server next starts. Without it, continuum still saves, but you would restor
 by hand with `Ctrl-a Ctrl-r`.
 
 **What survives, and what does not.** Restore brings back windows, panes,
-layout, and each pane's working directory - but not live program state. After a
-reboot your Claude Code / Codex panes come back as plain shells in the right
-directories, not resumed conversations. To resume the conversation itself, use
-the agent's own mechanism from that directory: `claude --continue` (most recent
-conversation in that dir) or `claude --resume` (pick one); Codex has
-`codex resume`. Claude keys history by directory and resurrect restores the
-directory, so `claude --continue` in a restored pane lands on that project's last
-conversation.
+layout, and each pane's working directory - but not live program state. By
+default your Claude Code / Codex panes come back as plain shells in the right
+directories, not resumed conversations.
+
+To resume each Claude pane's exact conversation, add the
+[`tmux-agent-resume`](bin/tmux-agent-resume) save hook to `~/.tmux.local.conf`
+**before** the `run-shell` lines:
+
+```tmux
+set -g @resurrect-hook-post-save-layout '~/.local/bin/tmux-agent-resume'
+set -g @resurrect-processes 'claude'
+```
+
+On every save, the hook reads Claude's live session registry
+(`~/.claude/sessions/<pid>.json`) and rewrites each Claude pane's saved command
+to `claude --resume <session-id>`. The launch command alone goes stale after
+`/clear` or `/resume`, and `claude --continue` is ambiguous when two panes share
+a directory. A Claude pane with no live session record is saved as a plain shell
+instead.
 
 For opt-in recovery of multiple Codex panes, use
 [`codex-restore`](docs/codex-restore.md): start a managed pane with
