@@ -34,6 +34,10 @@ run_uninstall() { DOTFILES_TARGET_HOME="$1" bash "$fixture/uninstall-macos.sh" "
 for mode in copy link; do
   target_home="$task_tmp/$mode"
   mkdir -p "$target_home/.config/nvim" "$target_home/.config/wezterm" "$target_home/.codex/skills/example" "$target_home/.codex/skills/unrelated"
+  mkdir -p "$target_home/.codex/agents"
+  printf 'managed\n' > "$target_home/.codex/agents/managed.txt"
+  printf 'old-coordinator\n' > "$target_home/.codex/agents/workflow-coordinator.toml"
+  printf 'old-profile\n' > "$target_home/.codex/workflow-coordinator.config.toml"
   chmod 700 "$target_home/.config/nvim"
   printf 'old-nvim\n' > "$target_home/.config/nvim/managed.txt"
   printf 'old-wezterm\n' > "$target_home/.config/wezterm/managed.txt"
@@ -47,6 +51,8 @@ for mode in copy link; do
   check old-nvim "$(cat "$target_home/.config/nvim/managed.txt")" 'dry run changed content'
   run_install "$target_home" "--$mode"
   check managed "$(cat "$target_home/.config/nvim/managed.txt")" 'nvim not installed'
+  test ! -e "$target_home/.codex/agents/workflow-coordinator.toml"
+  test ! -e "$target_home/.codex/workflow-coordinator.config.toml"
   for manifest in general vehicles anime; do
     test -f "$target_home/.config/wezterm/modules/background_manifests/$manifest.lua"
   done
@@ -67,6 +73,8 @@ for mode in copy link; do
   check 700 "$(directory_mode "$target_home/.config/nvim")" 'restore lost directory permissions'
   check old-wezterm "$(cat "$target_home/.config/wezterm/managed.txt")" 'wezterm not restored'
   check old-skill "$(cat "$target_home/.codex/skills/example/SKILL.md")" 'skill not restored'
+  check old-coordinator "$(cat "$target_home/.codex/agents/workflow-coordinator.toml")" 'retired agent not restored'
+  check old-profile "$(cat "$target_home/.codex/workflow-coordinator.config.toml")" 'retired profile not restored'
   test -f "$target_home/.codex/skills/unrelated/SKILL.md"
   test ! -e "$target_home/.codex/example.config.toml"
 done

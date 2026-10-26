@@ -141,8 +141,14 @@ tree_matches_source() {
 # Preserve the previous tree as a unit, matching uninstall's restore unit.
 # Carry local-only files forward (e.g. local.lua), then replace managed files.
 install_tree() {
-  local source="$1" target="$2" previous=""
-  if tree_matches_source "$source" "$target"; then
+  local source="$1" target="$2" previous="" retire_coordinator=false
+  # This one formerly managed agent must not survive as a local-only override.
+  # Force a full backup even when the remaining managed files already match.
+  if [[ "$target" == "$install_home/.codex/agents" && ! -e "$source/workflow-coordinator.toml" \
+    && ( -e "$target/workflow-coordinator.toml" || -L "$target/workflow-coordinator.toml" ) ]]; then
+    retire_coordinator=true
+  fi
+  if tree_matches_source "$source" "$target" && [[ "$retire_coordinator" != true ]]; then
     printf 'Already installed %s\n' "$target"
     return
   fi
@@ -157,6 +163,9 @@ install_tree() {
     run mkdir -p "$target"
   fi
   overlay_tree "$source" "$target"
+  if [[ "$retire_coordinator" == true ]]; then
+    run rm -f "$target/workflow-coordinator.toml"
+  fi
   printf 'Installed %s\n' "$target"
 }
 
@@ -272,6 +281,9 @@ while IFS='|' read -r kind relative_source relative_target file_mode; do
     install_file "$source_path" "$target_path" "$file_mode"
   fi
 done < <(install_targets "$root_dir")
+
+# Its sibling backup is restored by uninstall --restore-latest, like other profiles.
+backup_path "$install_home/.codex/workflow-coordinator.config.toml"
 
 if [[ "$mode" == "link" ]]; then
   fetch_backgrounds "$root_dir/wezterm/assets/backgrounds"

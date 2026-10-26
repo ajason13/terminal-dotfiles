@@ -1,0 +1,3 @@
+interface:
+  display_name: "Feedback Retention"
+  short_description: "Turn reviewer feedback into reusable tests and guidance"

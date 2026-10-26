@@ -13,6 +13,7 @@ file|codex/config.toml|.codex/config.toml|0600
 file|codex/AGENTS.md|.codex/AGENTS.md|0644
 tree|codex/agents|.codex/agents|0644
 file|codex/bin/codex-role|.local/bin/codex-role|0755
+file|codex/bin/codex-budget.mjs|.local/bin/codex-budget|0755
 file|bin/codex-restore|.local/bin/codex-restore|0755
 file|bin/sf-org-resolve|.local/bin/sf-org-resolve|0755
 file|bin/sf-lease|.local/bin/sf-lease|0755

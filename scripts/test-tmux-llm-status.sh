@@ -414,8 +414,11 @@ pty_longest="$(in_tty bash -c "stty cols 100 rows 40; unset COLUMNS; '$bin' tabl
   | tr -d '\r' | while IFS= read -r line; do printf '%s\n' "${#line}"; done | sort -n | tail -1 || true)"
 check "without COLUMNS the table uses the terminal's width" "100" "$pty_longest"
 
+# Make the probe active so urgency and creation order differ even when window
+# activity timestamps tie at second precision or earlier popup jumps refreshed them.
+busy_for 'E2E - Tbl:4'
 # After t, keys follow the tree rows: this key names a different pane in urgency order.
-tree_key="$(grep -F 'dup · beta' <<< "$tree" | cut -c1)"
+tree_key="$(COLUMNS=160 "$bin" table tree | grep -F 'dup · beta' | cut -c1)"
 urgent_key="$(COLUMNS=160 "$bin" table | grep -F 'dup · beta' | cut -c1)"
 check "the probe key differs between orders" "yes" "$([[ "$tree_key" != "$urgent_key" ]] && echo yes || echo no)"
 t select-window -t 'E2E - Tbl:t1'
@@ -426,6 +429,7 @@ t select-window -t 'E2E - Tbl:t1'
 urgent_key="$(COLUMNS=160 "$bin" table | grep -F 'dup · beta' | cut -c1)"
 printf 'tt%s' "$urgent_key" | COLUMNS=160 "$bin" pick >/dev/null 2>&1
 check "t twice is back to urgency order" "4" "$(t display-message -p -t 'E2E - Tbl' '#{window_index}')"
+clear_busy_for 'E2E - Tbl:4'
 t select-window -t 'E2E - Tbl:t1'
 printf 'r1' | "$bin" pick >/dev/null 2>&1
 check "r redraws without leaving" "t2" "$(current_window)"
