@@ -74,6 +74,7 @@ jobs:
           bash scripts/test-check-shell.sh
           bash scripts/test-install-macos.sh
           bash scripts/test-codex-restore.sh
+          bash scripts/test-tmux-agent-resume.sh
           ./scripts/test-import-background-inbox.sh
           ./scripts/test-check-manifest-paths.sh
           ./scripts/test-publish-backgrounds.sh
