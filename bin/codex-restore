@@ -127,7 +127,7 @@ list_entries() {
 }
 
 pane_for_entry() {
-  local entry="$1" session window pane cwd line found=""
+  local entry="$1" session window pane cwd found=""
   session="$(field "$entry" tmux_session)"
   window="$(field "$entry" window_index)"
   pane="$(field "$entry" pane_index)"
@@ -141,7 +141,8 @@ pane_for_entry() {
 }
 
 lock_allows() {
-  local session_id="$1" server="$2" lock="$LOCKS/$session_id"
+  local session_id="$1" server="$2" lock
+  lock="$LOCKS/$session_id"
   if [[ -f "$lock" ]] && [[ "$(field "$lock" tmux_server)" == "$server" ]]; then
     return 1
   fi

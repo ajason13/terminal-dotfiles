@@ -6,9 +6,35 @@ sanitized observation from the current user's default tmux server; the browser
 reads that JSON only after an explicit file selection.
 
 Nothing here is installed, loaded, or started by WezTerm, tmux, the wallpaper
-workflow, or the LLM-status process. There is no polling, daemon, backend,
-terminal control, pane-content access, persistence, telemetry, or remote
-service.
+workflow, or the LLM-status process. The fixture/file-import workflow starts no
+server or polling. For opt-in auto-refresh, run `node dashboard/serve-live.mjs`
+from the repository root, open the printed loopback URL, and select **Go live**.
+The local server reads pane metadata; it does not control terminals, read pane
+content, persist observations, or send telemetry to a remote service.
+
+## Verification and module boundaries
+
+From `dashboard/`, use Node 22+ and the committed npm lockfile:
+
+```sh
+npm ci
+npm run verify
+npx playwright install chromium
+npm run test:browser
+```
+
+`verify` checks generated routes, syntax-checks each JavaScript module separately,
+and runs the unit suites. Browser tests cover desktop and mobile Chromium.
+
+`render-dashboard.mjs` owns session reconciliation and interaction state;
+`car-visuals.mjs` constructs cars and tooltip content; `tooltip-layout.mjs` owns
+route-tooltip clamping and pit-tooltip docking. Existing renderer exports remain
+available to callers.
+
+Live polling applies a ten-second deadline to the request and response-body
+read. A timeout aborts the fetch and counts toward the existing three-failure
+fallback. Reset, import, and teardown cancel an in-flight request and discard
+late responses.
 
 ## Export a one-shot snapshot (optional)
 

@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-timestamp="$(date +%Y%m%d-%H%M%S)"
+root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/install-targets.sh
+source "$root_dir/scripts/install-targets.sh"
+install_home="${DOTFILES_TARGET_HOME:-$HOME}"
+timestamp="$(date +%Y%m%d-%H%M%S)-$$"
 dry_run="false"
 restore_latest="true"
 
@@ -85,37 +89,48 @@ restore_target() {
   printf 'Restored %s from %s\n' "$target" "$backup"
 }
 
-targets=(
-  "$HOME/.wezterm.lua"
-  "$HOME/.config/wezterm"
-  "$HOME/.tmux.conf"
-  "$HOME/.local/bin/tmux-llm-status"
-  "$HOME/.config/nvim"
-  "$HOME/.codex/config.toml"
-  "$HOME/.codex/AGENTS.md"
-  "$HOME/.codex/agents"
-  "$HOME/.codex/deep-researcher.config.toml"
-  "$HOME/.codex/lead-architect.config.toml"
-  "$HOME/.codex/workflow-coordinator.config.toml"
-  "$HOME/.codex/builder.config.toml"
-  "$HOME/.local/bin/codex-role"
-  "$HOME/.local/bin/codex-restore"
-  "$HOME/.local/bin/sf-org-resolve"
-  "$HOME/.local/bin/sf-lease"
-  "$HOME/.local/bin/tmux-session-to-end"
-  "$HOME/.claude/statusline.sh"
-  "$HOME/.claude/hooks/sf-lease-guard.sh"
-  "$HOME/.claude/hooks/sf-lease-post.sh"
-  "$HOME/.claude/hooks/sf-lease-end.sh"
-  "$HOME/.claude/hooks/sf-lease-table.sh"
-  "$HOME/.claude/hooks/tmux-agent-depth.sh"
-)
+targets=()
+while IFS='|' read -r kind _ relative_target _; do
+  target="$install_home/$relative_target"
+  if [[ "$kind" == "skill" ]]; then
+    # Backups and removed skills must stay outside the skill discovery root.
+    name="$(basename "$target")"
+    receipt="$install_home/.local/state/terminal-dotfiles/skills"
+    managed=false
+    if grep -qxF "$name" "$receipt" 2>/dev/null; then
+      managed=true
+    elif [[ -L "$target" && "$(readlink "$target")" == "$root_dir/codex/skills/$name" ]]; then
+      managed=true
+    elif [[ -d "$target" && ! -L "$target" && -d "$root_dir/codex/skills/$name" ]] && diff -qr "$root_dir/codex/skills/$name" "$target" >/dev/null; then
+      managed=true
+    fi
+    if [[ "$managed" != true ]]; then
+      printf 'Leaving unmanaged skill %s\n' "$target"
+      continue
+    fi
+    saved="$(find "$install_home/.codex/skill-backups" -mindepth 2 -maxdepth 2 -name "$name" -print 2>/dev/null | sort | tail -n 1 || true)"
+    if [[ -e "$target" || -L "$target" ]]; then
+      run mkdir -p "$install_home/.codex/skill-removed/$timestamp"
+      run mv "$target" "$install_home/.codex/skill-removed/$timestamp/$name"
+      printf 'Removed %s\n' "$target"
+    fi
+    if [[ "$restore_latest" == "true" && -n "$saved" ]]; then
+      run mkdir -p "$(dirname "$target")"
+      run mv "$saved" "$target"
+      printf 'Restored %s from %s\n' "$target" "$saved"
+    fi
+  else
+    targets+=("$target")
+  fi
+done < <(install_targets "$root_dir" "$install_home")
+# A retired profile can still exist after updating an older installation.
+targets+=("$install_home/.codex/workflow-coordinator.config.toml")
 
 # Retired features whose files may still be present from an earlier install.
 legacy_targets=(
-  "$HOME/.claude/hooks/track-crm-org.sh"
-  "$HOME/.local/bin/session-objective"
-  "$HOME/.claude/commands/objective.md"
+  "$install_home/.claude/hooks/track-crm-org.sh"
+  "$install_home/.local/bin/session-objective"
+  "$install_home/.claude/commands/objective.md"
 )
 
 for target in "${targets[@]}" "${legacy_targets[@]}"; do
@@ -128,6 +143,7 @@ if [[ "$restore_latest" == "true" ]]; then
   done
 fi
 
+run rm -f "$install_home/.local/state/terminal-dotfiles/skills"
 printf '\nUninstall complete.\n'
 # Removing the scripts does not unregister them: a settings.json entry pointing at
 # a hook that no longer exists is a per-Bash-call error, so unregister first.
@@ -136,17 +152,17 @@ printf 'entries and unset SF_LEASE_ENABLE too - this script does not edit settin
 # Left in place on purpose: it may hold a live lease belonging to another running
 # session, and this script only removes what it installed. Named plainly because
 # it is the one place this feature wrote real org identities to disk.
-if [[ -d "${SF_LEASE_HOME:-$HOME/.local/state/sf-leases}" ]]; then
-  printf '\nThe lease store was NOT removed: %s\n' "${SF_LEASE_HOME:-$HOME/.local/state/sf-leases}"
+if [[ -d "${SF_LEASE_HOME:-$install_home/.local/state/sf-leases}" ]]; then
+  printf '\nThe lease store was NOT removed: %s\n' "${SF_LEASE_HOME:-$install_home/.local/state/sf-leases}"
   printf 'It holds any still-live leases, and hook.log there records real org\n'
   printf 'identities and Claude session ids. To delete both: rm -rf %s\n' \
-    "${SF_LEASE_HOME:-$HOME/.local/state/sf-leases}"
+    "${SF_LEASE_HOME:-$install_home/.local/state/sf-leases}"
 fi
 
 # Left in place on purpose: it may hold live subagent-depth counts for a running
 # pane, and this script only removes what it installed.
-if [[ -d "${TMUX_LLM_STATE_HOME:-$HOME/.local/state/tmux-llm}" ]]; then
+if [[ -d "${TMUX_LLM_STATE_HOME:-$install_home/.local/state/tmux-llm}" ]]; then
   printf '\nThe tmux-llm-status state store was NOT removed: %s\n' \
-    "${TMUX_LLM_STATE_HOME:-$HOME/.local/state/tmux-llm}"
-  printf 'To delete it: rm -rf %s\n' "${TMUX_LLM_STATE_HOME:-$HOME/.local/state/tmux-llm}"
+    "${TMUX_LLM_STATE_HOME:-$install_home/.local/state/tmux-llm}"
+  printf 'To delete it: rm -rf %s\n' "${TMUX_LLM_STATE_HOME:-$install_home/.local/state/tmux-llm}"
 fi

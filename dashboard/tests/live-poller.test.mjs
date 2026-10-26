@@ -144,3 +144,52 @@ test('reentrancy guard: prevents onExhausted from firing twice on overlapping fa
   assert.equal(h.events.exhausted, 1);
   assert.equal(h.poller.isRunning(), false);
 });
+
+test('a hanging request times out, aborts, retries, and reaches fallback', async () => {
+  const deadlines = new Map();
+  let nextTimer = 0;
+  let interval;
+  const signals = [];
+  const events = [];
+  const poller = createLivePoller({
+    pollOnce: (signal) => { signals.push(signal); return new Promise(() => {}); },
+    onResult: () => events.push('result'),
+    onFailure: (count) => events.push(count),
+    onExhausted: () => events.push('exhausted'),
+    intervalMs: 5000, maxFailures: 3, requestTimeoutMs: 10000,
+    setIntervalFn: (fn) => { interval = fn; return 1; },
+    clearIntervalFn: () => {},
+    setTimeoutFn: (fn, delay) => { assert.equal(delay, 10000); deadlines.set(++nextTimer, fn); return nextTimer; },
+    clearTimeoutFn: (id) => deadlines.delete(id),
+  });
+  const first = poller.start();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    assert.equal(signals.length, attempt + 1);
+    [...deadlines.values()][0]();
+    await settle();
+    assert.equal(signals[attempt].aborted, true);
+    assert.equal(deadlines.size, 0);
+    if (attempt < 2) interval();
+  }
+  await first;
+  assert.deepEqual(events, [1, 2, 3, 'exhausted']);
+  assert.equal(poller.isRunning(), false);
+});
+
+test('stop aborts an in-flight request and discards its late result', async () => {
+  let resolveRequest;
+  let signal;
+  const events = [];
+  const poller = createLivePoller({
+    pollOnce: (value) => { signal = value; return new Promise((resolve) => { resolveRequest = resolve; }); },
+    onResult: () => events.push('result'), onFailure: () => events.push('failure'),
+    onExhausted: () => events.push('exhausted'), intervalMs: 5000, maxFailures: 3,
+    setIntervalFn: () => 1, clearIntervalFn: () => {},
+  });
+  const pending = poller.start();
+  poller.stop();
+  assert.equal(signal.aborted, true);
+  resolveRequest({ late: true });
+  await pending;
+  assert.deepEqual(events, []);
+});

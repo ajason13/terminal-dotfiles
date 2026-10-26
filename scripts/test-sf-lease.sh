@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Literal shell/sed fixtures intentionally preserve variable references.
+# shellcheck disable=SC2016
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

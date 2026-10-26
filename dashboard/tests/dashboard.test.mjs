@@ -39,6 +39,8 @@ const BROWSER_VERIFICATION = readFileSync(
   new URL('./BROWSER_VERIFICATION.md', import.meta.url), 'utf8',
 );
 const RENDERER = readFileSync(new URL('../src/render-dashboard.mjs', import.meta.url), 'utf8');
+const VISUALS = readFileSync(new URL('../src/car-visuals.mjs', import.meta.url), 'utf8');
+const TOOLTIP_LAYOUT = readFileSync(new URL('../src/tooltip-layout.mjs', import.meta.url), 'utf8');
 const ROUTE_CAPABILITY = readFileSync(
   new URL('../src/route-motion-capability.mjs', import.meta.url), 'utf8',
 );
@@ -843,17 +845,17 @@ test('vehicle selector deterministically covers 64 combinations and the 32-file 
 });
 
 test('session controls render generated top-down PNG cars without shrinking the accessible target', () => {
-  assert.match(RENDERER, /function makeCarImage\(documentRef, visual, view, className\)/);
-  assert.match(RENDERER, /element\(documentRef, 'img', className\)/);
-  assert.match(RENDERER, /function makeCarSilhouette\(documentRef, visual\)/);
-  assert.match(RENDERER, /makeCarImage\(documentRef, visual, 'top', 'car-sprite'\)/);
-  assert.match(RENDERER, /alt: ''/);
-  assert.match(RENDERER, /'aria-hidden': 'true'/);
-  assert.match(RENDERER, /draggable: 'false'/);
+  assert.match(VISUALS, /function makeCarImage\(documentRef, visual, view, className\)/);
+  assert.match(VISUALS, /element\(documentRef, 'img', className\)/);
+  assert.match(VISUALS, /function makeCarSilhouette\(documentRef, visual\)/);
+  assert.match(VISUALS, /makeCarImage\(documentRef, visual, 'top', 'car-sprite'\)/);
+  assert.match(VISUALS, /alt: ''/);
+  assert.match(VISUALS, /'aria-hidden': 'true'/);
+  assert.match(VISUALS, /draggable: 'false'/);
   assert.match(STYLES, /\.session-car\s*\{[^}]*width:\s*calc\(52 \* var\(--car-unit\)\);[^}]*height:\s*calc\(52 \* var\(--car-unit\)\);[^}]*min-width:\s*44px;[^}]*min-height:\s*44px;[^}]*border:\s*0;[^}]*background:\s*transparent/si);
   assert.match(STYLES, /\.car-body\s*\{[^}]*width:\s*calc\(32 \* var\(--car-unit\)\);[^}]*height:\s*calc\(48 \* var\(--car-unit\)\)/si);
   assert.match(STYLES, /\.car-sprite\s*\{[^}]*image-rendering:\s*pixelated/si);
-  assert.doesNotMatch(RENDERER,
+  assert.doesNotMatch(VISUALS,
     /svgElement|appendLivery|'car-overlay'|'vehicle-preview-overlay'|'car-livery'|'vehicle-preview-livery'|'car-centerline'|'car-headlamp'/);
   assert.doesNotMatch(STYLES,
     /\.car-overlay|\.vehicle-preview-overlay|\.car-livery|\.vehicle-preview-livery|\.car-centerline|\.car-headlamp/);
@@ -892,7 +894,7 @@ test('all seven vehicle states retain accessible status text and state colors wi
     assert.equal(STATE_PRESENTATION[status].glyph, glyph);
     assert.ok(STATE_PRESENTATION[status].label.length > 0);
   }
-  assert.doesNotMatch(RENDERER, /'car-glyph'|'car-code'/);
+  assert.doesNotMatch(VISUALS, /'car-glyph'|'car-code'/);
   assert.doesNotMatch(STYLES, /\.car-glyph|\.car-code/);
   for (const status of [
     'active', 'thinking', 'waiting-for-permission', 'idle', 'error', 'complete', 'unknown',
@@ -961,8 +963,8 @@ test('route cars share deterministic touge traversal phases and inspection pause
       ) <= 0.75, `${schedule} ${progress} migration delta`);
     }
   }
-  assert.match(RENDERER, /const ROUTE_LAP_SECONDS = 64/);
-  assert.match(RENDERER, /const ROUTE_PHASE_SECONDS = ROUTE_LAP_SECONDS \/ 16/);
+  assert.match(VISUALS, /const ROUTE_LAP_SECONDS = 64/);
+  assert.match(VISUALS, /const ROUTE_PHASE_SECONDS = ROUTE_LAP_SECONDS \/ 16/);
   assert.match(RENDERER, /--route-phase', `\$\{-placement\.slotIndex \* ROUTE_PHASE_SECONDS\}s`/);
   assert.match(RENDERER, /wrapper\.dataset\.routeSlot = String\(placement\.slotIndex\)/);
   const mobile = STYLES.slice(STYLES.indexOf('@media (max-width: 759px)'));
@@ -1119,9 +1121,9 @@ test('On Track summary uses accessible counts and distinct non-color state encod
 });
 
 test('reverse-facing car labels counter-rotate upright and the document has a local favicon', () => {
-  assert.doesNotMatch(RENDERER, /--vehicle-(?:upright-)?angle/);
-  assert.match(RENDERER, /const atmosphere = element\(documentRef, 'span', 'car-atmosphere', ''\)/);
-  assert.match(RENDERER, /wrapper\.append\(\s*atmosphere,\s*button,/s);
+  assert.doesNotMatch(VISUALS, /--vehicle-(?:upright-)?angle/);
+  assert.match(VISUALS, /const atmosphere = element\(documentRef, 'span', 'car-atmosphere', ''\)/);
+  assert.match(VISUALS, /wrapper\.append\(\s*atmosphere,\s*button,/s);
   assert.match(STYLES, /\.car-angle\s*\{\s*transform:\s*rotate\(var\(--route-heading,\s*0deg\)\)/si);
   assert.match(STYLES, /--route-upright-heading[\s\S]*--drift-upright-yaw/si);
   assert.match(INDEX, /<link rel="icon" href="data:,">/);
@@ -1161,7 +1163,7 @@ test('CSS and document preserve 44px targets and map-first responsive behavior',
   assert.match(pitTooltipRule, /max-width:\s*min\(28rem,\s*calc\(100vw - 2rem\)\)/);
   assert.doesNotMatch(pitTooltipRule, /^\s*width:\s*min\(/m);
   assert.match(pitTooltipRule, /bottom:\s*calc\(var\(--pit-dock-offset,\s*var\(--pit-lane-max\)\) \+ 14px\)/);
-  assert.match(RENDERER, /setProperty\('--pit-dock-offset'/);
+  assert.match(TOOLTIP_LAYOUT, /setProperty\('--pit-dock-offset'/);
 
   const mobileStart = STYLES.indexOf('@media (max-width: 759px)');
   const mobileEnd = STYLES.indexOf('@media (max-width: 420px)', mobileStart);
@@ -1338,7 +1340,7 @@ test('session-tooltip CSS defaults both clamp shifts to 0 and has no edge-class 
   assert.doesNotMatch(BASE_STYLES, /\.edge-left|\.edge-right/);
   assert.doesNotMatch(RENDERER, /--vehicle-vw/);
   assert.doesNotMatch(RENDERER, /edge-left|edge-right/);
-  assert.match(RENDERER, /export function computeTooltipShift/);
+  assert.equal(typeof computeTooltipShift, 'function');
 });
 
 test('car-badge is a small, muted, upright, non-interactive pill below the car', () => {

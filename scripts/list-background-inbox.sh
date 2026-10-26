@@ -11,17 +11,9 @@ fail() {
   exit 1
 }
 
-trim() {
-  printf '%s' "$1" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
-}
+# shellcheck source=scripts/lib/background-inbox.sh
+source "$repo_root/scripts/lib/background-inbox.sh"
 
-yaml_value() {
-  local key="$1"
-  local file="$2"
-  local value
-  value="$(sed -n "s/^${key}:[[:space:]]*//p" "$file" | head -n 1)"
-  trim "$value"
-}
 
 slugify() {
   printf '%s' "$1" \
@@ -132,10 +124,7 @@ while IFS= read -r image; do
     printf '   focus: %s\n' "$focus"
   fi
 done <<EOF
-$(find "$inbox_dir" \
-  -path "$inbox_dir/_sample" -prune -o \
-  -path "$inbox_dir/_processed" -prune -o \
-  -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \) -print | sort)
+$(inbox_images "$inbox_dir")
 EOF
 
 if (( count == 0 )); then

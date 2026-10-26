@@ -4,7 +4,6 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 inbox_dir="${BACKGROUND_INBOX_DIR:-$repo_root/wezterm/assets/inbox}"
 sample_yaml="${BACKGROUND_INBOX_SAMPLE_YAML:-$inbox_dir/_sample/scene-001.yaml}"
-max_images=10
 copy_mode="move"
 series=""
 mode=""
@@ -32,17 +31,9 @@ matches by basename in C/byte order, and imports up to the inbox's remaining
 EOF
 }
 
-trim() {
-  printf '%s' "$1" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
-}
+# shellcheck source=scripts/lib/background-inbox.sh
+source "$repo_root/scripts/lib/background-inbox.sh"
 
-yaml_value() {
-  local key="$1"
-  local file="$2"
-  local value
-  value="$(sed -n "s/^${key}:[[:space:]]*//p" "$file" | head -n 1)"
-  trim "$value"
-}
 
 set_yaml_value() {
   local file="$1"
@@ -120,14 +111,11 @@ case "$mode" in
   *) fail "invalid mode '$mode' (expected stylized or as_is)" ;;
 esac
 
-existing_image_count="$(find "$inbox_dir" \
-  -path "$inbox_dir/_sample" -prune -o \
-  -path "$inbox_dir/_processed" -prune -o \
-  -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \) -print | wc -l | tr -d '[:space:]')"
+existing_image_count="$(inbox_images "$inbox_dir" | wc -l | tr -d '[:space:]')"
 
 if [[ -n "$from_dir" ]]; then
-  remaining_capacity=$((max_images - existing_image_count))
-  (( remaining_capacity > 0 )) || fail "inbox already has the maximum of ${max_images} image(s)"
+  remaining_capacity=$((INBOX_MAX_IMAGES - existing_image_count))
+  (( remaining_capacity > 0 )) || fail "inbox already has the maximum of ${INBOX_MAX_IMAGES} image(s)"
 
   directory_images=()
   while IFS= read -r image; do
@@ -151,18 +139,15 @@ fi
 
 incoming_image_count="${#image_paths[@]}"
 
-(( existing_image_count + incoming_image_count <= max_images )) || \
-  fail "inbox has ${existing_image_count} image(s); importing ${incoming_image_count} would exceed the maximum of ${max_images}"
+(( existing_image_count + incoming_image_count <= INBOX_MAX_IMAGES )) || \
+  fail "inbox has ${existing_image_count} image(s); importing ${incoming_image_count} would exceed the maximum of ${INBOX_MAX_IMAGES}"
 
 imported_yamls=()
 count=0
 for source in "${image_paths[@]}"; do
   [[ -f "$source" ]] || fail "missing image file: $source"
 
-  case "${source##*.}" in
-    png|PNG|jpg|JPG|jpeg|JPEG) ;;
-    *) fail "unsupported image type: $source" ;;
-  esac
+  is_inbox_image "$source" || fail "unsupported image type: $source"
 
   base_name="$(basename "$source")"
   dest_image="$inbox_dir/$base_name"

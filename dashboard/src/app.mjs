@@ -121,8 +121,9 @@ export async function startDashboard(documentRef = document, windowRef = window)
       windowRef,
       ...(liveToken ? {
         token: liveToken,
-        fetchSnapshot: () => windowRef.fetch(LIVE_CONSTANTS.LIVE_SNAPSHOT_ROUTE, {
+        fetchSnapshot: (signal) => windowRef.fetch(LIVE_CONSTANTS.LIVE_SNAPSHOT_ROUTE, {
           headers: { [LIVE_CONSTANTS.LIVE_TOKEN_HEADER]: liveToken },
+          signal,
         }),
         visibility: {
           isHidden: () => documentRef.hidden === true,

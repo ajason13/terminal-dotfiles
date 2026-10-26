@@ -29,18 +29,10 @@ LOG="${SF_LEASE_LOG:-${SF_LEASE_HOME:-${HOME:-}/.local/state/sf-leases}/hook.log
 # The only channel that survives a hook that exits 0, so every exit code the
 # caller cannot act on lands here rather than vanishing. Rotates because on a
 # wedged store this is written once per Bash call per session.
-log() {
-  local dir="${LOG%/*}" size=0
-  [[ -d "$dir" ]] || mkdir -p "$dir" 2>/dev/null || return 0
-  # `wc -c <file` pads with spaces on macOS, and 2>/dev/null must come FIRST:
-  # a redirection that fails is reported by the shell on whatever stderr is at
-  # that point, and this hook's stderr is the block message Claude parses.
-  [[ -f "$LOG" ]] && size="$(2>/dev/null wc -c < "$LOG" | tr -d '[:space:]')"
-  [[ "$size" =~ ^[0-9]+$ ]] || size=0
-  (( size > 262144 )) && mv -f "$LOG" "$LOG.1" 2>/dev/null
-  2>/dev/null printf '%s sf-lease-guard %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$*" >> "$LOG"
-  return 0
-}
+HOOK_NAME=sf-lease-guard
+# Missing support code must leave a per-command hook inert.
+# shellcheck source=claude/hooks/sf-lease-common.sh
+source "$(dirname "${BASH_SOURCE[0]}")/sf-lease-common.sh" 2>/dev/null || exit 0
 
 payload="$(cat)"
 [[ "$(printf '%s' "$payload" | jq -r '.tool_name // empty' 2>/dev/null)" == "Bash" ]] || exit 0
@@ -54,27 +46,6 @@ sid="$(printf '%s' "$payload" | jq -r '.session_id // empty' 2>/dev/null)"
 # the payload's .cwd, so resolving against .cwd alone silently keys the lease
 # off the wrong repo's config. Only a leading `cd` chain is followed, and the
 # path is never executed - it is passed to the resolver as a directory.
-CD_RE='^[[:space:]]*cd[[:space:]]+("[^"]+"|'\''[^'\'']+'\''|[^[:space:];&|]+)[[:space:]]*(&&|;)'
-effective_cwd() {
-  local base="$1" rest="$2" target resolved hops=0
-  while (( hops < 4 )) && [[ "$rest" =~ $CD_RE ]]; do
-    target="${BASH_REMATCH[1]}"
-    rest="${rest:${#BASH_REMATCH[0]}}"
-    target="${target%\"}"; target="${target#\"}"
-    target="${target%\'}"; target="${target#\'}"
-    case "$target" in
-      '~') target="${HOME:-}" ;;
-      '~/'*) target="${HOME:-}/${target#\~/}" ;;
-      /*) ;;
-      *) target="$base/$target" ;;
-    esac
-    resolved="$(cd "$target" 2>/dev/null && pwd)" || resolved=''
-    [[ -n "$resolved" ]] || break
-    base="$resolved"
-    hops=$(( hops + 1 ))
-  done
-  printf '%s' "$base"
-}
 cwd="$(effective_cwd "$cwd" "$cmd")"
 
 # 2>/dev/null: the resolver writes diagnostics to stderr, and capturing those

@@ -22,6 +22,7 @@ const CYPRESS_SOURCE = readFileSync(
 );
 const SOURCES = [
   'app.mjs', 'render-dashboard.mjs', 'source-controller.mjs',
+  'car-visuals.mjs', 'tooltip-layout.mjs', 'dom-elements.mjs',
   'track-catalog.mjs', 'track-layout.mjs', 'track-selection.mjs',
 ].map((name) => readFileSync(new URL(`../src/${name}`, import.meta.url), 'utf8')).join('\n');
 

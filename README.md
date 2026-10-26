@@ -288,6 +288,16 @@ Copy mode installs files into:
 ```
 
 Existing files are backed up before replacement when contents differ.
+Directory installs back up the complete prior directory, carry local-only files
+forward, and replace managed entries without following destination symlinks.
+Unchanged reinstalls retain the original backup. Skill backups are stored under
+`~/.codex/skill-backups/`, outside skill discovery.
+
+If `codex/skills/` contains skill sources, both installer modes install them.
+Uninstall removes these managed skills and, with `--restore-latest`, restores
+any versions they replaced. Unrelated personal skills remain in place. A receipt
+under `~/.local/state/terminal-dotfiles/skills` also tracks managed skills that
+have since been removed from the checkout.
 `~/.claude/settings.json` is never written: see Claude Code Status Line and
 Salesforce Org Leases for the settings and hook snippets to merge by hand. The lease hooks stay inert
 after installation until `SF_LEASE_ENABLE` is set, so installing them changes
@@ -1046,6 +1056,27 @@ Uninstall removes the two lease binaries and the four
 `~/.claude/settings.json`, since this repo never installs it. Remove those hook
 entries from that file by hand - and `unset SF_LEASE_ENABLE` - or they will point
 at scripts that are no longer there, which errors on every Bash call.
+
+## Verification
+
+From the repository root:
+
+```sh
+bash scripts/check-shell.sh
+bash scripts/check-shell.sh --lint
+bash scripts/test-check-shell.sh
+bash scripts/test-install-macos.sh
+bash scripts/test-import-background-inbox.sh
+bash scripts/test-sf-lease-hooks.sh
+```
+
+Syntax checking visits each shell file individually, including extensionless
+Bash tools. ShellCheck must be installed for `--lint`. The installer suite uses
+a temporary fixture checkout and `DOTFILES_TARGET_HOME` to test copy/link,
+backups, restore, dry runs, and symlink handling without changing your home.
+That variable can also select a staging home for manual installer checks.
+Lease suites run on macOS in CI because they exercise BSD filesystem tools.
+See [dashboard verification](dashboard/README.md) for Node and browser checks.
 
 ## Backgrounds
 

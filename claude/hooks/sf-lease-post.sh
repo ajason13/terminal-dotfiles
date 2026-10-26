@@ -22,18 +22,10 @@ command -v jq >/dev/null 2>&1 || exit 0
 
 LOG="${SF_LEASE_LOG:-${SF_LEASE_HOME:-${HOME:-}/.local/state/sf-leases}/hook.log}"
 
-log() {
-  local dir="${LOG%/*}" size=0
-  [[ -d "$dir" ]] || mkdir -p "$dir" 2>/dev/null || return 0
-  # `wc -c <file` pads with spaces on macOS, and 2>/dev/null has to come FIRST
-  # or the shell reports a failed redirection on the real stderr.
-  [[ -f "$LOG" ]] && size="$(2>/dev/null wc -c < "$LOG" | tr -d '[:space:]')"
-  [[ "$size" =~ ^[0-9]+$ ]] || size=0
-  (( size > 262144 )) && mv -f "$LOG" "$LOG.1" 2>/dev/null
-  2>/dev/null printf '%s sf-lease-post %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$*" >> "$LOG"
-  printf 'sf-lease-post: %s\n' "$*" >&2
-  return 0
-}
+HOOK_NAME=sf-lease-post
+# Missing support code must leave a per-command hook inert.
+# shellcheck source=claude/hooks/sf-lease-common.sh
+source "$(dirname "${BASH_SOURCE[0]}")/sf-lease-common.sh" 2>/dev/null || exit 0
 
 payload="$(cat)"
 [[ "$(printf '%s' "$payload" | jq -r '.tool_name // empty' 2>/dev/null)" == "Bash" ]] || exit 0
@@ -43,29 +35,7 @@ cwd="$(printf '%s' "$payload" | jq -r '.cwd // empty' 2>/dev/null)"
 sid="$(printf '%s' "$payload" | jq -r '.session_id // empty' 2>/dev/null)"
 [[ -n "$cmd" && -n "$cwd" && -n "$sid" ]] || exit 0
 
-# Must mirror sf-lease-guard.sh exactly: an asymmetric view of the effective
-# directory would resolve to a different identity and leave the claim standing.
-CD_RE='^[[:space:]]*cd[[:space:]]+("[^"]+"|'\''[^'\'']+'\''|[^[:space:];&|]+)[[:space:]]*(&&|;)'
-effective_cwd() {
-  local base="$1" rest="$2" target resolved hops=0
-  while (( hops < 4 )) && [[ "$rest" =~ $CD_RE ]]; do
-    target="${BASH_REMATCH[1]}"
-    rest="${rest:${#BASH_REMATCH[0]}}"
-    target="${target%\"}"; target="${target#\"}"
-    target="${target%\'}"; target="${target#\'}"
-    case "$target" in
-      '~') target="${HOME:-}" ;;
-      '~/'*) target="${HOME:-}/${target#\~/}" ;;
-      /*) ;;
-      *) target="$base/$target" ;;
-    esac
-    resolved="$(cd "$target" 2>/dev/null && pwd)" || resolved=''
-    [[ -n "$resolved" ]] || break
-    base="$resolved"
-    hops=$(( hops + 1 ))
-  done
-  printf '%s' "$base"
-}
+# Resolve with the same shared directory rule used when claiming.
 cwd="$(effective_cwd "$cwd" "$cmd")"
 
 resolve_rc=0
@@ -85,31 +55,7 @@ fi
 # its run and blocks every other session for a full TTL. sf-lease itself only
 # ever removes a lease whose meta names this session, so a retry cannot take
 # anyone else's.
-rc=0
-attempt=0
-# Each retry costs sf-lease's whole mutex timeout (5s by default) on a wedged
-# store, and this hook runs after EVERY Bash call, so an unbounded value stalls
-# the session for minutes per command. Garbage, a leading zero (bash reads it as
-# octal) and anything past the cap all fall back to the default, out loud.
-RETRIES_MAX=5
-retries="${SF_LEASE_HOOK_RETRIES:-2}"
-if ! [[ "$retries" =~ ^(0|[1-9][0-9]*)$ ]] || (( retries > RETRIES_MAX )); then
-  log "SF_LEASE_HOOK_RETRIES=$retries is not an integer in 0..$RETRIES_MAX; using 2 instead."
-  retries=2
-fi
-# The loop's ceiling is a LITERAL bound on an internal counter, not $retries, so
-# no value of the knob can spin forever even if it slips past the check above.
-# An infinite spin in a hook hangs the whole session rather than failing it -
-# and a value like "08" is exactly how that happens, because bash reads it as
-# octal and `-ge` then errors instead of comparing.
-while [[ "$attempt" -le "$RETRIES_MAX" ]]; do
-  rc=0
-  "$LEASE" release "$identity" "$sid" >/dev/null 2>&1 || rc=$?
-  [[ "$rc" -eq 75 ]] || break
-  [[ "$attempt" -ge "$retries" ]] && break
-  attempt=$(( attempt + 1 ))
-  sleep 0.2
-done
+release_with_retry release "$identity" "$sid"
 
 case "$rc" in
   0) ;;

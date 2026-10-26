@@ -91,6 +91,7 @@ test('exports every resolved constant, enum, error code, and exact tmux format',
     MAX_FUTURE_SKEW_MS: 120000,
     STALE_LABEL_TICK_MS: 60000,
     LIVE_POLL_INTERVAL_MS: 5000,
+    LIVE_REQUEST_TIMEOUT_MS: 10000,
     LIVE_MAX_CONSECUTIVE_FAILURES: 3,
     LIVE_SERVER_DEFAULT_PORT: 4173,
     LIVE_SNAPSHOT_ROUTE: '/live/snapshot',
@@ -1211,7 +1212,8 @@ test('goLive falls back to rejected fixtures after max consecutive failures', as
 test('browser sources omit unsafe APIs and contain exactly one interval call site', async () => {
   const sources = await Promise.all([
     '../src/app.mjs', '../src/import-snapshot.mjs', '../src/source-controller.mjs',
-    '../src/render-dashboard.mjs', '../index.html',
+    '../src/render-dashboard.mjs', '../src/car-visuals.mjs',
+    '../src/tooltip-layout.mjs', '../src/dom-elements.mjs', '../index.html',
   ].map(async (path) => (await import('node:fs/promises')).readFile(new URL(path, import.meta.url), 'utf8')));
   const joined = sources.join('\n');
   assert.doesNotMatch(joined, /\.innerHTML\s*=|insertAdjacentHTML|WebSocket|EventSource/);
