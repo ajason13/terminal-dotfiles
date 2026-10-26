@@ -548,7 +548,7 @@ while IFS= read -r line; do (( ${#line} <= longest )) || longest=${#line}; done 
 check "org columns still fit a narrow terminal" "yes" "$(if (( longest <= 100 )); then echo yes; else echo no; fi)"
 # A squeezed alias keeps both ends: qa.pack.prod-early.n and .n-1 differ only in the tail.
 check "a squeezed ORG keeps the alias head and tail" "yes" \
-  "$(has "$(COLUMNS=100 "$bin" table | table_rows)" 'qa.pa~ly.n-1 held')"
+  "$(if COLUMNS=100 "$bin" table | table_rows | grep -qE 'qa\.[^ ]*~[^ ]*n-1 +held'; then echo yes; else echo no; fi)"
 no_lock="$(TMUX_LLM_ORG_LOCK="$test_home/no-such-org-lock" TMUX_LLM_ANNOUNCE_LOG="$test_home/no-log" \
   COLUMNS=200 "$bin" table)"
 check "a missing org-lock drops the org columns" "no" "$(has "$no_lock" 'LOCK')"

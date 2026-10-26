@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Literal shell/sed fixtures intentionally preserve variable references.
+# shellcheck disable=SC2016
 set -euo pipefail
 
 # Behavioural tests for the four sf-lease Claude Code hooks. Everything runs
@@ -103,7 +105,7 @@ out_text() { cat "$tmp/out"; }
 err_text() { cat "$tmp/err"; }
 has() { case "$1" in *"$2"*) printf yes ;; *) printf no ;; esac; }
 session_of() { "$SF_LEASE_BIN" holder "$1" | sed -n 's/.*session=\([^ ]*\).*/\1/p'; }
-lease_count() { ls -d "$SF_LEASE_HOME"/sf-*.lease 2>/dev/null | wc -l | tr -d ' '; }
+lease_count() { find "$SF_LEASE_HOME" -maxdepth 1 -type d -name 'sf-*.lease' | wc -l | tr -d ' '; }
 reset_log() { rm -f "$SF_LEASE_LOG"; }
 log_text() { cat "$SF_LEASE_LOG" 2>/dev/null || true; }
 calls_of() { grep -c "^$1$" "$tmp/calls" 2>/dev/null || printf 0; }
@@ -323,15 +325,13 @@ PAYLOAD='{}'
 check 'the table hook too'                       0 \
   "$(run "$table" -u HOME -u SF_LEASE_BIN SF_LEASE_ENABLE=1)"
 
-# The guard and the post hook must reach the SAME effective directory or the
-# post hook resolves a different identity and silently leaves the claim
-# standing. The two copies are duplicated on purpose (see the hook headers);
-# this is what stops them drifting apart.
-extract_cd_block() { sed -n '/^CD_RE=/,/^}$/p' "$1"; }
-check 'the effective_cwd block is actually found' 'yes' \
-  "$([[ "$(extract_cd_block "$guard" | wc -l | tr -d ' ')" -gt 10 ]] && echo yes || echo no)"
-check 'the guard and post hooks share one effective_cwd' 'identical' \
-  "$([[ "$(extract_cd_block "$guard")" == "$(extract_cd_block "$post")" ]] && echo identical || echo DIFFERENT)"
+# Directory resolution is exercised above through both claim and release; the
+# shared helper must also remain optional when a partial install is encountered.
+missing_support="$tmp/missing-support"
+mkdir -p "$missing_support"
+cp "$guard" "$missing_support/guard.sh"
+check 'a partial install with no support library stays inert' 0 \
+  "$(run "$missing_support/guard.sh" SF_LEASE_ENABLE=1)"
 check 'no lease was taken by any fail-open path' 0 "$(lease_count)"
 
 # --- resolver rc 3: fails open, but never silently ----------------------------
@@ -366,6 +366,7 @@ check 'and records it as leasing being off'                'yes' \
 # every resolver failure indiscriminately.
 mut_hooks="$tmp/mut-hooks"
 mkdir -p "$mut_hooks"
+cp "$hook_dir/sf-lease-common.sh" "$mut_hooks/"
 sed '/resolve_rc" -eq 3/,/^fi$/d' "$guard" > "$mut_hooks/guard-no-rc3.sh"
 chmod +x "$mut_hooks/guard-no-rc3.sh"
 check 'the no-rc3 guard variant differs from the real hook' 'differs' \

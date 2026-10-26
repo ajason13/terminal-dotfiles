@@ -2,7 +2,10 @@
 set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-timestamp="$(date +%Y%m%d-%H%M%S)"
+install_home="${DOTFILES_TARGET_HOME:-$HOME}"
+timestamp="$(date +%Y%m%d-%H%M%S)-$$"
+# shellcheck source=scripts/install-targets.sh
+source "$root_dir/scripts/install-targets.sh"
 mode="copy"
 dry_run="false"
 skip_backgrounds="false"
@@ -64,6 +67,10 @@ backup_path() {
   local target="$1"
 
   if [[ -e "$target" || -L "$target" ]]; then
+    [[ ! -e "$target.backup-$timestamp" && ! -L "$target.backup-$timestamp" ]] || {
+      printf 'Backup already exists: %s\n' "$target.backup-$timestamp" >&2
+      exit 1
+    }
     run mv "$target" "$target.backup-$timestamp"
     printf 'Backed up %s\n' "$target"
   fi
@@ -95,14 +102,62 @@ install_file() {
   printf 'Installed %s\n' "$target"
 }
 
-prepare_copy_dir() {
-  local target="$1"
+# Replace managed entries without following destination symlinks into user data.
+# The full previous directory has already been backed up before this overlay.
+overlay_tree() {
+  local source="$1" target="$2" entry dest
+  for entry in "$source"/* "$source"/.[!.]* "$source"/..?*; do
+    [[ -e "$entry" || -L "$entry" ]] || continue
+    dest="$target/$(basename "$entry")"
+    if [[ -d "$entry" && ! -L "$entry" ]]; then
+      if [[ -L "$dest" || ( -e "$dest" && ! -d "$dest" ) ]]; then run rm -f "$dest"; fi
+      run mkdir -p "$dest"
+      overlay_tree "$entry" "$dest"
+    else
+      if [[ -e "$dest" || -L "$dest" ]]; then run rm -rf "$dest"; fi
+      run cp -pR "$entry" "$dest"
+    fi
+  done
+}
 
-  if [[ -L "$target" ]]; then
+# Compare only managed entries; local overrides and downloaded assets do not
+# turn an unchanged reinstall into a new backup of the installed configuration.
+tree_matches_source() {
+  local source="$1" target="$2" entry dest
+  [[ -d "$target" && ! -L "$target" ]] || return 1
+  for entry in "$source"/* "$source"/.[!.]* "$source"/..?*; do
+    [[ -e "$entry" || -L "$entry" ]] || continue
+    dest="$target/$(basename "$entry")"
+    if [[ -L "$entry" ]]; then
+      [[ -L "$dest" && "$(readlink "$entry")" == "$(readlink "$dest")" ]] || return 1
+    elif [[ -d "$entry" ]]; then
+      tree_matches_source "$entry" "$dest" || return 1
+    else
+      [[ -f "$dest" && ! -L "$dest" ]] && cmp -s "$entry" "$dest" || return 1
+    fi
+  done
+}
+
+# Preserve the previous tree as a unit, matching uninstall's restore unit.
+# Carry local-only files forward (e.g. local.lua), then replace managed files.
+install_tree() {
+  local source="$1" target="$2" previous=""
+  if tree_matches_source "$source" "$target"; then
+    printf 'Already installed %s\n' "$target"
+    return
+  fi
+  if [[ -e "$target" || -L "$target" ]]; then
+    [[ -d "$target" && ! -L "$target" ]] && previous="$target.backup-$timestamp"
     backup_path "$target"
   fi
-
-  run mkdir -p "$target"
+  if [[ -n "$previous" ]]; then
+    # Copy the root too so private directory modes and local-file modes survive.
+    run cp -pR "$previous" "$target"
+  else
+    run mkdir -p "$target"
+  fi
+  overlay_tree "$source" "$target"
+  printf 'Installed %s\n' "$target"
 }
 
 link_path() {
@@ -119,6 +174,41 @@ link_path() {
   backup_path "$target"
   run ln -s "$source" "$target"
   printf 'Linked %s -> %s\n' "$target" "$source"
+}
+
+# Codex discovers symlinked skill folders, but not a symlinked SKILL.md file.
+# Directory backups must live outside the discovery root to avoid duplicates.
+install_skill() {
+  local source="$1"
+  local target saved name
+  name="$(basename "$source")"
+  target="$install_home/.codex/skills/$name"
+  saved="$install_home/.codex/skill-backups/$timestamp/$name"
+
+  if [[ "$mode" == "link" && -L "$target" ]] && [[ "$(readlink "$target")" == "$source" ]]; then
+    printf 'Already linked %s\n' "$target"
+    return
+  fi
+  if [[ "$mode" == "copy" && -d "$target" && ! -L "$target" ]] && diff -qr "$source" "$target" >/dev/null; then
+    printf 'Already installed %s\n' "$target"
+    return
+  fi
+  if [[ -e "$target" || -L "$target" ]]; then
+    if [[ -e "$saved" || -L "$saved" ]]; then
+      printf 'Skill backup already exists: %s\n' "$saved" >&2
+      exit 1
+    fi
+    run mkdir -p "$(dirname "$saved")"
+    run mv "$target" "$saved"
+  fi
+  run mkdir -p "$(dirname "$target")"
+  if [[ "$mode" == "link" ]]; then
+    run ln -s "$source" "$target"
+  else
+    run mkdir -p "$target"
+    run cp -R "$source/." "$target/"
+  fi
+  printf 'Installed skill %s\n' "$target"
 }
 
 # The hook SCRIPTS are installed; registering them is deliberately manual. A
@@ -164,90 +254,30 @@ fetch_backgrounds() {
   run "$root_dir/scripts/fetch-backgrounds.sh" "${args[@]}"
 }
 
-run mkdir -p "$HOME/.config"
-run mkdir -p "$HOME/.local/bin"
-run mkdir -p "$HOME/.codex"
+while IFS='|' read -r kind relative_source relative_target file_mode; do
+  source_path="$root_dir/$relative_source"
+  target_path="$install_home/$relative_target"
+  if [[ "$kind" == "skill" ]]; then
+    install_skill "$source_path"
+    receipt="$install_home/.local/state/terminal-dotfiles/skills"
+    run mkdir -p "$(dirname "$receipt")"
+    if [[ "$dry_run" != true ]] && ! grep -qxF "$(basename "$source_path")" "$receipt" 2>/dev/null; then
+      printf '%s\n' "$(basename "$source_path")" >> "$receipt"
+    fi
+  elif [[ "$mode" == "link" ]]; then
+    link_path "$source_path" "$target_path"
+  elif [[ "$kind" == "tree" ]]; then
+    install_tree "$source_path" "$target_path"
+  else
+    install_file "$source_path" "$target_path" "$file_mode"
+  fi
+done < <(install_targets "$root_dir")
 
 if [[ "$mode" == "link" ]]; then
-  link_path "$root_dir/wezterm/.wezterm.lua" "$HOME/.wezterm.lua"
-  link_path "$root_dir/wezterm" "$HOME/.config/wezterm"
-  link_path "$root_dir/tmux/tmux.conf" "$HOME/.tmux.conf"
-  link_path "$root_dir/tmux/tmux-llm-status" "$HOME/.local/bin/tmux-llm-status"
-  link_path "$root_dir/nvim" "$HOME/.config/nvim"
-  link_path "$root_dir/codex/config.toml" "$HOME/.codex/config.toml"
-  link_path "$root_dir/codex/AGENTS.md" "$HOME/.codex/AGENTS.md"
-  link_path "$root_dir/codex/agents" "$HOME/.codex/agents"
-  link_path "$root_dir/codex/bin/codex-role" "$HOME/.local/bin/codex-role"
-  link_path "$root_dir/bin/codex-restore" "$HOME/.local/bin/codex-restore"
-  link_path "$root_dir/bin/sf-org-resolve" "$HOME/.local/bin/sf-org-resolve"
-  link_path "$root_dir/bin/sf-lease" "$HOME/.local/bin/sf-lease"
-  link_path "$root_dir/bin/tmux-session-to-end" "$HOME/.local/bin/tmux-session-to-end"
-  link_path "$root_dir/claude/statusline.sh" "$HOME/.claude/statusline.sh"
-  link_path "$root_dir/claude/hooks/sf-lease-guard.sh" "$HOME/.claude/hooks/sf-lease-guard.sh"
-  link_path "$root_dir/claude/hooks/sf-lease-post.sh" "$HOME/.claude/hooks/sf-lease-post.sh"
-  link_path "$root_dir/claude/hooks/sf-lease-end.sh" "$HOME/.claude/hooks/sf-lease-end.sh"
-  link_path "$root_dir/claude/hooks/sf-lease-table.sh" "$HOME/.claude/hooks/sf-lease-table.sh"
-  link_path "$root_dir/claude/hooks/tmux-agent-depth.sh" "$HOME/.claude/hooks/tmux-agent-depth.sh"
-  for profile in "$root_dir"/codex/profiles/*.config.toml; do
-    link_path "$profile" "$HOME/.codex/$(basename "$profile")"
-  done
-
-  printf '\nLinked WezTerm, tmux, Neovim, Codex, and Claude Code config for local editing.\n'
-  print_hooks_notice
-  printf 'Edit files in %s and reload WezTerm with Cmd-r if needed.\n' "$root_dir"
-  printf 'Reload tmux with: Ctrl-a r\n'
   fetch_backgrounds "$root_dir/wezterm/assets/backgrounds"
-  exit 0
+else
+  fetch_backgrounds "$install_home/.config/wezterm/assets/backgrounds"
 fi
-
-prepare_copy_dir "$HOME/.config/wezterm"
-prepare_copy_dir "$HOME/.config/wezterm/modules"
-prepare_copy_dir "$HOME/.config/wezterm/assets"
-prepare_copy_dir "$HOME/.codex/agents"
-
-install_file "$root_dir/wezterm/.wezterm.lua" "$HOME/.wezterm.lua"
-install_file "$root_dir/wezterm/wezterm.lua" "$HOME/.config/wezterm/wezterm.lua"
-
-for module in "$root_dir"/wezterm/modules/*.lua; do
-  install_file "$module" "$HOME/.config/wezterm/modules/$(basename "$module")"
-done
-
-while IFS= read -r asset; do
-  relative_asset="${asset#"$root_dir"/wezterm/assets/}"
-  target_asset="$HOME/.config/wezterm/assets/$relative_asset"
-  install_file "$asset" "$target_asset"
-done < <(find "$root_dir/wezterm/assets" -type f ! -name '.DS_Store' | sort)
-
-install_file "$root_dir/tmux/tmux.conf" "$HOME/.tmux.conf"
-install_file "$root_dir/tmux/tmux-llm-status" "$HOME/.local/bin/tmux-llm-status" 0755
-install_file "$root_dir/codex/config.toml" "$HOME/.codex/config.toml" 0600
-install_file "$root_dir/codex/AGENTS.md" "$HOME/.codex/AGENTS.md"
-install_file "$root_dir/codex/bin/codex-role" "$HOME/.local/bin/codex-role" 0755
-install_file "$root_dir/bin/codex-restore" "$HOME/.local/bin/codex-restore" 0755
-install_file "$root_dir/bin/sf-org-resolve" "$HOME/.local/bin/sf-org-resolve" 0755
-install_file "$root_dir/bin/sf-lease" "$HOME/.local/bin/sf-lease" 0755
-install_file "$root_dir/bin/tmux-session-to-end" "$HOME/.local/bin/tmux-session-to-end" 0755
-install_file "$root_dir/claude/statusline.sh" "$HOME/.claude/statusline.sh" 0755
-install_file "$root_dir/claude/hooks/sf-lease-guard.sh" "$HOME/.claude/hooks/sf-lease-guard.sh" 0755
-install_file "$root_dir/claude/hooks/sf-lease-post.sh" "$HOME/.claude/hooks/sf-lease-post.sh" 0755
-install_file "$root_dir/claude/hooks/sf-lease-end.sh" "$HOME/.claude/hooks/sf-lease-end.sh" 0755
-install_file "$root_dir/claude/hooks/sf-lease-table.sh" "$HOME/.claude/hooks/sf-lease-table.sh" 0755
-install_file "$root_dir/claude/hooks/tmux-agent-depth.sh" "$HOME/.claude/hooks/tmux-agent-depth.sh" 0755
-
-for agent in "$root_dir"/codex/agents/*.toml; do
-  install_file "$agent" "$HOME/.codex/agents/$(basename "$agent")"
-done
-
-for profile in "$root_dir"/codex/profiles/*.config.toml; do
-  install_file "$profile" "$HOME/.codex/$(basename "$profile")" 0600
-done
-
-prepare_copy_dir "$HOME/.config/nvim"
-run cp -R "$root_dir/nvim/." "$HOME/.config/nvim/"
-printf 'Installed %s\n' "$HOME/.config/nvim"
-
-fetch_backgrounds "$HOME/.config/wezterm/assets/backgrounds"
-
-printf '\nInstalled WezTerm, tmux, Neovim, Codex, and Claude Code config for macOS.\n'
+printf '\nInstalled WezTerm, tmux, Neovim, Codex, and Claude Code config (%s).\n' "$mode"
 print_hooks_notice
 printf 'Reload WezTerm, then reload tmux with: Ctrl-a r\n'

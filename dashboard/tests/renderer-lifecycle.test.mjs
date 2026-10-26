@@ -974,6 +974,7 @@ test('opt-in Go-live control stays inert without a real live token and wires up 
     assert.equal(fetchCalls.length, 1);
     assert.equal(fetchCalls[0].url, LIVE_CONSTANTS.LIVE_SNAPSHOT_ROUTE);
     assert.equal(fetchCalls[0].options.headers[LIVE_CONSTANTS.LIVE_TOKEN_HEADER], 'tok');
+    assert.ok(fetchCalls[0].options.signal instanceof AbortSignal);
   } finally {
     Object.assign(globalThis, realTimers);
   }

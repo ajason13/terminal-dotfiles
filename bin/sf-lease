@@ -173,6 +173,8 @@ fi
 # it is not, our mutex was force-cleared and this path now belongs to someone
 # else who is inside their critical section: deleting it would un-protect them
 # and every claim after them. Say so, return non-zero, touch nothing.
+# Invoked by signal/exit traps as well as mutation paths.
+# shellcheck disable=SC2329
 release_mutex() {
   [[ -n "$MUTEX_DIR" ]] || return 0
   local dir="$MUTEX_DIR" token="$MUTEX_TOKEN" on_disk
@@ -189,6 +191,8 @@ release_mutex() {
 
 # Releasing without exiting would let an interrupted mutation resume OUTSIDE
 # the critical section and still report success, so the signal handlers exit.
+# Invoked by the EXIT trap.
+# shellcheck disable=SC2329
 on_exit() {
   release_mutex
   [[ "$LEASE_EXIT_OK" == 1 ]] && return 0

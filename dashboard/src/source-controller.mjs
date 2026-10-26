@@ -162,8 +162,8 @@ export function createSourceController({
     sourceNotice.textContent = '';
     let liveRendered = false;
     poller = createLivePoller({
-      pollOnce: async () => {
-        const res = await fetchSnapshot();
+      pollOnce: async (signal) => {
+        const res = await fetchSnapshot(signal);
         if (!res || !res.ok) throw new Error('LIVE_FETCH_FAILED');
         return normalizeImportedSnapshot(await res.json(), now());
       },

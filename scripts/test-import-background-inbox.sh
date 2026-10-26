@@ -172,4 +172,13 @@ grep -F "would exceed the maximum of 10" "$tmp_dir/overflow-output" >/dev/null \
   || fail "missing overflow error"
 [[ -f "$source_dir/overflow.png" ]] || fail "overflow rejection should not move source image"
 
+mixed_inbox="$tmp_dir/mixed-inbox"
+mixed_source="$tmp_dir/mixed-source"
+mkdir -p "$mixed_inbox/_sample" "$mixed_source"
+cp "$sample_dir/scene-001.yaml" "$mixed_inbox/_sample/scene-001.yaml"
+touch "$mixed_source/mixed.pNg" "$mixed_source/upper.JPEG"
+BACKGROUND_INBOX_DIR="$mixed_inbox" "$script" --copy --from-dir "$mixed_source" >/dev/null
+BACKGROUND_INBOX_DIR="$mixed_inbox" "$repo_root/scripts/check-background-inbox.sh" >/dev/null
+[[ -f "$mixed_inbox/mixed.pNg" && -f "$mixed_inbox/upper.JPEG" ]] || fail "mixed-case images not imported"
+
 echo "import-background-inbox tests passed"

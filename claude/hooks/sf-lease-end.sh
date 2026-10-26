@@ -23,45 +23,15 @@ command -v jq >/dev/null 2>&1 || exit 0
 
 LOG="${SF_LEASE_LOG:-${SF_LEASE_HOME:-${HOME:-}/.local/state/sf-leases}/hook.log}"
 
-log() {
-  local dir="${LOG%/*}" size=0
-  [[ -d "$dir" ]] || mkdir -p "$dir" 2>/dev/null || return 0
-  # `wc -c <file` pads with spaces on macOS, and 2>/dev/null has to come FIRST
-  # or the shell reports a failed redirection on the real stderr.
-  [[ -f "$LOG" ]] && size="$(2>/dev/null wc -c < "$LOG" | tr -d '[:space:]')"
-  [[ "$size" =~ ^[0-9]+$ ]] || size=0
-  (( size > 262144 )) && mv -f "$LOG" "$LOG.1" 2>/dev/null
-  2>/dev/null printf '%s sf-lease-end %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$*" >> "$LOG"
-  printf 'sf-lease-end: %s\n' "$*" >&2
-  return 0
-}
+HOOK_NAME=sf-lease-end
+# Missing support code must leave a per-command hook inert.
+# shellcheck source=claude/hooks/sf-lease-common.sh
+source "$(dirname "${BASH_SOURCE[0]}")/sf-lease-common.sh" 2>/dev/null || exit 0
 
 sid="$(cat | jq -r '.session_id // empty' 2>/dev/null)"
 [[ -n "$sid" ]] || exit 0
 
-rc=0
-attempt=0
-# Each retry costs sf-lease's whole mutex timeout (5s by default) on a wedged
-# store. Garbage, a leading zero (bash reads it as octal) and anything past the
-# cap all fall back to the default, out loud.
-RETRIES_MAX=5
-retries="${SF_LEASE_HOOK_RETRIES:-2}"
-if ! [[ "$retries" =~ ^(0|[1-9][0-9]*)$ ]] || (( retries > RETRIES_MAX )); then
-  log "SF_LEASE_HOOK_RETRIES=$retries is not an integer in 0..$RETRIES_MAX; using 2 instead."
-  retries=2
-fi
-# The loop's ceiling is a LITERAL bound on an internal counter, not $retries, so
-# no value of the knob can spin forever even if it slips past the check above.
-# A value like "08" is exactly how that happens: bash reads it as octal and
-# `-ge` then errors instead of comparing, so the break never fires.
-while [[ "$attempt" -le "$RETRIES_MAX" ]]; do
-  rc=0
-  "$LEASE" release-session "$sid" >/dev/null 2>&1 || rc=$?
-  [[ "$rc" -eq 75 ]] || break
-  [[ "$attempt" -ge "$retries" ]] && break
-  attempt=$(( attempt + 1 ))
-  sleep 0.2
-done
+release_with_retry release-session "$sid"
 
 case "$rc" in
   0) ;;

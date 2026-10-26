@@ -236,6 +236,13 @@ fire_message() {
   jq -nc --arg t "$1" --arg m "$2" '{hook_event_name:"Notification",notification_type:$t,message:$m}' \
     | TMUX_PANE=%9 "$hook"
 }
+NOTIFY_LOG="$test_home/scenario-notify.log"
+cat > "$fake_bin/scenario-notify" <<REC
+#!/usr/bin/env bash
+printf '%s\x1f%s\n' "\$1" "\$2" >> "$NOTIFY_LOG"
+REC
+chmod +x "$fake_bin/scenario-notify"
+export TMUX_LLM_NOTIFY_CMD="$fake_bin/scenario-notify"
 : > "$NOTIFY_LOG"
 fire_message permission_prompt 'Claude needs your permission to use "Bash"'
 check "a new prompt notifies once" "1" "$(notified 1)"
