@@ -1,6 +1,6 @@
-# Start routine sessions on the everyday workhorse. Use codex-role build,
-# architect, or research when the task requires a pinned Sol configuration.
-model = "gpt-5.6-terra"
+# Routine delivery uses Sol/medium. Explicit profiles select heavier research
+# or architecture work; mechanical tasks may select Luna at session start.
+model = "gpt-6.1-sol"
 model_reasoning_effort = "medium"
 
 # Auto: work freely inside the active repository and route eligible boundary
@@ -27,27 +27,28 @@ trust_level = "trusted"
 [tui]
 status_line = ["project-name", "context-used", "five-hour-limit", "weekly-limit", "model-with-reasoning"]
 status_line_use_colors = true
+screen_reader_detection_done = true
 
 [tui.model_availability_nux]
 "gpt-5.5" = 4
-
-[mcp_servers.notion]
-url = "https://mcp.notion.com/mcp"
-
-[mcp_servers.notion.tools.notion-update-page]
-approval_mode = "approve"
+"gpt-6.1-sol" = 4
 
 [notice]
 hide_rate_limit_model_nudge = true
 
 [notice.model_migrations]
-"gpt-5.4" = "gpt-5.6-terra"
+"gpt-5.4" = "gpt-6.1-sol"
+
+[features]
+# Keep context explicit: repository instructions and task prompts, not recall
+# extracted from earlier chats.
+memories = false
 
 [agents]
-# Delegation improves elapsed time and context isolation, but every spawned
-# agent consumes its own tokens. Keep the default pool intentionally small and
-# reserve explicit Sol role pins for work whose risk requires them.
+# A primary session owns each outcome. A single, explicit subagent is permitted
+# only for a bounded question that materially benefits from context isolation.
+# Each subagent consumes allowance independently.
 enabled = true
-max_concurrent_threads_per_session = 2
-default_subagent_model = "gpt-5.6-terra"
+max_concurrent_threads_per_session = 1
+default_subagent_model = "gpt-6-luna"
 default_subagent_reasoning_effort = "medium"

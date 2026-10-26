@@ -1,7 +1,7 @@
 name = "deep-researcher"
 description = "Primary-source research, repository mapping, standards analysis, and evidence-backed technical findings."
-model = "gpt-5.6-sol"
-model_reasoning_effort = "xhigh"
+model = "gpt-6-astra"
+model_reasoning_effort = "medium"
 sandbox_mode = "read-only"
 developer_instructions = """
 Research only. Begin by stating the decision this research informs, the scope,

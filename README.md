@@ -42,8 +42,8 @@ terminal backgrounds.
 - `Ctrl-Shift-Space` opens selected text paths in a tmux Neovim split, PNG
   images in Preview, and web targets in the browser.
 - WezTerm backgrounds rotate every 15 minutes by default.
-- Codex defaults to `gpt-5.6-terra` with `medium` reasoning for routine sessions
-  and includes pinned Sol role profiles for research, architecture, and
+- Codex defaults to `gpt-6.1-sol` with `medium` reasoning for routine sessions
+  and includes pinned Astra and Sol profiles for research, architecture, and
   implementation.
 - Claude Code sessions can take advisory leases on shared Salesforce orgs, so two
   agents do not run tests against the same org at once. Off until
@@ -277,8 +277,9 @@ Copy mode installs files into:
 ~/.codex/config.toml
 ~/.codex/AGENTS.md
 ~/.codex/agents
-~/.codex/{deep-researcher,lead-architect,workflow-coordinator,builder}.config.toml
+~/.codex/{deep-researcher,lead-architect,builder}.config.toml
 ~/.local/bin/codex-role
+~/.local/bin/codex-budget
 ~/.local/bin/sf-org-resolve
 ~/.local/bin/sf-lease
 ~/.local/bin/tmux-session-to-end
@@ -292,12 +293,6 @@ Directory installs back up the complete prior directory, carry local-only files
 forward, and replace managed entries without following destination symlinks.
 Unchanged reinstalls retain the original backup. Skill backups are stored under
 `~/.codex/skill-backups/`, outside skill discovery.
-
-If `codex/skills/` contains skill sources, both installer modes install them.
-Uninstall removes these managed skills and, with `--restore-latest`, restores
-any versions they replaced. Unrelated personal skills remain in place. A receipt
-under `~/.local/state/terminal-dotfiles/skills` also tracks managed skills that
-have since been removed from the checkout.
 `~/.claude/settings.json` is never written: see Claude Code Status Line and
 Salesforce Org Leases for the settings and hook snippets to merge by hand. The lease hooks stay inert
 after installation until `SF_LEASE_ENABLE` is set, so installing them changes
@@ -322,8 +317,9 @@ This symlinks:
 ~/.codex/config.toml -> codex/config.toml
 ~/.codex/AGENTS.md -> codex/AGENTS.md
 ~/.codex/agents -> codex/agents
-~/.codex/{deep-researcher,lead-architect,workflow-coordinator,builder}.config.toml -> codex/profiles/*
+~/.codex/{deep-researcher,lead-architect,builder}.config.toml -> codex/profiles/*
 ~/.local/bin/codex-role -> codex/bin/codex-role
+~/.local/bin/codex-budget -> codex/bin/codex-budget.mjs
 ~/.local/bin/sf-org-resolve -> bin/sf-org-resolve
 ~/.local/bin/sf-lease -> bin/sf-lease
 ~/.local/bin/tmux-session-to-end -> bin/tmux-session-to-end
@@ -332,18 +328,19 @@ This symlinks:
 ~/.claude/hooks/tmux-agent-depth.sh -> claude/hooks/tmux-agent-depth.sh
 ```
 
-## Codex Role Routing
+## Codex SDLC
 
-The normal Codex default is `gpt-5.6-terra` with `medium` reasoning, suitable
-for routine inspection, coordination, documentation, and status work. Four
-custom agents are also installed for explicit role routing:
+Start with [Working with Codex](docs/codex-workflow.md) for new sessions,
+continuation, unattended tasks, Dependabot, and troubleshooting.
+
+The normal Codex default is `gpt-6.1-sol` with `medium` reasoning for routine
+delivery. Three optional, explicitly selected profiles support heavier work:
 
 | Role | Model | Reasoning |
 | --- | --- | --- |
-| Deep Researcher | `gpt-5.6-sol` | `xhigh` |
-| Lead Architect | `gpt-5.6-sol` | `high` |
-| Workflow Coordinator | `gpt-5.6-terra` | `medium` |
-| Builder | `gpt-5.6-sol` | `medium` |
+| Deep Researcher | `gpt-6-astra` | `medium` |
+| Lead Architect | `gpt-6.1-sol` | `high` |
+| Builder | `gpt-6.1-sol` | `medium` |
 
 For a task delegated within Codex, name the custom agent explicitly, for
 example: `Use the deep-researcher agent to map this codebase.` The agent file
@@ -355,7 +352,6 @@ guarantee the intended model and reasoning level from session start:
 ```sh
 codex-role research
 codex-role architect
-codex-role coordinate
 codex-role build
 ```
 
@@ -365,46 +361,36 @@ session changes model after it has started. If a pinned model or level is not
 available, Codex should surface that as an exception rather than silently
 downshifting.
 
-### Hybrid Delivery Workflow
+Every task follows a compact loop: state the goal, scope, risk, acceptance
+criteria, and verification; inspect before editing; make the smallest complete
+change; run proportional verification; then review the final diff and report
+assumptions or residual risk. Use DRY, SOLID where it helps, and KISS.
 
-The installed role guidance uses two delivery modes. Choose the smallest mode
-that safely fits the task rather than running every task through every role.
+One Codex session owns each outcome. Do not delegate by default. A single
+subagent is appropriate only for a bounded, independent question where context
+isolation adds material value; it must not delegate further. The default pool is
+therefore one Luna/medium subagent, not a parallel delivery pipeline.
 
-**Advisor Mode is the default** for scoped, low-risk work such as routine bug
-fixes, local tooling, documentation, small UI changes, and exploration. One
-primary role owns the outcome and consults a specialist only for a bounded
-question. A Builder usually owns implementation; a Lead Architect owns an
-ambiguous decision. Research findings and QA feedback are advisory, and the
-primary records the decision, assumptions, and verification in its handoff.
-Advisor Mode permits at most one bounded specialist, with no recursive
-delegation. Workflow coordination is a brief intake or final sync step rather
-than a persistent parallel agent.
+For auth, security, privacy, safety, payments, licensing, migrations, public
+APIs or schemas, releases, and requested reviews, run a fresh-context Codex
+review after implementation. Supply its acceptance criteria, final diff, and
+verification output; resolve material findings before handoff. This replaces
+external-model and Notion gates.
 
-**Gated Delivery Mode** is required for new architecture, cross-module or
-public contracts, privacy, safety, security, licensing, auth, payments,
-external integrations, release candidates, and explicitly requested independent
-reviews. The Lead Architect selects the gate, defines the implementation-ready
-plan, and the Builder starts only after that review passes. The Workflow
-Coordinator records state and evidence but never changes the technical decision.
-Only the roles and gates required by the task's risk should run.
+The installed global `AGENTS.md` owns standing delivery authority, engineering
+expectations, and usage thresholds. Model pins live in config and profiles;
+specialized skills contain procedures without repeating model tables.
+Reviewable skill sources in `codex/skills/` are installed by both installer
+modes. Uninstall removes these managed skills and, with `--restore-latest`,
+restores any versions they replaced. Unrelated personal skills remain in place.
+A receipt under `~/.local/state/terminal-dotfiles/skills` also tracks managed
+skills that have since been removed from the checkout.
 
-Subagents are useful for independent exploration, focused test or log analysis,
-and other read-heavy work that would pollute the primary thread. They are not a
-token-saving mechanism: every spawned agent performs its own model and tool
-work. The default spawned-agent pool is therefore capped at two threads and
-uses `gpt-5.6-terra` with `medium` reasoning. Use the pinned Builder for normal
-behavioral implementation, escalate to Architect or Researcher only when the
-risk requires it, and keep one chat per coherent outcome.
-
-Examples:
-
-```text
-Advisor: "Use the builder agent to fix this focused test failure; consult the
-deep-researcher only if the library behavior is uncertain."
-
-Gated: "Use the lead-architect agent to classify this authentication change,
-write the spec and QA gate, then hand the approved scope to the builder."
-```
+Use `codex-budget status` for a read-only allowance query with no model call.
+For unattended tasks, see [the budget runner](docs/codex-budget.md). It gates
+each task, waits for reported resets when requested, and stores concise local
+checkpoints under the Git directory. A running task can still exceed the
+reserve; this is a task-boundary guard, not a hard token/spending cap.
 
 WezTerm has automatic reload enabled, but module edits through symlinks may not
 always reload immediately. Press `Cmd-r` in WezTerm if needed. Reload tmux with

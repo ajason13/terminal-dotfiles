@@ -1,0 +1,4 @@
+interface:
+  display_name: "Dependabot Merge"
+  short_description: "Safely triage and merge Dependabot PRs"
+  default_prompt: "Use $dependabot-merge to safely triage open Dependabot PRs in this repository."

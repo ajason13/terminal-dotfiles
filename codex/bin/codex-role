@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: codex-role <research|architect|coordinate|build> [codex arguments...]
+Usage: codex-role <research|architect|build> [codex arguments...]
 
 Starts a top-level Codex session with the model and reasoning effort pinned for
 the selected SDLC role.
@@ -21,9 +21,6 @@ case "$1" in
     ;;
   architect)
     profile="lead-architect"
-    ;;
-  coordinate)
-    profile="workflow-coordinator"
     ;;
   build)
     profile="builder"

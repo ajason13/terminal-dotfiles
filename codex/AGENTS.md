@@ -1,78 +1,69 @@
-# Codex Role Routing
+# Single-Agent Codex SDLC
 
-Use the role requested by the user. Choose a delivery mode before delegating.
-Do not silently change an agent's model or reasoning effort; record an
-unavailable model or effort as an exception in the handoff.
+One Codex session owns one behavior change per PR. Configuration owns model
+pins; use the default for routine delivery and a higher-effort profile for
+architecture or difficult regressions. Report unavailable model settings.
 
-## Advisor Mode (Default)
+## Default Delivery Loop
 
-Use Advisor Mode for scoped, low-risk work: routine bug fixes, local tooling,
-documentation, small UI changes, and exploration. One accountable primary owns
-the task and consults only the specialist needed for a bounded question.
-Advisor Mode permits at most one specialist, and that specialist must not
-delegate recursively.
+1. **Intake:** state the goal, affected repository or files, risk, acceptance
+   criteria, and intended verification.
+2. **Inspect:** read the relevant instructions and code before editing; retain
+   repository conventions and unrelated user changes.
+3. **Plan:** for a non-trivial change, name the smallest safe approach and
+   non-goals. Reuse existing abstractions, keep responsibilities clear, and
+   avoid speculative frameworks. Apply DRY, KISS, and SOLID where they simplify
+   the actual change.
+4. **Implement:** make the smallest complete change. Do not expand scope
+   without user direction.
+5. **Verify:** run focused tests, build, lint, or a manual check proportional
+   to risk. Add regression coverage for changed behavior. Run focused checks
+   during iteration and required broader checks before completion; investigate
+   failures rather than repeatedly rerunning them.
+6. **Review and hand off:** inspect the final diff for regressions, security,
+   public-contract impact, duplication, and documentation needs. Report files
+   changed, verification, assumptions, and residual risk.
 
-- Use `builder` as primary for implementation, debugging, tests, and docs.
-- Use `lead-architect` as primary for an ambiguous decision or small spec.
-- Use `deep-researcher` for evidence-backed research before recommendations.
-- Treat specialist output as advice, not automatic authorization. The primary
-  records the decision, assumptions, and verification in the normal handoff.
-- Do not add a coordinator or independent QA gate unless the task warrants it.
-- Treat workflow coordination as a brief intake or final synchronization step,
-  not a persistent agent alongside routine implementation.
+## Risk-Triggered Fresh Review
 
-## Gated Delivery Mode
+For authentication, authorization, security, privacy, safety, payments,
+licensing, data migrations, public APIs or schemas, release candidates, or a
+user-requested review, use a fresh-context Codex review after implementation.
+Give that review the acceptance criteria, final diff, and verification output.
+It is a Codex review, not an external-model or Notion gate; resolve material
+findings before handoff.
 
-Use Gated Delivery for new architecture, cross-module/public contracts,
-privacy, safety, security, licensing, auth, payments, external integrations,
-release candidates, or any task the user explicitly asks to independently
-review. The Lead Architect selects this mode and defines the gate.
+## Usage And Context
 
-1. `deep-researcher` provides evidence when research is material.
-2. `lead-architect` creates the approved scope, constraints, acceptance
-   criteria, and verification plan.
-3. Obtain the required independent QA/audit review before implementation.
-4. `builder` implements only the approved scope and records verification.
-5. `workflow-coordinator` records status, evidence, and handoffs without
-   changing technical direction.
+Before large work and between tasks, use `codex-budget status --model <active-model>`
+when installed, otherwise `/status` or Settings → Usage. Never infer remaining
+allowance from tokens. Start queued work only above 30% in every applicable
+window. At 15–30%, finish the current task. Below 15%, save a checkpoint and
+stop starting work. At a limit, wait for the reported reset and recheck both
+windows. Missing usage data is unknown, not permission for an unattended run.
+Do not purchase credits or redeem resets automatically.
 
-Use only the roles and gates required by the risk. Gated Delivery does not
-authorize every role to run for every task, nested delegation, or duplicate
-repository review.
+Read relevant files and bounded tool output; load skill details only when
+needed. Keep required rules here, specialized procedures in skills, commands
+in scripts/CI, and model pins in configuration. At a pause, keep a local note
+under the Git directory with branch/commit, remaining criteria, verification,
+and next action. Do not recreate a repository-wide history file.
 
-## Delegation And Usage Efficiency
+## Standing Delivery Authority
 
-Default to a single accountable primary. Delegate only when there is a named,
-bounded question or an independent unit of work with a material quality or
-elapsed-time benefit. Subagents each perform their own model and tool work, so
-parallelism is not a token-saving mechanism.
+For an implementation task in a repository owned by `ajason13`, scoped edits,
+verification, focused commits, pushing a task branch, PR creation, and enabling
+native auto-merge for `ajason13` PRs are authorized after required checks and
+reviews pass. Recheck the repository, author, base, and reviewed head SHA;
+respect branch protections and never include unrelated work. A request for
+advice or review alone does not authorize publishing. Release publication,
+destructive changes, and work outside the task remain separate decisions.
+Dependabot has separate eligibility rules in its merge skill.
 
-- Prefer subagents for independent exploration, focused test or log analysis,
-  and other read-heavy work that would pollute the primary thread.
-- Avoid subagents for sequential phases, small changes, routine status sync,
-  or work that requires each agent to reread the same context.
-- Use `gpt-5.6-terra` at `medium` for coordination, documentation, status,
-  routine inspection, and ordinary supporting work.
-- Use `gpt-5.6-luna` at `low` only for validated mechanical, repeatable, or
-  high-volume chores.
-- Use `gpt-5.6-sol` at `medium` for normal behavioral implementation,
-  debugging, and tests; escalate to `high` for architecture, security, public
-  contracts, ambiguous regressions, or release blockers.
-- Reserve `gpt-5.6-sol` at `xhigh` for material multi-source research.
+Do not delegate by default. A single explicit subagent is allowed only for a
+bounded, independent question where context isolation materially improves the
+outcome; it must not delegate further. Keep one chat per outcome, compact long
+threads, and read historical handoffs only when relevant. Do not use Notion or
+external-model workflows unless the user explicitly requests them.
 
-Keep one chat per coherent outcome and compact long threads. Scope prompts to
-the relevant files and sources, keep active `CONTEXT.md` files concise, nest
-project instructions near the code they govern, and disable MCP servers that
-are not needed for the current session.
-
-## Role Boundaries
-
-- Research-only tasks: use `deep-researcher` before making recommendations.
-- Architecture, specs, or ambiguous planning: use `lead-architect`.
-- Notion, status, handoffs, and release checklists: use `workflow-coordinator`.
-- Code changes, debugging, tests, CI, and documentation: use `builder`.
-- For mixed work, the Lead Architect defines the plan; the Builder implements
-  it only after any selected gate has passed.
-
-For a guaranteed top-level role pin in the CLI, start the session with
-`codex-role <role>` instead of relying on task wording.
+For a guaranteed top-level model pin, use `codex-role <research|architect|build>`.
