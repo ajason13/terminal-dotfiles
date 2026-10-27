@@ -31,6 +31,33 @@ directory_mode() {
 }
 run_install() { DOTFILES_TARGET_HOME="$1" bash "$fixture/install-macos.sh" --skip-backgrounds "${@:2}" >/dev/null; }
 run_uninstall() { DOTFILES_TARGET_HOME="$1" bash "$fixture/uninstall-macos.sh" "${@:2}" >/dev/null; }
+# Check the registration contract in every install mode without personal settings.
+for mode in copy link; do
+  for preview in false true; do
+    target_home="$task_tmp/notice-$mode-$preview"
+    mkdir -p "$target_home/.claude"
+    settings='{"hooks":{"SessionStart":[{"hooks":[]}]},"env":{"SF_LEASE_ENABLE":"0"}}'
+    printf '%s\n' "$settings" > "$target_home/.claude/settings.json"
+    install_args=("--$mode" --skip-backgrounds)
+    if [[ "$preview" == true ]]; then install_args+=(--dry-run); fi
+    notice="$(DOTFILES_TARGET_HOME="$target_home" bash "$fixture/install-macos.sh" "${install_args[@]}")"
+    for event in UserPromptSubmit PostToolBatch Stop StopFailure SubagentStart SubagentStop SessionStart SessionEnd Notification; do
+      if ! grep -Eq "^  $event +-> ~/.claude/hooks/tmux-agent-depth.sh$" <<< "$notice"; then
+        printf 'FAIL: %s missing from %s notice (dry-run=%s)\n' "$event" "$mode" "$preview" >&2
+        exit 1
+      fi
+    done
+    for guidance in 'permission_prompt|elicitation_dialog' 'README.md#registering-the-hooks' \
+      'SF_LEASE_ENABLE=1' 'no env gate' 'SessionStart and SessionEnd' \
+      'append to existing arrays' 'do not let one replace the other'; do
+      grep -Fq "$guidance" <<< "$notice" || { printf 'FAIL: notice missing %s\n' "$guidance" >&2; exit 1; }
+    done
+    check "$settings" "$(cat "$target_home/.claude/settings.json")" 'installation changed settings or lease opt-in'
+    rm "$target_home/.claude/settings.json"
+    run_install "$target_home" "${install_args[@]}"
+    test ! -e "$target_home/.claude/settings.json"
+  done
+done
 for mode in copy link; do
   target_home="$task_tmp/$mode"
   mkdir -p "$target_home/.config/nvim" "$target_home/.config/wezterm" "$target_home/.codex/skills/example" "$target_home/.codex/skills/unrelated"
