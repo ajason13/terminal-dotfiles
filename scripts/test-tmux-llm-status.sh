@@ -245,6 +245,49 @@ clear_busy_for alpha:a2
 "$bin" once
 check "an unmarked shell pane stays empty" "" "$(marker_of alpha:a2)"
 
+# --- task text is not status: current/legacy Codex and Claude titles -----------
+# sleep stands in for Codex's node process: presence must come from the title.
+t -f /dev/null new-session -d -s titles -n task 'sleep 600'
+for title in \
+  'Complete one Ready issue | swing-sync' \
+  'Complete next Ready issue | chart-the-course' \
+  'Audit Idle and Action Required handling | dotfiles' \
+  'Thinking about Working Running Processing Executing Loading | dotfiles' \
+  '[Ready] Complete one issue | dotfiles' \
+  '[Idle] Complete one issue | dotfiles' \
+  '✳ Complete one Ready issue' \
+  '✳ Audit Idle Action Required and Working states'; do
+  t select-pane -t titles:task -T "$title"
+  "$bin" once
+  check "task text stays present: $title" "◆" "$(marker_of titles:task)"
+  check "idle task fleet: $title" "◆1" "$(fleet_of titles)"
+done
+for status in Thinking Working Running Processing Executing Loading; do
+  t select-pane -t titles:task -T "[$status] Complete one Ready issue | dotfiles"
+  "$bin" once
+  check "structured Codex $status stays active" "S" "$(marker_of titles:task)"
+done
+t select-pane -t titles:task -T '[Action Required] Complete one Ready issue | dotfiles'
+"$bin" once
+check "structured Codex prompt stays waiting" "!" "$(marker_of titles:task)"
+t select-pane -t titles:task -T '⠋ Complete one Ready issue | dotfiles'
+"$bin" once
+check "Codex spinner outranks task text" "S" "$(marker_of titles:task)"
+t select-pane -t titles:task -T '✳ Complete one Ready issue'
+busy_for titles:task
+"$bin" once
+check "Claude busy hook outranks task text" "S" "$(marker_of titles:task)"
+needs_for titles:task
+"$bin" once
+check "Claude prompt hook outranks busy and task text" "!" "$(marker_of titles:task)"
+clear_needs_for titles:task
+"$bin" once
+check "Claude cleared prompt resumes busy" "S" "$(marker_of titles:task)"
+clear_busy_for titles:task
+"$bin" once
+check "Claude completed turn becomes idle" "◆" "$(marker_of titles:task)"
+t kill-session -t titles
+
 # --- pruning state for panes that no longer exist ------------------------------
 # tmux pane ids reset to %0 when the server restarts, so a dir left by a previous
 # server can collide with a recycled id. Exposed as a subcommand so it is testable
