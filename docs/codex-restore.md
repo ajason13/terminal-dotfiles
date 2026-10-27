@@ -21,9 +21,19 @@ run-shell '~/.tmux/plugins/tmux-resurrect/resurrect.tmux'
 run-shell '~/.tmux/plugins/tmux-continuum/continuum.tmux'
 ```
 
-Reload tmux (`Ctrl-a r`) after enabling it. The first Codex hook invocation after
-installing this feature may ask Codex to trust the changed hook configuration;
-approve it only after checking that `~/.codex/config.toml` points to this setup.
+Reload tmux (`Ctrl-a r`) after enabling it. Install `jq` (`brew install jq`)
+for the JSON adapter. The installed `~/.codex/config.toml` registers a
+`SessionStart` command: `"$HOME/.local/bin/codex-restore" capture-hook`.
+Open `/hooks` in Codex and review/trust that exact definition before relying on
+recovery; untrusted hooks are skipped. Other active lifecycle hooks still run.
+Copy and link installs both include the configuration and helper; uninstall
+removes them (or restores their backups) and preserves saved recovery state.
+
+The registration and JSON input follow the
+[official Codex hook contract](https://learn.chatgpt.com/docs/hooks).
+`capture-hook` accepts one JSON object with `hook_event_name: "SessionStart"`
+and a UUID-shaped string `session_id`. It ignores malformed input and unmanaged
+or non-tmux contexts, reads no transcript, and emits no model context.
 
 ## Everyday use
 
@@ -34,10 +44,13 @@ codex-restore start
 # or: codex-restore start --profile builder
 ```
 
-The wrapper starts normal interactive Codex. On its first prompt, the Codex hook
-records the Codex UUID, tmux session/window/pane position, and working directory.
+The wrapper starts normal interactive Codex. When the trusted `SessionStart`
+hook fires, it records the Codex UUID, tmux session/window/pane position, and working directory.
 It records neither prompts nor transcripts. Sessions launched as plain `codex`
 remain unmanaged.
+
+The same hook refreshes the managed pane's record on resume, clear, compact, or
+fork. A replacement UUID supersedes the old record for that logical pane.
 
 After an unclean shutdown or restart:
 
@@ -101,7 +114,8 @@ especially important).
   `Ctrl-a Ctrl-s` before a planned restart when the exact latest layout matters.
 - A pane ID is not stable after restore. The helper deliberately uses the saved
   tmux session/window/pane position plus cwd and skips ambiguous matches.
-- The wrapper only records a session after its first user prompt. A session that
-  never receives one has nothing durable to resume.
+- Capture requires the trusted hook to run. Depending on CLI lifecycle timing,
+  this can wait until the first prompt; check `codex-restore list` before relying
+  on recovery. Hooks disabled by configuration or policy cannot capture.
 - Do not treat a resumed conversation as proof that a partially completed command
   was safe to retry. Reconcile the real workspace first.

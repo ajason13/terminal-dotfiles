@@ -9,6 +9,14 @@ sandbox_mode = "workspace-write"
 approval_policy = "on-request"
 approvals_reviewer = "auto_review"
 
+# Review/trust this hook in Codex before using managed recovery. Other active
+# hook sources still run; this adapter records only explicitly managed panes.
+[[hooks.SessionStart]]
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = '"$HOME/.local/bin/codex-restore" capture-hook'
+timeout = 5
+
 [projects."/Users/jasonalvarez/gitHubRepos"]
 trust_level = "trusted"
 
