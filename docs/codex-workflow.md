@@ -5,6 +5,8 @@ when needed; agents do not need to load it on every task. Global `AGENTS.md`
 owns delivery authority and usage policy. Each project's `AGENTS.md` owns its
 commands and domain constraints. Configuration and role profiles own model
 settings. Historical handoffs are reference material.
+GitHub Issues are the running source of truth for repository work; local
+checkpoints carry only the context needed to resume a session.
 
 ## Start a normal task
 
@@ -34,7 +36,7 @@ research sessions; they are optional, not stages every task must pass.
 A good starting request is short and concrete:
 
 ```text
-Implement [one change]. Done when [observable acceptance criteria].
+Implement [issue URL or one change]. Done when [observable acceptance criteria].
 Relevant area: [files, screen, error, or issue].
 Follow current AGENTS.md, preserve unrelated work, verify the change,
 and complete the scoped PR delivery when checks and required review pass.
@@ -45,6 +47,98 @@ Codex should inspect relevant files, clarify material ambiguity, implement
 within scope, test, review, and report delivery state. You do not need to
 repeat global rules, select specialist roles, paste old context histories, or
 run commands yourself unless access or a product decision needs your input.
+
+## Track and order work
+
+At intake, confirm the repository from its Git remote and identify the issue
+before implementation. Search open and recently closed issues and check current
+code and merged PRs before creating anything. Update a matching issue instead
+of duplicating it. An implementation request authorizes tracking that scoped
+work; organizing a backlog alone does not authorize implementing it.
+
+Keep one issue per independently implementable and verifiable outcome, usually
+one focused PR. Use a parent tracking issue only when several tasks contribute
+to a larger outcome. Write issues for a fresh session using this format:
+
+```md
+## Problem or desired outcome
+State whether this is a confirmed bug, proposed improvement, research question,
+or human decision. Identify assumptions that still need evidence.
+
+## Evidence and affected surfaces
+Include relevant code paths, behavior, issue/PR links, or reproduction steps.
+
+## Scope and exclusions
+Define the focused outcome and what belongs in separate follow-up issues.
+
+## Acceptance criteria
+- [ ] Observable, checkable conditions for this outcome.
+
+## Dependencies and execution order
+Depends on: linked issues, or none. Record priority separately from order.
+
+## Verification and required review
+Name proportional checks, required review, and any unresolved decision.
+
+## Status and next action
+Record the workflow state and the next concrete action.
+```
+
+Use **Backlog → Ready → In progress → In review → Done**. Backlog includes
+untriaged findings and blocked or optional work. Ready requires actionable
+criteria and verification, satisfied dependencies, and no blocking decision.
+In progress means implementation or investigation is underway; In review means
+the result is awaiting required checks, review, or merge. Implementation is
+Done only when acceptance criteria are met, required checks pass, required
+review is resolved, and the linked PR is merged. Research and decision issues
+need recorded evidence or a decision satisfying their criteria.
+
+Reuse existing labels and milestones. For a larger backlog, use outcome-based
+milestones ordered by dependencies, risk, and user value, with optional future
+work outside the immediate milestone. Use native issue dependencies when
+available, otherwise linked “Depends on” entries. Reuse an appropriate existing
+GitHub Project; if none fits, keep status in issue bodies or comments. No new
+Project or second tracking system is required.
+
+During delivery, record material findings, blockers, verification, and scope
+changes in the issue. Preserve relevant existing content and explain material
+scope changes. Link newly discovered out-of-scope work as follow-up issues;
+tracking a recommendation does not authorize implementing it. Link each PR to
+its issue, using `Closes #N` only when merging that PR will satisfy all completion
+criteria. A queued auto-merge is still In review.
+
+At a stopping point, update the issue with what is complete, what remains,
+verification, blockers, and the next concrete action. Keep secrets, sensitive
+data, raw logs, and unnecessary conversation history out of GitHub. If access
+is unavailable, save ready-to-submit drafts and their order under the Git
+directory, continue authorized local work where possible, and report exactly
+what was not published. Reconcile the drafts with existing issues when access
+returns before publishing them.
+
+To organize a repository's backlog without implementing it, use:
+
+```text
+Use GitHub Issues as the running source of truth for this repository's work.
+Confirm the target from its Git remote and follow applicable AGENTS.md.
+Review this conversation, repository instructions, open and recently closed
+issues, current code, and relevant merged PRs. Update matching issues before
+creating new ones, and do not reopen work already completed by newer code.
+
+You may create and update scoped issues, labels, and milestones. Do not implement
+changes, close unresolved issues, or modify unrelated work. Preserve relevant
+existing content and explain material scope changes.
+
+Use the issue format and workflow in this guide. Distinguish confirmed bugs,
+proposed improvements, research questions, and human decisions. Keep each issue
+suitable for one independently verifiable outcome. Reuse labels, milestones,
+and an appropriate existing Project. Record dependency order separately from
+priority; keep optional future work outside the immediate milestone.
+
+Report created or updated issue links, recommended order and dependencies,
+the next ready issue, unresolved decisions, and access limitations. If access
+is unavailable, prepare local ready-to-submit drafts and an ordered backlog,
+and clearly state that nothing was published. Do not include sensitive data.
+```
 
 ## Continue work
 
@@ -68,15 +162,16 @@ If starting a fresh chat for unfinished work, name its PR/branch and provide
 only the relevant checkpoint:
 
 ```text
-Continue [task] on [branch/PR]. Read [specific checkpoint path] and inspect
-the current worktree. Confirm what remains before editing; do not repeat
-completed commits, PR creation, or merges.
+Continue [issue URL] on [branch/PR]. Read the issue and [specific checkpoint path].
+Inspect the current worktree and confirm what remains before editing; do not
+repeat completed commits, PR creation, or merges.
 ```
 
 When context gets crowded, `/compact` summarizes the current chat. It does not
 restore plan allowance. Before stopping a long task, ask for a short local
-checkpoint containing branch/commit, unfinished criteria, verification, and
-next action. Persistent Codex memories are disabled in this setup; there is
+checkpoint containing the issue URL, branch/commit, unfinished criteria,
+verification, and next action; update the issue's stopping-point status too.
+Persistent Codex memories are disabled in this setup; there is
 no requirement to maintain a MEMORY.md or root CONTEXT.md.
 
 ## Run unattended tasks

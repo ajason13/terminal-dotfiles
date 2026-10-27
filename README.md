@@ -332,7 +332,13 @@ This symlinks:
 ## Codex SDLC
 
 Start with [Working with Codex](docs/codex-workflow.md) for new sessions,
-continuation, unattended tasks, Dependabot, and troubleshooting.
+issue tracking, continuation, unattended tasks, Dependabot, and troubleshooting.
+GitHub Issues are the running source of truth for work: identify an issue before
+implementation, record material progress and dependencies there, and link the
+PR. Follow Backlog → Ready → In progress → In review → Done; implementation is
+Done only after acceptance criteria, required checks, and review are satisfied
+and the linked PR is merged. The guide includes a reusable backlog prompt and
+issue format; local checkpoints support resuming sessions.
 
 The normal Codex default is `gpt-6.1-sol` with `medium` reasoning for routine
 delivery. Three optional, explicitly selected profiles support heavier work:
