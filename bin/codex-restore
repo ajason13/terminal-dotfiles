@@ -21,6 +21,7 @@ Usage: codex-restore <command> [arguments]
   install-login              Open WezTerm once after graphical login.
   uninstall-login            Remove the login-time WezTerm launcher.
   capture <session-id>       Hook-only: record a managed pane's Codex session.
+  capture-hook               Hook-only: validate a SessionStart JSON object on stdin.
 EOF
 }
 
@@ -34,7 +35,7 @@ init_state() {
 }
 
 pane_key() { printf '%s' "${1#%}"; }
-valid_session_id() { [[ "$1" =~ ^[0-9a-fA-F-]{16,}$ ]]; }
+valid_session_id() { [[ "$1" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; }
 field() { sed -n "s/^$2=//p" "$1" | head -n 1; }
 current_server_id() { tmux display-message -p '#{pid}' 2>/dev/null || true; }
 
@@ -64,13 +65,26 @@ remove_old_identity() {
   done
 }
 
+capture_hook() {
+  local session_id
+  command -v jq >/dev/null || { note 'jq is required for session capture'; return 0; }
+  # Parse data only: never evaluate payload fields or read transcript_path.
+  # Reject multiple JSON values as well as malformed/non-SessionStart input.
+  session_id="$(jq -ers '
+    select(length == 1) | .[0] | select(type == "object") |
+    select(.hook_event_name == "SessionStart") |
+    .session_id | select(type == "string") | select(length == 36)
+  ' 2>/dev/null)" || return 0
+  capture "$session_id"
+}
+
 capture() {
   local session_id="${1:-}" marker session window pane cwd tmp
   valid_session_id "$session_id" || exit 0
-  [[ -n "${TMUX_PANE:-}" ]] || exit 0
-  init_state
+  [[ "${TMUX_PANE:-}" =~ ^%[0-9]+$ ]] || exit 0
   marker="$(managed_marker)"
   [[ -f "$marker" ]] || exit 0
+  init_state
 
   session="$(current_pane_field '#{session_name}')"
   window="$(current_pane_field '#{window_index}')"
@@ -229,6 +243,7 @@ case "${1:-}" in
   install-login) install_login ;;
   uninstall-login) uninstall_login ;;
   capture) capture "${2:-}" ;;
+  capture-hook) capture_hook ;;
   -h|--help|help|'') usage ;;
   *) usage >&2; exit 2 ;;
 esac
