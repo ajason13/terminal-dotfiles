@@ -92,6 +92,77 @@ check 'release of an unheld org is quiet'   0 "$(rc_of release orga sess-A)"
 check 'release-session clears orga'         '' "$(session_of orga)"
 check 'release-session clears orgb too'     '' "$(session_of orgb)"
 
+# --- independent, idempotent per-call claims ----------------------------------
+check 'A1 claims' 0 "$(code_of claim orgcalls sess-A first call-A1)"
+check 'A2 overlaps A1' 0 "$(code_of claim orgcalls sess-A second call-A2)"
+check 'duplicate A2 claim is harmless' 0 "$(code_of claim orgcalls sess-A second call-A2)"
+"$bin" release orgcalls sess-A call-A2
+check 'releasing A2 keeps rival excluded' 1 "$(code_of claim orgcalls sess-R rival call-R)"
+"$bin" release orgcalls sess-A call-A2
+"$bin" release orgcalls sess-A wrong-token
+"$bin" release orgcalls sess-R call-A1
+"$bin" release orgcalls sess-A
+check 'duplicates, wrong owner/token and legacy release preserve A1' 1 \
+  "$(code_of claim orgcalls sess-R rival call-R)"
+check 'late duplicate A2 claim is idempotent' 0 "$(code_of claim orgcalls sess-A second call-A2)"
+"$bin" release orgcalls sess-A call-A1
+check 'all calls released allows rival, without resurrecting A2' 0 \
+  "$(code_of claim orgcalls sess-R rival call-R)"
+"$bin" release orgcalls sess-A call-A1
+check 'late old-session release preserves replacement owner' sess-R "$(session_of orgcalls)"
+"$bin" release-session sess-R
+
+"$bin" claim orgmixed sess-L legacy
+"$bin" claim orgmixed sess-L tokenized call-L
+"$bin" release orgmixed sess-L call-L
+check 'legacy claim survives token release' 1 "$(code_of claim orgmixed sess-R rival call-R)"
+"$bin" release orgmixed sess-L
+check 'explicit legacy release clears remaining legacy claim' 0 \
+  "$(code_of claim orgmixed sess-R rival call-R)"
+"$bin" release-session sess-R
+"$bin" claim orgmixed sess-L legacy
+"$bin" claim orgmixed sess-L tokenized call-L
+"$bin" release orgmixed sess-L
+check 'legacy release cannot clear token claim' 1 "$(code_of claim orgmixed sess-R rival call-R)"
+"$bin" release-session sess-L
+check 'session cleanup removes every remaining claim' 0 "$(code_of claim orgmixed sess-R rival call-R)"
+"$bin" release-session sess-R
+check 'unsafe token rejected' 64 "$(code_of claim orgcalls sess-A cmd '../bad')"
+check 'empty explicit token rejected' 64 "$(code_of claim orgcalls sess-A cmd '')"
+
+# Pre-token metadata is preserved as an unidentified legacy claim.
+mkdir "$SF_LEASE_HOME/sf-orgold.lease"
+printf 'session\tsess-L\nstarted\t%s\ncmd\tlegacy\nclaim:call:old-text\tactive\n' "$(date +%s)" > "$SF_LEASE_HOME/sf-orgold.lease/meta"
+"$bin" claim orgold sess-L new call-new
+"$bin" release orgold sess-L call-new
+check 'old metadata survives a newer token release' 1 "$(code_of claim orgold sess-R rival call-R)"
+"$bin" release orgold sess-L
+check 'old metadata remains recoverable with legacy release' '' "$(session_of orgold)"
+
+"$bin" claim orgsafe sess-A $'test\nclaim:call:injected\tactive' real-call
+"$bin" release orgsafe sess-A real-call
+check 'multiline command cannot inject ownership rows' '' "$(session_of orgsafe)"
+check 'session delimiters cannot inject metadata' 64 "$(code_of claim orgsafe $'bad\nsession' cmd call)"
+"$bin" claim orgsafe sess-A legacy
+"$bin" claim orgsafe sess-A cmd call-1
+"$bin" release orgsafe sess-A
+"$bin" claim orgsafe sess-A legacy-again
+"$bin" release orgsafe sess-A call-1
+check 'a new legacy call reactivates its released slot' 1 "$(code_of claim orgsafe sess-R cmd call-R)"
+"$bin" release-session sess-A
+
+# Parallel writes share the existing store mutex and cannot lose a call.
+"$bin" claim orgparallel sess-A first call-1 &
+first_pid=$!
+"$bin" claim orgparallel sess-A second call-2 &
+second_pid=$!
+wait "$first_pid"
+wait "$second_pid"
+"$bin" release orgparallel sess-A call-1
+check 'parallel acquisition retains the second call' 1 "$(code_of claim orgparallel sess-R cmd call-R)"
+"$bin" release orgparallel sess-A call-2
+check 'parallel acquisition releases after both calls' '' "$(session_of orgparallel)"
+
 # --- staleness ----------------------------------------------------------------
 "$bin" claim orga sess-C 'playwright test' >/dev/null
 aged=$(( $(date +%s) - 3 * 60 * 60 ))
@@ -170,6 +241,17 @@ check 'claim fails closed when mv is unavailable' 1 \
   "$(PATH="$failbin:$PATH" rc_of claim orgshim sess-A 'x')"
 check 'no meta is written when mv failed' 'no' \
   "$([[ -f "$SF_LEASE_HOME/sf-orgshim.lease/meta" ]] && echo yes || echo no)"
+"$bin" claim orgwrite sess-A first call-1
+"$bin" claim orgwrite sess-A sibling call-kept
+check 'failed second-call write never reports a grant' 70 \
+  "$(PATH="$failbin:$PATH" code_of claim orgwrite sess-A second call-2)"
+check 'failed release write reports failure' 70 \
+  "$(PATH="$failbin:$PATH" code_of release orgwrite sess-A call-1)"
+check 'failed mutation preserves original active claim' 1 \
+  "$(code_of claim orgwrite sess-R rival call-R)"
+"$bin" release orgwrite sess-A call-1
+"$bin" release orgwrite sess-A call-kept
+check 'unpersisted second call leaves no phantom claim' '' "$(session_of orgwrite)"
 rm -rf "$failbin"
 
 # --- store-wide claim mutex ----------------------------------------------------

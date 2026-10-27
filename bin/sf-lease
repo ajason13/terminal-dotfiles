@@ -4,8 +4,8 @@
 # shared org data. Knows nothing about Salesforce; sf-org-resolve owns that.
 #
 # Usage:
-#   sf-lease claim <identity> <session> <cmd>   # rc 0 held (incl. re-entrant), rc 1 refused
-#   sf-lease release <identity> <session>       # rc 0 released or nothing to do
+#   sf-lease claim <identity> <session> <cmd> [token] # rc 0 held (incl. re-entrant), rc 1 refused
+#   sf-lease release <identity> <session> [token]     # release only that claim (legacy if omitted)
 #   sf-lease release-session <session>          # releases every lease that session holds
 #   sf-lease holder <identity>                  # "session=<s> age=<N>m cmd=<c>", or nothing
 #   sf-lease list                                # human table; silent when there is nothing to show
@@ -18,8 +18,8 @@
 #   64  bad invocation: missing/empty identity or session, unknown subcommand,
 #       or a non-numeric / out-of-range value in one of the SF_LEASE_* numeric
 #       knobs. Two causes, one code - callers must name both when they report it.
-#   70  sf-lease aborted before deciding anything. Never a grant - see the
-#       LEASE_EXIT_OK backstop below for why this code has to exist at all.
+#   70  could not persist a mutation, or aborted before a decision. Never a
+#       grant - see the LEASE_EXIT_OK backstop below.
 #   75  the store was busy or wedged: nothing was read, decided, or changed.
 #       Distinct from rc 1 on purpose - "come back later" is not "org taken",
 #       and a release that returns 75 has NOT released anything.
@@ -267,7 +267,7 @@ field() {
 require_nonempty() {
   local v
   for v in "$@"; do
-    [[ -n "$v" ]] || { printf 'sf-lease: missing or empty required argument\n' >&2; finish 64; }
+    [[ -n "$v" && "$v" != *$'\n'* && "$v" != *$'\t'* && "$v" != *$'\r'* ]] || { printf 'sf-lease: missing, empty, or multiline required argument\n' >&2; finish 64; }
   done
 }
 
@@ -295,9 +295,17 @@ identity_of_dir() {
 # re-read remains useful for catching a genuine write failure (full disk,
 # permissions), not a rival.
 write_meta() {
-  local dir="$1" session="$2" started="$3" runcmd="$4" tmp
+  local dir="$1" session="$2" started="$3" runcmd="$4" claims="${5:-}" tmp
+  # Commands are display-only fields, never executable or ownership records.
+  runcmd="${runcmd//$'\n'/ }"
+  runcmd="${runcmd//$'\t'/ }"
+  runcmd="${runcmd//$'\r'/ }"
   tmp="$(mktemp "$SF_LEASE_HOME/.meta.XXXXXX" 2>/dev/null)" || return 1
   if ! printf 'session\t%s\nstarted\t%s\ncmd\t%s\n' "$session" "$started" "$runcmd" > "$tmp" 2>/dev/null; then
+    rm -f "$tmp"
+    return 1
+  fi
+  if [[ -n "$claims" ]] && ! printf 'claims_version\t1\n%s\n' "$claims" >> "$tmp" 2>/dev/null; then
     rm -f "$tmp"
     return 1
   fi
@@ -342,9 +350,7 @@ sweep_one() {
   return 0
 }
 
-# Core release logic, mutex-free: only ever called from cmd_release and
-# cmd_release_session, both of which already hold the mutex themselves before
-# calling this. Kept separate from cmd_release so the loop in
+# Whole-session release, called only with the store mutex held. Kept separate from cmd_release so the loop in
 # cmd_release_session does not try to acquire the mutex a second time from
 # inside itself - mkdir is not a recursive lock, and a second acquire attempt
 # by the same process would just spin until its own timeout and silently
@@ -358,47 +364,86 @@ release_if_owned() {
   return 0
 }
 
+# Token-free CLI calls retain one legacy slot. An old meta file implicitly
+# owns that slot; importing it must never drop an unidentified in-flight call.
+claim_rows() {
+  local rows
+  # Older versions stored multiline command display text verbatim. Only a
+  # versioned record can turn claim-looking command lines into ownership data.
+  if [[ "$(field "$1" claims_version)" != 1 ]]; then
+    printf 'claim:legacy\tactive\n'
+    return 0
+  fi
+  rows="$(awk -F'\t' '$1 ~ /^claim:/ {print}' "$1")" || return 1
+  if [[ -n "$rows" ]]; then printf '%s\n' "$rows";
+  else printf 'claim:legacy\tactive\n'; fi
+}
+
+claim_key() {
+  if [[ $# -eq 0 ]]; then printf 'claim:legacy'; return 0; fi
+  # Keys are data in one atomic meta file, never filesystem paths. Bound size
+  # and reject record delimiters rather than allowing injected ownership rows.
+  [[ "$1" =~ ^[A-Za-z0-9._:-]{1,200}$ ]] || finish 64
+  printf 'claim:call:%s' "$1"
+}
+
 cmd_claim() {
-  local identity="${1:-}" session="${2:-}" runcmd="${3:-}" dir
+  local identity="${1:-}" session="${2:-}" runcmd="${3:-}" dir key claims state
   require_nonempty "$session"
   dir="$(lease_dir "$identity")" || finish 64
+  if [[ $# -gt 3 ]]; then key="$(claim_key "$4")" || finish 64;
+  else key="$(claim_key)"; fi
 
   acquire_mutex || return "$EX_BUSY"
-
   sweep_one "$identity"
   if mkdir "$dir" 2>/dev/null; then
-    if write_meta "$dir" "$session" "$(date +%s)" "$runcmd"; then
+    claims="$(printf '%s\tactive' "$key")"
+    if write_meta "$dir" "$session" "$(date +%s)" "$runcmd" "$claims"; then
       return 0
     fi
-    # Metadata never landed - do not leave a zombie lease standing; an honest
-    # failure beats a session that believes it holds an org that holder/list
-    # cannot see (C2). Still prove it is ours before removing it: if our mutex
-    # was force-cleared, a rival's meta could be sitting here by now.
+    # A failed initial write must not masquerade as a competing holder. Keep
+    # the existing ownership proof when removing our incomplete directory.
     if [[ ! -f "$dir/meta" || "$(field "$dir/meta" session)" == "$session" ]]; then
       rm -rf "$dir" 2>/dev/null
     fi
-    return 1
+    return 70
   fi
   if [[ -f "$dir/meta" && "$(field "$dir/meta" session)" == "$session" ]]; then
-    # Re-entrant: refresh started so a live holder cannot be evicted at a TTL
-    # boundary by whoever's claim happens to run sweep_one first (I7) - this
-    # turns a per-PreToolUse claim into a liveness heartbeat. Best-effort: if
-    # the refresh write fails, ownership was already confirmed above, so
-    # still honor the claim rather than falsely refusing our own session.
-    write_meta "$dir" "$session" "$(date +%s)" "$runcmd" || true
+    claims="$(claim_rows "$dir/meta")" || return 70
+    state="$(printf '%s\n' "$claims" | awk -F'\t' -v k="$key" '$1 == k {print $2; exit}')" || return 70
+    # Retain released tokens while siblings remain, so delayed duplicate events
+    # cannot resurrect a finished call. Once the whole lease ends, IDs must not
+    # be reused (Claude tool_use_id identifies a single invocation).
+    if [[ "$state" == released && "$key" != claim:legacy ]]; then return 0; fi
+    claims="$(printf '%s\n' "$claims" | awk -F'\t' -v OFS='\t' -v k="$key" \
+      '{if ($1 == k) $2="active"; print}')" || return 70
+    if [[ -z "$state" ]]; then claims+=$'\n'"$(printf '%s\tactive' "$key")"; fi
+    write_meta "$dir" "$session" "$(date +%s)" "$runcmd" "$claims" || return 70
     return 0
   fi
   return 1
 }
 
 cmd_release() {
-  local identity="${1:-}" session="${2:-}"
+  local identity="${1:-}" session="${2:-}" dir key claims state
   require_nonempty "$session"
-  lease_dir "$identity" >/dev/null || finish 64
-  # NOT `|| return 0`: this is the SessionEnd cleanup path, and reporting
-  # success for a release that never happened leaks the org for a full TTL.
+  dir="$(lease_dir "$identity")" || finish 64
+  if [[ $# -gt 2 ]]; then key="$(claim_key "$3")" || finish 64;
+  else key="$(claim_key)"; fi
   acquire_mutex || return "$EX_BUSY"
-  release_if_owned "$identity" "$session"
+  [[ -f "$dir/meta" && "$(field "$dir/meta" session)" == "$session" ]] || return 0
+  claims="$(claim_rows "$dir/meta")" || return 70
+  # A wrong/duplicate token is a no-op. Token-free release only clears legacy.
+  state="$(printf '%s\n' "$claims" | awk -F'\t' -v k="$key" '$1 == k {print $2; exit}')" || return 70
+  [[ -n "$state" && "$state" != released ]] || return 0
+  claims="$(printf '%s\n' "$claims" | awk -F'\t' -v OFS='\t' -v k="$key" \
+    '{if ($1 == k) $2="released"; print}')" || return 70
+  if printf '%s\n' "$claims" | awk -F'\t' '$2 != "released" {found=1} END {exit !found}'; then
+    write_meta "$dir" "$session" "$(field "$dir/meta" started)" \
+      "$(field "$dir/meta" cmd)" "$claims" || return 70
+  else
+    rm -rf "$dir" || return 70
+  fi
   return 0
 }
 
@@ -439,6 +484,9 @@ cmd_holder() {
     printf 'session=%s age=%sm cmd=%s\n' "$session" "$(( (now - started) / 60 ))" "$runcmd"
   else
     printf 'session=%s age=? cmd=%s\n' "$session" "$runcmd"
+  fi
+  if [[ "$(field "$dir/meta" claims_version)" == 1 ]]; then
+    awk -F'\t' '$1 ~ /^claim:/ {printf "  %s=%s\n", $1, $2}' "$dir/meta"
   fi
 }
 

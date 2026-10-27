@@ -41,6 +41,7 @@ cmd="$(printf '%s' "$payload" | jq -r '.tool_input.command // empty' 2>/dev/null
 cwd="$(printf '%s' "$payload" | jq -r '.cwd // empty' 2>/dev/null)"
 sid="$(printf '%s' "$payload" | jq -r '.session_id // empty' 2>/dev/null)"
 [[ -n "$cmd" && -n "$cwd" && -n "$sid" ]] || exit 0
+token="$(call_token "$payload")"
 
 # `cd canary/bearoku && npm run test:staging` runs in that subdirectory, not in
 # the payload's .cwd, so resolving against .cwd alone silently keys the lease
@@ -65,7 +66,12 @@ fi
 [[ "$resolve_rc" -eq 0 && -n "$identity" ]] || exit 0
 
 rc=0
-"$LEASE" claim "$identity" "$sid" "$cmd" >/dev/null 2>&1 || rc=$?
+if [[ -n "$token" ]]; then
+  "$LEASE" claim "$identity" "$sid" "$cmd" "$token" >/dev/null 2>&1 || rc=$?
+else
+  log "identity=$identity session=$sid missing/invalid tool_use_id; claiming legacy slot until SessionEnd/manual cleanup/TTL. PostToolUse cannot safely release it."
+  "$LEASE" claim "$identity" "$sid" "$cmd" >/dev/null 2>&1 || rc=$?
+fi
 case "$rc" in
   0) exit 0 ;;          # held, including a re-entrant claim by this session
   1) ;;                 # refused - fall through to the block below
@@ -77,7 +83,7 @@ case "$rc" in
     log "rc=64 identity=$identity session=$sid claim was rejected as a bad invocation, so NO lease was taken. Either a malformed SF_LEASE_* value in your shell profile (SF_LEASE_TTL_MINUTES, SF_LEASE_MUTEX_TIMEOUT_MS, SF_LEASE_MUTEX_WEDGE_SECONDS - each must be a plain integer inside its documented range), or a bug in this hook's argument plumbing. Run: sf-lease claim <org> <session> probe - it prints which. Allowing the call."
     exit 0 ;;
   70)
-    log "rc=70 identity=$identity session=$sid sf-lease aborted before deciding anything. This is an sf-lease bug and must never happen; it is not retryable. Allowing the call."
+    log "rc=70 identity=$identity session=$sid sf-lease failed to persist the claim or aborted; no grant was confirmed. Check store permissions/free space and inspect with: sf-lease list. Allowing the call."
     exit 0 ;;
   75)
     # NOT a refusal: nothing was read, decided or changed. No retry here - the
@@ -95,14 +101,14 @@ case "$rc" in
     exit 0 ;;
 esac
 
-# claim also returns 1 when it could not write metadata, in which case nobody
-# holds the lease and `holder` prints nothing. Say so rather than inventing a
-# holder - the operator's next move differs.
+# A refused claim may find incomplete metadata from an interrupted writer.
+# Report that uncertainty rather than inventing a holder. Persistence failures
+# from this invocation already exited above with rc 70.
 holder="$("$LEASE" holder "$identity" 2>/dev/null || true)"
 [[ -n "$holder" ]] || holder='unknown - sf-lease recorded no holder, which can also mean the lease store failed to write its metadata'
 
 log "rc=1 identity=$identity session=$sid BLOCKED: held by [$holder]"
 jq -cn --arg id "$identity" --arg h "$holder" '{error:
-  "Org \($id) is leased by another Claude session (\($h)). Wait for that run to finish, ask that session to release it, or run against a scratch org with SF_SCRATCH_POOL=1. Inspect with: sf-lease list. Force-clear with: sf-lease release \($id) <session>."
+  "Org \($id) is leased by another Claude session (\($h)). Wait for that run to finish, ask that session to release it, or run against a scratch org with SF_SCRATCH_POOL=1. Inspect with: sf-lease list. After all its calls stop, clear that session with: sf-lease release-session <session>."
 }' >&2 || printf '{"error":"Org %s is leased by another Claude session. Inspect with: sf-lease list."}\n' "$identity" >&2
 exit 2
