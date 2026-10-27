@@ -26,40 +26,71 @@ export XDG_CACHE_HOME="$work/cache"
 mkdir -p "$XDG_CONFIG_HOME"
 cp -R "$repo_root/nvim" "$XDG_CONFIG_HOME/nvim"
 
+# Every phase runs through the same Lua guard: command-line Lua errors can
+# otherwise print a message and still let a later +qa exit successfully.
+export NVIM_TEST_SCRIPT="$work/phase.lua"
+export NVIM_TEST_PROBE="$work/probe.md"
+cat >"$NVIM_TEST_SCRIPT" <<'LUA'
+local ok, err = xpcall(function()
+  local phase = vim.env.NVIM_TEST_PHASE
+  if phase == 'plugin install' then
+    vim.cmd('Lazy! sync')
+    for name, plugin in pairs(require('lazy.core.config').plugins) do
+      for _, task in ipairs(plugin._.tasks or {}) do
+        assert(not task:has_errors(), 'Plugin task failed: ' .. name)
+      end
+    end
+  elseif phase == 'parser install' then
+    -- Keep the list in sync with nvim/lua/plugins/treesitter.lua.
+    local languages = {
+      'lua', 'bash', 'json', 'yaml', 'markdown', 'markdown_inline',
+      'gitcommit', 'diff', 'vim', 'query',
+    }
+    local ts = require('nvim-treesitter')
+    assert(ts.install(languages):wait(600000) ~= false, 'Parser installation failed')
+    local installed = ts.get_installed('parsers')
+    for _, lang in ipairs(languages) do
+      assert(vim.list_contains(installed, lang), 'Parser missing: ' .. lang)
+      vim.treesitter.language.add(lang)
+    end
+  elseif phase == 'config probe' then
+    vim.cmd('Lazy! load all')
+    vim.cmd.edit(vim.fn.fnameescape(vim.env.NVIM_TEST_PROBE))
+    vim.treesitter.get_parser(0, 'markdown'):parse(true)
+    vim.cmd.edit(vim.fn.fnameescape(vim.env.XDG_CONFIG_HOME .. '/nvim/init.lua'))
+  else
+    error('Unknown test phase')
+  end
+  assert(vim.v.errmsg == '', vim.v.errmsg)
+end, debug.traceback)
+if not ok then
+  vim.api.nvim_err_writeln(err)
+  vim.cmd('cquit 1')
+end
+LUA
+
+run_phase() {
+  local phase="$1" status=0
+  NVIM_TEST_PHASE="$phase" nvim --headless \
+    '+lua dofile(vim.env.NVIM_TEST_SCRIPT)' +qa >"$work/output" 2>&1 || status=$?
+  if (( status != 0 )) || grep -qiE '(^|[[:space:]])E[0-9]+:|^Error detected|^stack traceback:' "$work/output"; then
+    echo "test-nvim: $phase failed (exit $status)" >&2
+    cat "$work/output" >&2
+    exit 1
+  fi
+}
+
 # 1. Install plugins headlessly (network: clones from GitHub).
-nvim --headless "+Lazy! sync" +qa >/dev/null 2>&1 || true
+NVIM_TEST_SKIP_TS_INSTALL=1 run_phase 'plugin install'
 
-# 2. Compile and install every parser the config declares, synchronously. Doing
-#    this up front (blocking via :wait) means the treesitter config's own
-#    install() in step 3 finds them already present and spawns no async build
-#    jobs, so nothing races the cleanup trap and the run is deterministic.
-#    NVIM_TEST_SKIP_TS_INSTALL disables the config's own install() for this one
-#    invocation, so this explicit call is the only installer running (no race).
-#    Keep the parser list in sync with nvim/lua/plugins/treesitter.lua.
-NVIM_TEST_SKIP_TS_INSTALL=1 nvim --headless \
-  "+lua require('nvim-treesitter').install({'lua','bash','json','yaml','markdown','markdown_inline','gitcommit','diff','vim','query'}):wait(600000)" \
-  +qa >/dev/null 2>&1 || true
+# 2. Compile all declared parsers synchronously, without a second asynchronous
+# installer from the config racing this phase or the cleanup trap.
+NVIM_TEST_SKIP_TS_INSTALL=1 run_phase 'parser install'
 
-# 3. Force-load every lazy plugin (so event/cmd/keys-gated configs run), then
-#    open a markdown file with a fenced code block and force a full parse
-#    including injections - the exact path that regressed on newer Neovim, and
-#    what render-markdown relies on. Fail on any error output; a clean config is
-#    silent. The parse is intentionally NOT wrapped in pcall so a regression
-#    surfaces as an error the grep catches.
-probe_md="$work/probe.md"
+# 3. Force-load lazy plugins and parse markdown including fenced Lua injections.
 # Literal markdown; the backticks are intentional content, not command substitution.
 # shellcheck disable=SC2016
-printf '# Probe\n\ntext with **bold**\n\n```lua\nlocal x = 1\n```\n' >"$probe_md"
-out="$(nvim --headless \
-  +'Lazy! load all' \
-  +"edit $probe_md" \
-  +"lua vim.treesitter.get_parser(0, 'markdown'):parse(true)" \
-  +"edit $XDG_CONFIG_HOME/nvim/init.lua" \
-  +qa 2>&1 >/dev/null)" || true
-if grep -qiE 'error|E[0-9]+:|stack traceback' <<< "$out"; then
-  echo "test-nvim: startup produced errors:" >&2
-  printf '%s\n' "$out" >&2
-  exit 1
-fi
+printf '# Probe\n\ntext with **bold**\n\n```lua\nlocal x = 1\n```\n' >"$NVIM_TEST_PROBE"
+run_phase 'config probe'
 
 echo "nvim config loads clean"
