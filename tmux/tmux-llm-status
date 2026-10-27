@@ -140,7 +140,9 @@ spinner_frame() {
 }
 
 is_codex_title() {
-  [[ "$1" == \[*\]\ *\|* ]]
+  # Current Codex titles are "task | project" even when the process is node.
+  # Retain the older "[Status] task | project" form as well.
+  [[ "$1" == *" | "* || "$1" == \[*\]\ *\|* ]]
 }
 
 is_claude_title() {
@@ -158,8 +160,11 @@ is_claude_title() {
 }
 
 is_waiting_title() {
+  # Only a structured status prefix is evidence; task text is user-controlled.
+  # Ready/Idle describe presence, not a prompt that blocks the turn.
+  is_codex_title "$1" || return 1
   case "$1" in
-    *"Action Required"* | *"Ready"* | *"Idle"*)
+    "[Action Required] "*)
       return 0
       ;;
     *)
@@ -169,8 +174,9 @@ is_waiting_title() {
 }
 
 is_active_title() {
+  is_codex_title "$1" || return 1
   case "$1" in
-    *"Thinking"* | *"Working"* | *"Running"* | *"Processing"* | *"Executing"* | *"Loading"*)
+    "[Thinking] "* | "[Working] "* | "[Running] "* | "[Processing] "* | "[Executing] "* | "[Loading] "*)
       return 0
       ;;
     *)

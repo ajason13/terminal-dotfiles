@@ -77,6 +77,12 @@ interrupt a turn, so an existence check alone would spin forever afterwards.
 `Stop`/`StopFailure` close it; the marker ages out after
 `TMUX_LLM_BUSY_TTL` seconds (default 1200, comfortably above one tool batch).
 
+Codex task/project titles count as present; only a spinner or a structured
+`[Thinking]`/`[Working]` (and other active status) prefix counts as working.
+A structured `[Action Required]` prefix counts as waiting; `[Ready]` and
+`[Idle]` count as present. Status words inside task names do not change the
+marker. Claude's permission/question and busy hooks retain precedence over titles.
+
 Codex panes get presence and the title-based working state, but never a depth
 number or a busy marker, because Codex fires neither `SubagentStart` nor these
 turn events. The title matchers stay in place for exactly that reason.
