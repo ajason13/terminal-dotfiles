@@ -104,6 +104,9 @@ jobs:
           gunzip /tmp/tree-sitter.gz
           sudo install -m 0755 /tmp/tree-sitter /usr/local/bin/tree-sitter
 
+      - name: Check Neovim harness failure propagation
+        run: bash scripts/test-test-nvim.sh
+
       - name: Neovim config loads clean
         run: ./scripts/test-nvim.sh
 
