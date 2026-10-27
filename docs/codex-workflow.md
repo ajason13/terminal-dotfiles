@@ -140,6 +140,68 @@ is unavailable, prepare local ready-to-submit drafts and an ordered backlog,
 and clearly state that nothing was published. Do not include sensitive data.
 ```
 
+## Deliver one issue per fresh chat
+
+Keep one active issue at a time per project, with one fresh chat for each new
+issue. GitHub Issues carry the durable status and decisions between chats.
+Use this loop:
+
+1. Finish the current issue: confirm its PR actually merged into `main`, record
+   completion evidence, and close the issue only when its criteria are met.
+   A queued auto-merge is still In review.
+2. Prepare the checkout: inspect the worktree, preserve any unexpected edits,
+   and, when safe, switch to `main` and update it from the remote. Keep unfinished
+   work on its existing branch or worktree.
+3. Start a fresh chat in the same project. In the CLI, use `/clear` or `/new`;
+   in the desktop app, create a new project chat. Archive completed chats when
+   useful; deleting saved sessions is unnecessary. A fresh chat resets context,
+   not repository files. See [session commands](https://learn.chatgpt.com/docs/developer-commands).
+4. Paste the prompt below. Codex checks allowance and chooses the next Ready
+   issue, then works through implementation, verification, review, and delivery.
+5. After confirmed merge and the final issue update, repeat from a fresh chat.
+   If the issue is unfinished, resume its existing chat instead of starting
+   another issue.
+
+One active issue should normally keep the worktree straightforward. If it is
+unexpectedly dirty, inspect the changes before proceeding; do not discard them
+to begin the next iteration. `/compact` supports continuing the current issue;
+it is not the fresh-chat step between completed issues.
+
+Use this generic prompt for each iteration:
+
+```text
+Complete one GitHub issue through this repository’s AI SDLC.
+
+Read applicable AGENTS.md instructions and check usage allowance before
+starting. Confirm the Git remote and inspect the worktree. Preserve unrelated
+changes. Start from current origin/main using a focused task branch or isolated
+worktree.
+
+Review open issues, dependencies, and relevant merged PRs. Select the next
+Ready issue using explicit execution order, then priority, risk, and user value.
+Do not select work blocked by dependencies or unresolved decisions. Identify
+the chosen issue and acceptance criteria before implementation.
+
+Implement the smallest complete change, run proportional verification, perform
+required review, and resolve material findings. Update the issue with material
+progress, blockers, verification, and linked follow-ups. Create a linked PR and
+complete delivery under existing authority and branch protections.
+
+Confirm the PR actually merged into main before marking implementation Done.
+Update the issue with completion evidence and identify the next recommended
+issue. If safe, leave the checkout on updated main.
+
+Stop after this one issue. If blocked or usage limits prevent completion,
+record the exact state and next action in the issue and a local checkpoint.
+Do not start another issue.
+```
+
+For a specific issue, replace the first sentence with “Complete GitHub issue
+#123 through this repository’s AI SDLC.” Each invocation handles one issue;
+start the next chat yourself after completion. This prompt does not create an
+unattended multi-issue loop. A context reset does not reset usage allowance;
+the existing usage thresholds apply before every new issue.
+
 ## Continue work
 
 Keep the same chat for the same unfinished outcome. In the desktop app, reopen

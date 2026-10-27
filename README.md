@@ -340,6 +340,11 @@ Done only after acceptance criteria, required checks, and review are satisfied
 and the linked PR is merged. The guide includes a reusable backlog prompt and
 issue format; local checkpoints support resuming sessions.
 
+For one active issue at a time per project, follow the
+[one-issue delivery loop and reusable implementation prompt](docs/codex-workflow.md#deliver-one-issue-per-fresh-chat):
+fresh chat → next Ready issue → implementation and verification → reviewed PR
+→ confirmed merge → updated local `main` → repeat.
+
 The normal Codex default is `gpt-6.1-sol` with `medium` reasoning for routine
 delivery. Three optional, explicitly selected profiles support heavier work:
 
