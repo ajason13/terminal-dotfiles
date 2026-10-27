@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 # CI only needs to read this repository. Keep the default token constrained even
