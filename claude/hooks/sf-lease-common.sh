@@ -58,3 +58,13 @@ release_with_retry() {
     sleep 0.2
   done
 }
+
+# Official PreToolUse/PostToolUse payloads share tool_use_id. Never synthesize
+# identity from command text: identical commands may be concurrent calls.
+# Reject every disallowed byte before command substitution can trim newlines.
+call_token() {
+  printf '%s' "$1" | jq -r '
+    .tool_use_id | select(type == "string") |
+    select(length >= 1 and length <= 200) |
+    select(test("[^A-Za-z0-9._:-]") | not)' 2>/dev/null
+}

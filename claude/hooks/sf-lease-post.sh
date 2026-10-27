@@ -34,6 +34,7 @@ cmd="$(printf '%s' "$payload" | jq -r '.tool_input.command // empty' 2>/dev/null
 cwd="$(printf '%s' "$payload" | jq -r '.cwd // empty' 2>/dev/null)"
 sid="$(printf '%s' "$payload" | jq -r '.session_id // empty' 2>/dev/null)"
 [[ -n "$cmd" && -n "$cwd" && -n "$sid" ]] || exit 0
+token="$(call_token "$payload")"
 
 # Resolve with the same shared directory rule used when claiming.
 cwd="$(effective_cwd "$cwd" "$cmd")"
@@ -55,20 +56,24 @@ fi
 # its run and blocks every other session for a full TTL. sf-lease itself only
 # ever removes a lease whose meta names this session, so a retry cannot take
 # anyone else's.
-release_with_retry release "$identity" "$sid"
+if [[ -z "$token" ]]; then
+  log "identity=$identity session=$sid missing/invalid tool_use_id; releasing nothing. Inspect with: sf-lease holder $identity; clean up after calls finish with: sf-lease release-session $sid"
+  exit 0
+fi
+release_with_retry release "$identity" "$sid" "$token"
 
 case "$rc" in
   0) ;;
   75)
-    log "rc=75 identity=$identity session=$sid the lease was NOT released - the store stayed busy or wedged across $((attempt + 1)) attempts, so this org stays leased until its TTL expires. Recover with: sf-lease list; sf-lease unwedge; sf-lease release $identity $sid"
+    log "rc=75 identity=$identity session=$sid the lease was NOT released - the store stayed busy or wedged across $((attempt + 1)) attempts, so this org stays leased until its TTL expires. Recover with: sf-lease list; sf-lease unwedge; sf-lease release $identity $sid $token"
     ;;
   64)
     # Two causes: a bad invocation, or a malformed SF_LEASE_* numeric knob. The
     # knob is the likely one, since arming means editing those in a shell profile.
-    log "rc=64 identity=$identity session=$sid release was rejected as a bad invocation, so the lease was NOT released. Either a malformed SF_LEASE_* value in your shell profile (SF_LEASE_TTL_MINUTES, SF_LEASE_MUTEX_TIMEOUT_MS, SF_LEASE_MUTEX_WEDGE_SECONDS - each must be a plain integer inside its documented range), or a bug in this hook's argument plumbing. Run: sf-lease release $identity $sid - it prints which."
+    log "rc=64 identity=$identity session=$sid release was rejected as a bad invocation, so the lease was NOT released. Either a malformed SF_LEASE_* value in your shell profile (SF_LEASE_TTL_MINUTES, SF_LEASE_MUTEX_TIMEOUT_MS, SF_LEASE_MUTEX_WEDGE_SECONDS - each must be a plain integer inside its documented range), or a bug in this hook's argument plumbing. Run: sf-lease release $identity $sid $token - it prints which."
     ;;
   70)
-    log "rc=70 identity=$identity session=$sid sf-lease aborted before deciding anything, so the lease was NOT released. This is an sf-lease bug and must never happen."
+    log "rc=70 identity=$identity session=$sid sf-lease failed to persist the release or aborted; release was NOT confirmed. Check store permissions/free space; inspect with: sf-lease holder $identity; retry with: sf-lease release $identity $sid $token."
     ;;
   130|143)
     log "rc=$rc identity=$identity session=$sid the release was killed by a signal and may NOT have completed. SessionEnd will retry it."

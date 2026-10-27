@@ -69,9 +69,9 @@ check() {
   fi
 }
 
-payload() { # tool cmd cwd session
-  jq -nc --arg t "$1" --arg c "$2" --arg d "$3" --arg s "$4" \
-    '{tool_name:$t, tool_input:{command:$c}, cwd:$d, session_id:$s}'
+payload() { # tool cmd cwd session [tool_use_id]
+  jq -nc --arg t "$1" --arg c "$2" --arg d "$3" --arg s "$4" --arg id "${5-toolu_fixture}" \
+    '{tool_name:$t, tool_input:{command:$c}, cwd:$d, session_id:$s, tool_use_id:$id}'
 }
 
 # The payload travels in a global so the remaining arguments can be env
@@ -247,6 +247,52 @@ check 'store is empty'                           0 "$(lease_count)"
 
 PAYLOAD="$(jq -nc '{}')"
 check 'an end payload with no session is quiet'  0 "$(run "$end" SF_LEASE_ENABLE=1)"
+
+# --- overlapping calls, duplicates, unidentified and legacy claims ------------
+PAYLOAD="$(payload Bash "$TESTCMD" "$fixture" sess-A call-1)"
+check 'first identified call claims' 0 "$(run "$guard" SF_LEASE_ENABLE=1)"
+PAYLOAD="$(payload Bash "$TESTCMD" "$fixture" sess-A call-2)"
+check 'overlapping identified call claims' 0 "$(run "$guard" SF_LEASE_ENABLE=1)"
+check 'duplicate pre event is idempotent' 0 "$(run "$guard" SF_LEASE_ENABLE=1)"
+check 'second identified call releases' 0 "$(run "$post" SF_LEASE_ENABLE=1)"
+check 'duplicate post event is harmless' 0 "$(run "$post" SF_LEASE_ENABLE=1)"
+PAYLOAD="$(payload Bash "$TESTCMD" "$fixture" sess-R call-rival)"
+check 'rival still blocked after second call finishes' 2 "$(run "$guard" SF_LEASE_ENABLE=1)"
+PAYLOAD="$(payload Bash "$TESTCMD" "$fixture" sess-A wrong-id)"
+check 'wrong call id releases nothing' 0 "$(run "$post" SF_LEASE_ENABLE=1)"
+PAYLOAD="$(payload Bash "$TESTCMD" "$fixture" sess-R call-1)"
+check 'wrong session with real call id releases nothing' 0 "$(run "$post" SF_LEASE_ENABLE=1)"
+check 'rival remains blocked after wrong releases' 2 "$(run "$guard" SF_LEASE_ENABLE=1)"
+PAYLOAD="$(payload Bash "$TESTCMD" "$fixture" sess-A $'call-1\n')"
+check 'newline-suffixed ID post is harmless' 0 "$(run "$post" SF_LEASE_ENABLE=1)"
+PAYLOAD="$(payload Bash "$TESTCMD" "$fixture" sess-R call-rival)"
+check 'malformed ID cannot alias an active token' 2 "$(run "$guard" SF_LEASE_ENABLE=1)"
+PAYLOAD="$(payload Bash "$TESTCMD" "$fixture" sess-A call-1)"
+check 'last identified call releases' 0 "$(run "$post" SF_LEASE_ENABLE=1)"
+PAYLOAD="$(payload Bash "$TESTCMD" "$fixture" sess-R call-rival)"
+check 'rival allowed only after both releases' 0 "$(run "$guard" SF_LEASE_ENABLE=1)"
+PAYLOAD="$(payload Bash "$TESTCMD" "$fixture" sess-A call-1)"
+run "$post" SF_LEASE_ENABLE=1 >/dev/null
+check 'late post cannot remove replacement owner' sess-R "$(session_of orga)"
+PAYLOAD='{"session_id":"sess-R"}'
+run "$end" SF_LEASE_ENABLE=1 >/dev/null
+
+for missing in null '""' '42' '{}' '"bad/token"' '"bad-id\n"'; do
+  PAYLOAD="$(payload Bash "$TESTCMD" "$fixture" sess-M | jq --argjson id "$missing" '.tool_use_id=$id')"
+  check "unidentified ($missing) pre is allowed with conservative claim" 0 "$(run "$guard" SF_LEASE_ENABLE=1)"
+  check "unidentified ($missing) post is harmless" 0 "$(run "$post" SF_LEASE_ENABLE=1)"
+  check "unidentified ($missing) claim survives post" sess-M "$(session_of orga)"
+done
+PAYLOAD="$(payload Bash "$TESTCMD" "$fixture" sess-M known-call)"
+run "$guard" SF_LEASE_ENABLE=1 >/dev/null
+run "$post" SF_LEASE_ENABLE=1 >/dev/null
+check 'identified release cannot clear unidentified claim' sess-M "$(session_of orga)"
+check 'missing ID is diagnosed' yes "$(has "$(log_text)" 'missing/invalid tool_use_id')"
+PAYLOAD="$(payload Bash "$TESTCMD" "$fixture" sess-R call-rival)"
+check 'unidentified claim still excludes a rival' 2 "$(run "$guard" SF_LEASE_ENABLE=1)"
+PAYLOAD='{"session_id":"sess-M"}'
+check 'session cleanup removes unidentified claims' 0 "$(run "$end" SF_LEASE_ENABLE=1)"
+check 'store empty after unidentified cleanup' 0 "$(lease_count)"
 
 # --- SessionStart table -------------------------------------------------------
 PAYLOAD="$(payload Bash "$TESTCMD" "$fixture" sess-T)"

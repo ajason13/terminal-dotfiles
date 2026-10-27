@@ -542,10 +542,10 @@ Each knows as little as possible about the others.
   leases opaque strings.
 - **Four Claude Code hooks** connect the two to the session lifecycle:
   `sf-lease-guard.sh` (PreToolUse/Bash) claims or blocks with exit 2;
-  `sf-lease-post.sh` (PostToolUse/Bash) releases *only* the identity that same
-  call resolved to, so an unrelated `git status` cannot drop a live suite's
-  lease; `sf-lease-end.sh` (SessionEnd) releases everything the session still
-  holds; `sf-lease-table.sh` (SessionStart) prints what is already leased.
+  `sf-lease-post.sh` (PostToolUse/Bash) releases only that call's claim on
+  the resolved identity, using the shared `tool_use_id`, so another overlapping
+  call from the session keeps its claim; `sf-lease-end.sh` (SessionEnd) releases
+  everything the session still holds; `sf-lease-table.sh` (SessionStart) prints what is already leased.
 
 Every hook fails **open**: a missing binary, an unparseable payload, a busy store
 or any unexpected exit code lets the call through. Only a live competing holder
@@ -597,8 +597,9 @@ pointing at a missing hook errors on every Bash call.
   (`1`, `on`, `true`, `yes`, any capitalization). Anything else, including `off`
   and a typo, leaves it **off**.
 - `SF_LEASE_TTL_MINUTES` (default `120`, range **1-1440**) - how long a lease
-  outlives a session that died without releasing it. A live session re-claims on
-  every Bash call, so this only ever expires an abandoned lease. The upper bound
+  outlives its last claim. A new matching call refreshes the timestamp, but a
+  single active call can still expire at the TTL; renewal is tracked in
+  [#92](https://github.com/ajason13/terminal-dotfiles/issues/92). The upper bound
   is literal, not cosmetic: this knob drives the only multiplication in `sf-lease`,
   and `200000000000000000` wrapped `ttl * 60` to a *negative* number, which made
   every lease read stale and handed a rival an org its real holder was still
@@ -638,9 +639,39 @@ the log line rather than assuming a hook bug.
 ```sh
 sf-lease list                     # who holds what; silent when nothing is held
 sf-lease holder <org>
-sf-lease release <org> <session>  # force-clear one lease
+sf-lease release <org> <session> <token> # finish one identified call
+sf-lease release <org> <session>         # finish the legacy CLI claim only
 sf-lease release-session <session>
 ```
+
+Claims accept an optional invocation token:
+`sf-lease claim <org> <session> <command> [token]`. Release with the same
+session and token. Tokens are 1–200 ASCII letters, digits, `.`, `_`, `:`, or
+`-`; use a distinct token for each invocation and never reuse it. Duplicate
+claims/releases are harmless while the lease exists. Released tokens remain
+in metadata while sibling claims are active, so a delayed duplicate cannot
+revive a finished call. A wrong session/token cannot release another claim.
+`sf-lease holder <org>` also prints the active/released claim IDs for recovery.
+
+Token-free CLI calls share one legacy slot and keep their historical reentrant
+claim/release behavior. Old metadata is imported as an active legacy slot;
+tokenized calls never discard it. A token-free release clears only that slot,
+leaving identified calls held. `release-session` clears all claims owned by the
+named session across orgs: use it for recovery only after those calls stop.
+
+The hooks use `tool_use_id` from the documented
+[PreToolUse](https://code.claude.com/docs/en/hooks#pretooluse-input) and
+[PostToolUse](https://code.claude.com/docs/en/hooks#posttooluse-input) payloads.
+If the ID is absent or invalid, the guard conservatively claims the legacy
+slot and logs it; the post hook logs and releases nothing. SessionEnd, manual
+legacy release after calls finish, or TTL expiry cleans up that slot. Failed,
+interrupted, or missed post hooks likewise leave inspectable claims for
+SessionEnd/manual cleanup/TTL. No renewal or background worker is added.
+
+Deploy the binary and hooks together with the installer while no leased calls
+are running. Older hooks/binaries do not implement per-call ownership; do not
+mix versions or roll back while tokenized claims remain active. Settings
+registration and the off-by-default arming gate remain manual.
 
 `SF_SCRATCH_POOL=1` on a run bypasses leasing entirely - that run claims its own
 scratch org from the e2e pool, which has its own lock directory. `sf-lease list`
@@ -740,15 +771,12 @@ env file is present and unreadable.
   and which is an argument - not a better regex, so it is deliberately not
   attempted. A lease taken this way is still released by the PostToolUse hook for
   the same call.
-- **No refcount on parallel claims from one session.** A claim is per-identity,
-  not per-call, and PostToolUse releases outright. Reproduced: `sess-A` claims
-  `orga` for call #1 and re-entrantly for call #2; PostToolUse for #2 releases it
-  while #1 is still running, and a rival's claim then returns rc 0. Claude Code
-  batches independent Bash calls, and both suites canonicalize to one org, so
-  "run e2e and canary at once" is exactly that shape. Closing it needs a claim
-  token or a refcount in the lease metadata - real design work, deliberately not
-  attempted in a fix wave. Until then, treat two suites launched in one batch as
-  unprotected against each other.
+- Calls from the same session retain independent claims when hook call IDs
+  are available. This excludes rival sessions until all claims finish; it does
+  **not** serialize the owning session's own calls against each other.
+- A single active call can still outlive the TTL and lose exclusion; see
+  [#92](https://github.com/ajason13/terminal-dotfiles/issues/92). Missing call
+  IDs and missed post hooks retain claims until the cleanup described above.
 - Only the invocation shapes listed above are recognised. A runner started some
   other way takes no lease.
 
