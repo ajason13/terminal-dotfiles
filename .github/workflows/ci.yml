@@ -162,4 +162,6 @@ jobs:
         run: |
           bash scripts/test-sf-org-resolve.sh
           bash scripts/test-sf-lease.sh
+          bash scripts/test-sf-lease-liveness.sh
+          bash scripts/test-sf-lease-process.sh
           bash scripts/test-sf-lease-hooks.sh
