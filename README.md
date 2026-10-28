@@ -241,19 +241,13 @@ holds until the next session is created, since new sessions also land last.
 
 ## Requirements
 
-Install the core tools:
-
-```sh
-brew install tmux
-brew install neovim tree-sitter-cli
-brew install --cask wezterm visual-studio-code
-```
-
-`tree-sitter-cli` is needed by the Neovim config to compile syntax parsers
-(nvim-treesitter's `main` branch builds them with the `tree-sitter` CLI).
-
-Codex must be installed and signed in. The installer writes its configuration
-to `~/.codex` but does not copy credentials or authentication state.
+Start with the [macOS workstation dependency guide](docs/workstation-setup.md)
+for prerequisites, required versus optional tools, version expectations, and
+explicit check/install commands. The root [Brewfile](Brewfile) covers the core
+terminal/editor workflow, including `ripgrep` for Neovim and `jq` for hooks.
+Package installation is a separate operator action; the dotfile installer only
+manages files. Agent CLIs, sign-in, Node-based helpers and development tooling
+have separate requirements in the guide.
 
 Optional font:
 
@@ -1041,7 +1035,7 @@ graphical login; it deliberately leaves the final resume confirmation to you.
 
 ### Reference
 
-**Everything at once (fresh machine):**
+**Optional utility collection (review before installing):**
 
 ```sh
 brew install \
@@ -1051,7 +1045,9 @@ brew install \
 brew install --cask wezterm font-jetbrains-mono-nerd-font
 ```
 
-Prefer a reproducible manifest? Keep a `Brewfile` and run `brew bundle`.
+The core [Brewfile](Brewfile) intentionally excludes this optional collection.
+See the [dependency guide](docs/workstation-setup.md) for Bundle commands and
+version limitations.
 
 **WezTerm extras:** WezTerm has a plugin system (`wezterm.plugin.require`) - e.g.
 [`resurrect.wezterm`](https://github.com/MLFlexer/resurrect.wezterm) for
