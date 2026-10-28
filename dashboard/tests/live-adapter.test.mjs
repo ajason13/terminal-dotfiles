@@ -617,6 +617,65 @@ test('activity.at reports real window silence and is accepted at or before obser
   })]), NOW), { issues: ['LIVE_SNAPSHOT_INVALID'] });
 });
 
+test('collector snapshots round-trip every classifier branch through the live validator', async (t) => {
+  const recent = String(NOW / 1000 - 1);
+  const silent = String(NOW / 1000 - LIVE_CONSTANTS.ACTIVITY_ACTIVE_WINDOW_MS / 1000);
+  const cases = [
+    ['permission outranks thinking and spinner', { pane_title: '⠧ Action Required Thinking' },
+      ['waiting_for_permission', 'tmux_title_action_required']],
+    ['thinking outranks spinner', { pane_title: '⠧ Thinking' },
+      ['thinking', 'tmux_title_thinking']],
+    ['braille spinner outranks idle', { pane_title: '⠧ Ready' },
+      ['active', 'tmux_title_spinner']],
+    ['other spinner', { pane_title: '◐ building' },
+      ['active', 'tmux_title_spinner']],
+    ['working token', { pane_title: '[codex] Running | synthetic' },
+      ['active', 'tmux_title_working']],
+    ['explicit idle outranks recent activity', { pane_title: '✳ Idle', window_activity: recent },
+      ['idle', 'tmux_title_ready_idle']],
+    ['missing activity', { pane_title: '✳ synthetic', window_activity: '' },
+      ['idle', 'tmux_title_static_provider']],
+    ['zero activity', { pane_title: '[codex] synthetic | local', window_activity: '0' },
+      ['idle', 'tmux_title_static_provider']],
+    ['recent activity', { pane_title: '✳ synthetic', window_activity: recent },
+      ['active', 'tmux_activity_recent']],
+    ['silent activity at threshold', { pane_title: '[codex] synthetic | local', window_activity: silent },
+      ['idle', 'tmux_activity_idle']],
+    ['unknown command candidate', { pane_title: 'synthetic', pane_current_command: 'claude' },
+      ['unknown', 'tmux_command_candidate']],
+    ['control-title command candidate', { pane_title: '✳\u0001Ready', pane_current_command: 'codex' },
+      ['unknown', 'tmux_command_candidate']],
+    ['ignored non-agent', { pane_title: 'plain shell' }, null],
+    ['ignored control title', { pane_title: '⠧\u0085Thinking' }, null],
+  ];
+
+  for (const [name, overrides, expected] of cases) {
+    await t.test(name, () => {
+      // Exercise the actual producer and consumer, not a hand-built liveSession
+      // or a second copy of the validator's accepted tuples. No tmux I/O occurs.
+      const snapshot = buildSnapshot([raw({ window_activity: silent, ...overrides })], OBSERVED);
+      const normalized = normalizeImportedSnapshot(snapshot, NOW);
+      assert.equal(normalized.observedAt, OBSERVED);
+      assert.equal(snapshot.sessions.length, expected ? 1 : 0);
+      assert.equal(normalized.sessions.length, snapshot.sessions.length);
+      if (!expected) return;
+
+      const [emitted] = snapshot.sessions;
+      assert.deepEqual([emitted.status, emitted.provenance], expected);
+      const epoch = Number(overrides.window_activity ?? silent);
+      const activityAt = epoch > 0 ? new Date(epoch * 1000).toISOString() : OBSERVED;
+      assert.deepEqual(emitted.activity, { kind: 'observed', at: activityAt });
+      assert.deepEqual(normalized.sessions[0], {
+        ...emitted,
+        sourceKind: 'tmux_oneshot',
+        generatedAt: OBSERVED,
+        lastActivityAt: activityAt,
+        mapCode: 'S01',
+      });
+    });
+  }
+});
+
 test('schema-v2 accepts every compatibility row and normalizes tmux-only identity', () => {
   const rows = [
     ['active', 'unknown', 'medium', 'tmux_title_spinner'],
