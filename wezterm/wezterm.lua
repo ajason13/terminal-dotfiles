@@ -1,7 +1,7 @@
 local wezterm = require 'wezterm'
 local config = wezterm.config_builder()
 
-local home = os.getenv('HOME')
+local home = wezterm.home_dir
 local config_dir = _G.WEZTERM_PORTABLE_CONFIG_DIR or wezterm.config_dir or (home .. '/.config/wezterm')
 local modules_dir = config_dir .. '/modules'
 local env = {

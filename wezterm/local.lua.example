@@ -11,6 +11,10 @@
 -- Everything below is commented out; uncomment only what you want to change.
 
 return {
+  -- Windows: use this exact name from `wsl --list --verbose`.
+  -- Omit it to use the Windows user's default WSL distribution.
+  -- wsl_distribution = 'Ubuntu',
+
   -- === Background knobs (see modules/backgrounds.lua) ===
 
   -- Dim / tint the rotating wallpaper. Lower brightness = darker image.

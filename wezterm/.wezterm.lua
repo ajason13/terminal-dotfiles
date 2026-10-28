@@ -1,7 +1,8 @@
-local home = os.getenv('HOME')
+local wezterm = require 'wezterm'
+local home = wezterm.home_dir
 
 if not home or home == '' then
-  error('HOME is not set; cannot load ~/.config/wezterm/wezterm.lua')
+  error('Cannot determine home directory for WezTerm configuration')
 end
 
 _G.WEZTERM_PORTABLE_CONFIG_DIR = home .. '/.config/wezterm'

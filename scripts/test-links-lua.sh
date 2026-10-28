@@ -21,4 +21,5 @@ if [[ -z "$lua_bin" ]]; then
   exit 1
 fi
 
-exec "$lua_bin" "$test_file"
+"$lua_bin" "$test_file"
+exec "$lua_bin" "$repo_root/wezterm/modules/platform_test.lua"
