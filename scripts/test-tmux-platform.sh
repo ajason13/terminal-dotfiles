@@ -17,9 +17,11 @@ printf '#!/bin/sh\nprintf "%%s\\n" "$TEST_PLATFORM"\n' > "$fixture/bin/uname"
 printf '#!/bin/sh\nexit 0\n' > "$fixture/status"
 chmod +x "$fixture/bin/uname" "$fixture/status"
 # Redirect all home paths before loading, including attach hooks and overrides.
+# Pin the OS stub: the Darwin branch deliberately replaces the server PATH.
 sed -e "s|~/.local/bin/tmux-llm-status|$fixture/status|g" \
     -e "s|~/.tmux.local.conf|$fixture/local.conf|g" \
     -e "s|~/.tmux.conf|$fixture/tmux.conf|g" \
+    -e "s|uname -s|$fixture/bin/uname -s|g" \
     "$repo_root/tmux/tmux.conf" > "$fixture/tmux.conf"
 
 t() { "$tmux_bin" -S "$fixture/socket" "$@"; }
