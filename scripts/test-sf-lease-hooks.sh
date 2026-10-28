@@ -214,13 +214,13 @@ check 'an unresolvable cd falls back to the payload cwd' 2 "$(run "$guard" SF_LE
 check 'and none of those changed who holds what' 'sess-A sess-C' \
   "$(session_of orga) $(session_of orgb)"
 
-# --- PostToolUse releases only what this call resolved to ---------------------
-PAYLOAD="$(payload Bash 'git status' "$fixture" sess-A)"
+# --- PostToolUse releases only this call's identity ---------------------
+PAYLOAD="$(payload Bash 'git status' "$fixture" sess-A unrelated-call)"
 check 'an unrelated command post-hook is quiet'  0 "$(run "$post" SF_LEASE_ENABLE=1)"
 check 'and does NOT drop the live lease'         'sess-A' "$(session_of orga)"
 check 'nor any other session lease'               'sess-C' "$(session_of orgb)"
 
-PAYLOAD="$(payload Bash "cd sub && $TESTCMD" "$fixture" sess-A)"
+PAYLOAD="$(payload Bash "cd sub && $TESTCMD" "$fixture" sess-A wrong-org-call)"
 check 'a post hook for an org this session does not hold is quiet' 0 \
   "$(run "$post" SF_LEASE_ENABLE=1)"
 check 'and leaves the real owner in place'       'sess-C' "$(session_of orgb)"
@@ -402,9 +402,9 @@ check 'and names it as an unprotected run'                 'yes' \
 check "and carries the resolver's own reason"              'yes' \
   "$(has "$(log_text)" 'not readable')"
 reset_log
-check 'the post hook logs rc 3 too'                        0 \
+check 'post cleanup still runs with an unreadable org map'                        0 \
   "$(run "$post" SF_LEASE_ENABLE=1 "SF_ORG_MAP=$map000")"
-check 'and records it as leasing being off'                'yes' \
+check 'call cleanup is independent of broken resolver config' 'no' \
   "$(has "$(log_text)" 'resolve_rc=3')"
 
 # Mutation run: drop the rc-3 branch and the log goes silent again, which is the
@@ -521,13 +521,13 @@ shim_end() { # rc
 
 check 'post release rc 0 -> quiet success'       0 "$(shim_post 0)"
 check 'and logs nothing'                         '' "$(log_text)"
-check 'and released exactly once'                1 "$(calls_of release)"
+check 'and released exactly once'                1 "$(calls_of release-call)"
 
 check 'post release rc 75 exits 0'               0 "$(shim_post 75)"
 check 'but is NOT recorded as released'          'yes' "$(has "$(log_text)" 'NOT released')"
 check 'and is logged with its exit code'         'yes' "$(has "$(log_text)" 'rc=75')"
 check 'and rc 75 was retried before giving up'   'yes' \
-  "$([[ "$(calls_of release)" -gt 1 ]] && echo yes || echo no)"
+  "$([[ "$(calls_of release-call)" -gt 1 ]] && echo yes || echo no)"
 
 check 'post release rc 64 exits 0'               0 "$(shim_post 64)"
 check 'and is logged'                            'yes' "$(has "$(log_text)" 'rc=64')"
@@ -572,7 +572,7 @@ retry_calls() { # SF_LEASE_HOOK_RETRIES value
   PAYLOAD="$(payload Bash "$TESTCMD" "$fixture" sess-S)"
   run_bounded 20 "$post" SF_LEASE_ENABLE=1 "SF_LEASE_BIN=$shim" SHIM_RC=75 \
     "SF_LEASE_HOOK_RETRIES=$1" > "$tmp/retry_rc"
-  calls_of release
+  calls_of release-call
 }
 retry_rc() { cat "$tmp/retry_rc"; }
 check 'retries=0 means one attempt and no retry' 1 "$(retry_calls 0)"

@@ -540,14 +540,14 @@ Each knows as little as possible about the others.
   line anywhere. The hooks still let the call through on rc 3, but they say so
   loudly in the hook log.
 - **`sf-lease`** is the lease store: `claim`, `release`, `release-session`,
-  `holder`, `list`, `sweep`, `unwedge`. State lives in
+  `bind`, `release-call`, `holder`, `list`, `sweep`, `unwedge`. State lives in
   `~/.local/state/sf-leases/`, one directory per identity, and every mutation
   runs under a single store-wide mutex. It knows nothing about Salesforce - it
   leases opaque strings.
 - **Four Claude Code hooks** connect the two to the session lifecycle:
   `sf-lease-guard.sh` (PreToolUse/Bash) claims or blocks with exit 2;
   `sf-lease-post.sh` (PostToolUse/Bash) releases only that call's claim on
-  the resolved identity, using the shared `tool_use_id`, so another overlapping
+  its original identity, using the shared `tool_use_id`, so another overlapping
   call from the session keeps its claim; `sf-lease-end.sh` (SessionEnd) releases
   everything the session still holds; `sf-lease-table.sh` (SessionStart) prints what is already leased.
 
@@ -600,10 +600,11 @@ pointing at a missing hook errors on every Bash call.
 - `SF_LEASE_ENABLE` - the arming switch, matched against an allowlist
   (`1`, `on`, `true`, `yes`, any capitalization). Anything else, including `off`
   and a typo, leaves it **off**.
-- `SF_LEASE_TTL_MINUTES` (default `120`, range **1-1440**) - how long a lease
-  outlives its last claim. A new matching call refreshes the timestamp, but a
-  single active call can still expire at the TTL; renewal is tracked in
-  [#92](https://github.com/ajason13/terminal-dotfiles/issues/92). The upper bound
+- `SF_LEASE_TTL_MINUTES` (default `120`, range **1-1440**) - the expiry threshold
+  after the last claim or process binding. A bound, live Bash call retains
+  exclusion even beyond this threshold. Once its process exits, the ordinary
+  timeout applies; no heartbeat or background worker renews abandoned calls.
+  Unbound and legacy calls have TTL-only protection. The upper bound
   is literal, not cosmetic: this knob drives the only multiplication in `sf-lease`,
   and `200000000000000000` wrapped `ttl * 60` to a *negative* number, which made
   every lease read stale and handed a rival an org its real holder was still
@@ -670,7 +671,46 @@ If the ID is absent or invalid, the guard conservatively claims the legacy
 slot and logs it; the post hook logs and releases nothing. SessionEnd, manual
 legacy release after calls finish, or TTL expiry cleans up that slot. Failed,
 interrupted, or missed post hooks likewise leave inspectable claims for
-SessionEnd/manual cleanup/TTL. No renewal or background worker is added.
+SessionEnd/manual cleanup/TTL.
+
+For identified calls, the guard returns a
+[PreToolUse input update](https://code.claude.com/docs/en/hooks#pretooluse-decision-control)
+that prepends `sf-lease bind` to the original command. It preserves all other
+input fields and leaves normal permission decisions to Claude Code. The binding
+runs inside the actual tool shell, recording its PID and process start time
+in that call's metadata. Expiry checks compare both, reject zombies, and retain
+exclusion while any bound active call still matches. An `exec` replacement
+retains that process identity. PostToolUse releases by session/call ID across
+orgs, so the prefix and changes of directory cannot redirect cleanup. If
+PostToolUse arrives while the bound process is still alive (for example, a tool
+started in the background), cleanup retains the claim and logs why. It then
+expires after process exit under the bounds below, or SessionEnd/manual cleanup
+can release it after the call stops. An uncertain process observation likewise
+retains the claim. `release-call <session> <token>` returns 1 in those cases;
+explicit `release` and `release-session` remain operator recovery commands.
+
+This protects the executing shell's lifetime, including foreground commands it
+waits for. Detached descendants that outlive it are outside the call lifetime;
+wait for test commands rather than launching them with `&`, and stop remaining
+children before manual cleanup after a killed shell. Missing post hooks leave
+claims until SessionEnd, manual cleanup, or expiry after the bound process
+exits. If the TTL has already elapsed, the next claim/sweep can reclaim the
+lease immediately after process exit. Otherwise it can remain until the last
+claim/bind timestamp plus the TTL. No worker needs termination or crash cleanup.
+
+Binding refuses missing/released claims, a different session, and rebinding an
+invocation to a different process. Delayed cleanup cannot remove a replacement
+call with a distinct token. If binding fails (including a claim that expired
+while awaiting permission), stderr warns that the call has TTL-only protection;
+the command still runs under the existing advisory/fail-open policy. Check
+`sf-lease list` and stop competing runs before retrying. Older clients that
+ignore input updates likewise have TTL-only protection. If `ps` cannot provide
+a usable observation during expiry, the lease stays held and stderr reports
+`liveness uncertain`. Confirm every call has stopped, inspect
+`sf-lease holder <org>`, and then use `sf-lease release-session <session>`.
+Expiry also reports when bound processes have ended or changed identity. The
+claim hook records these expiry diagnostics in its bounded log.
+`holder` prints the recorded PID/start time alongside each bound call.
 
 Deploy the binary and hooks together with the installer while no leased calls
 are running. Older hooks/binaries do not implement per-call ownership; do not
@@ -780,9 +820,9 @@ env file is present and unreadable.
   **not** serialize the owning session's own calls against each other.
   This fixes [#91](https://github.com/ajason13/terminal-dotfiles/issues/91),
   delivered in [PR #112](https://github.com/ajason13/terminal-dotfiles/pull/112).
-- A single active call can still outlive the TTL and lose exclusion; see
-  [#92](https://github.com/ajason13/terminal-dotfiles/issues/92). Missing call
-  IDs and missed post hooks retain claims until the cleanup described above.
+- Bound live calls retain exclusion beyond TTL using process identity checks.
+  Missing IDs, ignored input updates, and failed binding leave TTL-only
+  protection. Missed post hooks use the cleanup and expiry bounds above.
 - Only the invocation shapes listed above are recognised. A runner started some
   other way takes no lease.
 
@@ -1119,6 +1159,8 @@ bash scripts/test-check-shell.sh
 bash scripts/test-install-macos.sh
 bash scripts/test-import-background-inbox.sh
 bash scripts/test-sf-lease-hooks.sh
+bash scripts/test-sf-lease-liveness.sh
+bash scripts/test-sf-lease-process.sh
 ```
 
 Syntax checking visits each shell file individually, including extensionless

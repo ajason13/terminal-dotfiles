@@ -6,6 +6,8 @@
 # Usage:
 #   sf-lease claim <identity> <session> <cmd> [token] # rc 0 held (incl. re-entrant), rc 1 refused
 #   sf-lease release <identity> <session> [token]     # release only that claim (legacy if omitted)
+#   sf-lease bind <identity> <session> <token> <pid> <start> # bind existing call to shell
+#   sf-lease release-call <session> <token>      # locate/release one call across orgs
 #   sf-lease release-session <session>          # releases every lease that session holds
 #   sf-lease holder <identity>                  # "session=<s> age=<N>m cmd=<c>", or nothing
 #   sf-lease list                                # human table; silent when there is nothing to show
@@ -15,6 +17,8 @@
 # Exit codes:
 #   0   the request was carried out (held, released, nothing to do)
 #   1   refused - another session holds the lease
+#       release-call: a bound call is still live or its liveness is uncertain;
+#       nothing was released for that call (background tool completion).
 #   64  bad invocation: missing/empty identity or session, unknown subcommand,
 #       or a non-numeric / out-of-range value in one of the SF_LEASE_* numeric
 #       knobs. Two causes, one code - callers must name both when they report it.
@@ -316,7 +320,51 @@ write_meta() {
   [[ "$(field "$dir/meta" session)" == "$session" ]]
 }
 
-# True (rc 0) if the lease at $1 is stale: TTL-expired metadata, or
+# A PID alone can be recycled. Compare its birth time as well, and exclude
+# zombies (ps still lists those after the command has finished). LC_ALL keeps
+# the platform's lstart representation identical between binding and lookup.
+# rc 0 live, 1 gone/replaced, 2 observation unavailable: fail conservatively.
+process_live() {
+  local pid="$1" birth="$2" observed rc=0 state
+  local date_re='^[A-Za-z]{3} [A-Za-z]{3} [0-9]{1,2} [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4}$'
+  local state_re='^[RSDZTIXWNU][A-Za-z0-9+<]*$'
+  [[ "$pid" =~ ^[1-9][0-9]{0,9}$ && -n "$birth" ]] || return 2
+  observed="$(LC_ALL=C ps -p "$pid" -o lstart= -o stat= 2>/dev/null)" || rc=$?
+  [[ "$rc" == 1 && -z "$observed" ]] && return 1
+  [[ "$rc" == 0 && -n "$observed" ]] || return 2
+  # Normalize padding introduced by ps without changing the recorded date.
+  observed="$(printf '%s\n' "$observed" | awk '{$1=$1; print}')"
+  state="${observed##* }"
+  [[ "${observed% *}" =~ $date_re && "$state" =~ $state_re ]] || return 2
+  [[ "$state" == Z* || "${observed% *}" != "$birth" ]] && return 1
+  return 0
+}
+
+# Only bound active calls can veto TTL expiry. Unbound/legacy calls keep the
+# historical timeout. An observation error retains exclusion with diagnostics;
+# it must never look like proof that a running process has died.
+lease_has_live_call() {
+  local dir="$1" key state pid birth rc ended=0
+  [[ "$(field "$dir/meta" claims_version)" == 1 ]] || return 1
+  while IFS=$'\t' read -r key state pid birth; do
+    [[ "$key" == claim:call:* && "$state" == active && -n "$pid" ]] || continue
+    rc=0
+    process_live "$pid" "$birth" || rc=$?
+    [[ "$rc" == 0 ]] && return 0
+    if [[ "$rc" == 2 ]]; then
+      printf 'sf-lease: liveness uncertain for %s (%s); retaining exclusion. Stop its calls, then inspect sf-lease holder %s and use sf-lease release-session <session>.\n' "${dir##*/}" "$key" "$(identity_of_dir "$dir")" >&2
+      return 0
+    fi
+    ended=1
+  done < "$dir/meta"
+  if [[ "$ended" == 1 ]]; then
+    printf 'sf-lease: bound processes ended or changed identity for %s; TTL expired. The lease is eligible for cleanup.\n' "${dir##*/}" >&2
+  fi
+  return 1
+}
+
+# True (rc 0) if the lease at $1 is stale: TTL-expired metadata without a
+# live bound call, or
 # metadata-less (or metadata with an unparseable `started`) and older than
 # 60s - a claim interrupted between mkdir and the meta mv (C3: never treat a
 # corrupt/absent meta as instantly expired). Pure read, no side effects, so
@@ -331,7 +379,10 @@ lease_is_stale() {
     # instead of comparing. Treated as unparseable, which falls through to the
     # 60s mtime rule below rather than guessing at an age.
     if [[ "$started" =~ ^(0|[1-9][0-9]*)$ ]]; then
-      (( now - started >= ttl_minutes * 60 )) && return 0
+      if (( now - started >= ttl_minutes * 60 )); then
+        lease_has_live_call "$dir" && return 1
+        return 0
+      fi
       return 1
     fi
   fi
@@ -424,13 +475,13 @@ cmd_claim() {
   return 1
 }
 
-cmd_release() {
+# Caller owns the store mutex; shared by identity and call-ID cleanup.
+release_one() {
   local identity="${1:-}" session="${2:-}" dir key claims state
   require_nonempty "$session"
   dir="$(lease_dir "$identity")" || finish 64
   if [[ $# -gt 2 ]]; then key="$(claim_key "$3")" || finish 64;
   else key="$(claim_key)"; fi
-  acquire_mutex || return "$EX_BUSY"
   [[ -f "$dir/meta" && "$(field "$dir/meta" session)" == "$session" ]] || return 0
   claims="$(claim_rows "$dir/meta")" || return 70
   # A wrong/duplicate token is a no-op. Token-free release only clears legacy.
@@ -444,6 +495,58 @@ cmd_release() {
   else
     rm -rf "$dir" || return 70
   fi
+  return 0
+}
+
+cmd_release() {
+  acquire_mutex || return "$EX_BUSY"
+  release_one "$@"
+}
+
+cmd_release_call() {
+  local session="${1:-}" token="${2:-}" dir identity key row state pid birth observed retained=0
+  require_nonempty "$session"
+  key="$(claim_key "$token")" || finish 64
+  acquire_mutex || return "$EX_BUSY"
+  for dir in "$SF_LEASE_HOME"/sf-*.lease; do
+    [[ -d "$dir" ]] || continue
+    identity="$(identity_of_dir "$dir")"
+    lease_dir "$identity" >/dev/null || continue
+    [[ "$(field "$dir/meta" session)" == "$session" ]] || continue
+    row="$(claim_rows "$dir/meta" | awk -F'\t' -v k="$key" '$1 == k {print; exit}')" || return 70
+    IFS=$'\t' read -r key state pid birth <<< "$row"
+    key="$(claim_key "$token")" || finish 64
+    if [[ "$state" == active && -n "$pid" ]]; then
+      observed=0
+      process_live "$pid" "$birth" || observed=$?
+      # PostToolUse can mean "started in background", not process exit.
+      # Preserve both live and uncertain observations, just as expiry does.
+      if [[ "$observed" != 1 ]]; then retained=1; continue; fi
+    fi
+    release_one "$identity" "$session" "$token" || return "$?"
+  done
+  return "$retained"
+}
+
+cmd_bind() {
+  local identity="${1:-}" session="${2:-}" token="${3:-}" pid="${4:-}" birth="${5:-}"
+  local dir key row claims
+  require_nonempty "$session" "$birth"
+  [[ "$pid" =~ ^[1-9][0-9]{0,9}$ ]] || finish 64
+  dir="$(lease_dir "$identity")" || finish 64
+  key="$(claim_key "$token")" || finish 64
+  # The caller captures its own shell's birth time; normalize ps padding.
+  birth="$(printf '%s\n' "$birth" | awk '{$1=$1; print}')"
+  process_live "$pid" "$birth" || return 1
+  acquire_mutex || return "$EX_BUSY"
+  [[ -f "$dir/meta" && "$(field "$dir/meta" session)" == "$session" ]] || return 1
+  claims="$(claim_rows "$dir/meta")" || return 70
+  row="$(printf '%s\n' "$claims" | awk -F'\t' -v k="$key" '$1 == k {print; exit}')"
+  # Never create, revive or rebind a token. Late bind events are not claims.
+  [[ "$row" == "$key"$'\t'active || "$row" == "$key"$'\t'active$'\t'"$pid"$'\t'"$birth" ]] || return 1
+  claims="$(printf '%s\n' "$claims" | awk -F'\t' -v OFS='\t' -v k="$key" -v p="$pid" -v b="$birth" \
+    '{if ($1 == k) {$3=p; $4=b} print}')" || return 70
+  write_meta "$dir" "$session" "$(date +%s)" "$(field "$dir/meta" cmd)" "$claims" || return 70
   return 0
 }
 
@@ -486,7 +589,11 @@ cmd_holder() {
     printf 'session=%s age=? cmd=%s\n' "$session" "$runcmd"
   fi
   if [[ "$(field "$dir/meta" claims_version)" == 1 ]]; then
-    awk -F'\t' '$1 ~ /^claim:/ {printf "  %s=%s\n", $1, $2}' "$dir/meta"
+    awk -F'\t' '$1 ~ /^claim:/ {
+      printf "  %s=%s", $1, $2
+      if (NF >= 4) printf " pid=%s started=%s", $3, $4
+      printf "\n"
+    }' "$dir/meta"
   fi
 }
 
@@ -639,6 +746,8 @@ subcmd="${1:-}"
 rc=0
 case "$subcmd" in
   claim)           shift; cmd_claim "$@" || rc=$? ;;
+  bind)            shift; cmd_bind "$@" || rc=$? ;;
+  release-call)    shift; cmd_release_call "$@" || rc=$? ;;
   release)         shift; cmd_release "$@" || rc=$? ;;
   release-session) shift; cmd_release_session "$@" || rc=$? ;;
   holder)          shift; cmd_holder "$@" || rc=$? ;;
@@ -646,7 +755,7 @@ case "$subcmd" in
   sweep)           shift; cmd_sweep "$@" || rc=$? ;;
   unwedge)         shift; cmd_unwedge "$@" || rc=$? ;;
   *)
-    printf 'usage: sf-lease claim|release|release-session|holder|list|sweep|unwedge [--force] ...\n' >&2
+    printf 'usage: sf-lease claim|bind|release|release-call|release-session|holder|list|sweep|unwedge [--force] ...\n' >&2
     finish 64
     ;;
 esac

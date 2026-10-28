@@ -67,13 +67,29 @@ fi
 
 rc=0
 if [[ -n "$token" ]]; then
-  "$LEASE" claim "$identity" "$sid" "$cmd" "$token" >/dev/null 2>&1 || rc=$?
+  claim_diagnostics="$("$LEASE" claim "$identity" "$sid" "$cmd" "$token" 2>&1 >/dev/null)" || rc=$?
 else
   log "identity=$identity session=$sid missing/invalid tool_use_id; claiming legacy slot until SessionEnd/manual cleanup/TTL. PostToolUse cannot safely release it."
-  "$LEASE" claim "$identity" "$sid" "$cmd" >/dev/null 2>&1 || rc=$?
+  claim_diagnostics="$("$LEASE" claim "$identity" "$sid" "$cmd" 2>&1 >/dev/null)" || rc=$?
 fi
+case "$claim_diagnostics" in
+  *'liveness uncertain'*|*'bound processes ended'*)
+    log "identity=$identity session=$sid ${claim_diagnostics:0:500}" ;;
+esac
 case "$rc" in
-  0) exit 0 ;;          # held, including a re-entrant claim by this session
+  0)
+    if [[ -n "$token" ]]; then
+      # A hook's PID is short-lived. Bind from INSIDE the actual tool shell.
+      # %q quotes data for Bash; the original command stays literal at top level.
+      # Do not return permissionDecision=allow: normal permissions still apply.
+      # shellcheck disable=SC2016
+      printf -v binding '%q bind %q %q %q "$$" "$(LC_ALL=C ps -p "$$" -o lstart=)"' \
+        "$LEASE" "$identity" "$sid" "$token"
+      prefix="$binding || printf '%s\\n' 'sf-lease: process binding failed; this call has TTL-only protection. Stop competing runs; inspect sf-lease list and recover after calls stop.' >&2"
+      printf '%s' "$payload" | jq --arg prefix "$prefix" \
+        '{hookSpecificOutput:{hookEventName:"PreToolUse", updatedInput:(.tool_input | .command = ($prefix + "\n" + .command))}}'
+    fi
+    exit 0 ;;
   1) ;;                 # refused - fall through to the block below
   64)
     # TWO causes, and the second is the likely one: sf-lease returns 64 for a bad
