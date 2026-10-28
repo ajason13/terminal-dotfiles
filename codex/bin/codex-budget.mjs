@@ -7,8 +7,8 @@ import { realpathSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const START_RESERVE = 30;
-const FINISH_RESERVE = 15;
+const START_RESERVES = { bounded: 15, large: 30 };
+const FINISH_RESERVE = 5;
 const delay = ms => new Promise(r => setTimeout(r, ms));
 
 function stopProcess(child, signal = 'SIGTERM') {
@@ -57,8 +57,10 @@ export function readAccountState({ cwd = process.cwd(), timeoutMs = 20000, execu
   });
 }
 
-export function budgetDecision(usage, model, now = Date.now()) {
+export function budgetDecision(usage, model, now = Date.now(), taskSize = 'bounded') {
   const unknown = reason => ({ state: 'unknown', reason, windows: [] });
+  if (!Object.hasOwn(START_RESERVES, taskSize)) return unknown('Task size must be bounded or large.');
+  const startReserve = START_RESERVES[taskSize];
   if (!model || typeof model !== 'string') return unknown('Effective model is unavailable.');
   const buckets = usage?.rateLimitsByLimitId;
   const main = buckets?.codex ?? (usage?.rateLimits?.limitId === 'codex' ? usage.rateLimits : null);
@@ -93,23 +95,23 @@ export function budgetDecision(usage, model, now = Date.now()) {
   }
   const minimum = Math.min(...windows.map(w => w.remainingPercent));
   const state = minimum <= 0 ? 'exhausted' : minimum < FINISH_RESERVE ? 'checkpoint' :
-    minimum <= START_RESERVE ? 'finish-current' : 'ready';
-  const constrained = windows.filter(w => w.remainingPercent <= START_RESERVE);
+    minimum <= startReserve ? 'finish-current' : 'ready';
+  const constrained = windows.filter(w => w.remainingPercent <= startReserve);
   // Both windows must recover. Re-read after the latest constraining reset.
   const nextCheckAt = constrained.length ? Math.max(...constrained.map(w => w.resetsAt * 1000)) + 5000 : null;
   if (usage?.ordinaryUsageAllowed === false || applicable.some(b => b.spendControlReached || b.rateLimitReachedType)) {
     return { state: 'blocked', reason: 'The service reports a usage or spending block.', windows, nextCheckAt };
   }
-  return { state, minimumRemainingPercent: minimum, windows, nextCheckAt };
+  return { state, taskSize, startReservePercent: startReserve, minimumRemainingPercent: minimum, windows, nextCheckAt };
 }
 
 export async function waitForBudget({ read, model, wait = false, maxWaitMs = 86400000,
-  now = Date.now, sleep = delay, onDecision = () => {} }) {
+  taskSize = 'bounded', now = Date.now, sleep = delay, onDecision = () => {} }) {
   const deadline = now() + maxWaitMs;
   for (;;) {
     const account = await read();
     const effectiveModel = model ?? account.model;
-    const decision = budgetDecision(account.usage, effectiveModel, now());
+    const decision = budgetDecision(account.usage, effectiveModel, now(), taskSize);
     await onDecision(decision);
     if (decision.state === 'ready') return { account, model: effectiveModel, decision };
     if (!wait || !decision.nextCheckAt || decision.state === 'unknown' ||
@@ -134,7 +136,7 @@ function git(repo, ...args) {
   return execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
 
-export function executeTask({ repo, model, effort, task, schemaPath, reportPath, executable = 'codex' }) {
+export function executeTask({ repo, model, effort, task, taskSize = 'bounded', schemaPath, reportPath, executable = 'codex' }) {
   return new Promise((resolveResult, reject) => {
     const args = ['exec', '--approve-for-me', '--sandbox', 'workspace-write', '--model', model,
       '--json', '--output-schema', schemaPath, '--output-last-message', reportPath];
@@ -160,8 +162,9 @@ export function executeTask({ repo, model, effort, task, schemaPath, reportPath,
     child.on('error', error => { cleanup(); reject(error); });
     child.stdin.on('error', () => {});
     child.on('exit', (code, signal) => { cleanup(); resolveResult({ code, signal, threadId, interrupted }); });
-    child.stdin.end(`Complete only this bounded task. Follow AGENTS.md and existing task authority.
-Check codex-budget status --model ${model} before costly phases when available.
+    child.stdin.end(`Complete only this scoped task. Follow AGENTS.md and existing task authority.
+Task size: ${taskSize}. Assess headroom for implementation, verification, fixes, review, and delivery.
+Check codex-budget status --model ${model} --task-size ${taskSize} before costly phases when available.
 At low allowance finish the current safe step and return a paused checkpoint.
 Preserve unrelated work. Use focused checks during iteration, required broader
 checks and risk-triggered fresh review before completion. Do not start nested
@@ -206,7 +209,7 @@ export async function runQueue(options, dependencies = {}) {
       checkpoint.status = 'waiting';
       await save();
       const ready = await waitForBudget({ read, model: options.model, wait: options.wait,
-        maxWaitMs: options.maxWaitMs, ...(dependencies.timing ?? {}), onDecision: async decision => {
+        taskSize: options.taskSize, maxWaitMs: options.maxWaitMs, ...(dependencies.timing ?? {}), onDecision: async decision => {
           checkpoint.usage = decision; await save(); log(`Allowance: ${decision.state}`);
         } });
       // The user or another session may have changed the repository while we waited.
@@ -217,7 +220,7 @@ export async function runQueue(options, dependencies = {}) {
       if (await readFile(resolve(file), 'utf8') !== task) throw new Error('Task instructions changed while waiting; inspect before starting.');
       const reportPath = join(runDir, `task-${checkpoint.tasks.length}.json`);
       entry.status = 'running'; checkpoint.status = 'running'; await save();
-      const result = await execute({ repo, task, model: ready.model, effort: options.effort ?? ready.account.effort, schemaPath, reportPath });
+      const result = await execute({ repo, task, taskSize: ready.decision.taskSize, model: ready.model, effort: options.effort ?? ready.account.effort, schemaPath, reportPath });
       entry.threadId = result.threadId;
       checkpoint.branch = git(repo, 'branch', '--show-current');
       checkpoint.commit = git(repo, 'rev-parse', 'HEAD');
@@ -241,7 +244,7 @@ export async function runQueue(options, dependencies = {}) {
       entry.report = report; entry.status = report.status; checkpoint.status = report.status; await save();
       if (report.status !== 'completed' || report.remainingCriteria.length) throw new Error('Task has unfinished work; checkpoint saved.');
       // Always record the post-task observation, even after the final queued task.
-      const after = await read(); checkpoint.usage = budgetDecision(after.usage, ready.model); await save();
+      const after = await read(); checkpoint.usage = budgetDecision(after.usage, ready.model, Date.now(), options.taskSize); await save();
       log(`Task completed: ${entry.file}`);
     }
     return checkpoint;
@@ -251,16 +254,19 @@ export async function runQueue(options, dependencies = {}) {
 export function parseArgs(args) {
   const command = args.shift() ?? 'help';
   if (!['status', 'run', 'help', '--help', '-h'].includes(command)) throw new Error('Expected status or run.');
-  const options = { repo: '.', tasks: [], wait: false, maxWaitMs: 86400000 };
+  const options = { repo: '.', tasks: [], wait: false, taskSize: 'bounded', maxWaitMs: 86400000 };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--wait') { options.wait = true; continue; }
-    if (!['--repo', '--task', '--model', '--effort', '--max-wait-hours'].includes(arg) || !args[i + 1] || args[i + 1].startsWith('--')) {
+    if (!['--repo', '--task', '--model', '--effort', '--task-size', '--max-wait-hours'].includes(arg) || !args[i + 1] || args[i + 1].startsWith('--')) {
       throw new Error(`Unknown or missing option: ${arg}`);
     }
     const value = args[++i];
     if (arg === '--task') options.tasks.push(value);
-    else if (arg === '--max-wait-hours') {
+    else if (arg === '--task-size') {
+      if (!Object.hasOwn(START_RESERVES, value)) throw new Error('Task size must be bounded or large.');
+      options.taskSize = value;
+    } else if (arg === '--max-wait-hours') {
       if (!Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 168) throw new Error('Wait bound must be 0–168 hours.');
       options.maxWaitMs = Number(value) * 3600000;
     } else options[arg.slice(2)] = value;
@@ -275,14 +281,15 @@ export async function main(args = process.argv.slice(2)) {
   if (command === 'status') {
     const account = await readAccountState({ cwd: resolve(options.repo) });
     const model = options.model ?? account.model;
-    const decision = budgetDecision(account.usage, model);
+    const decision = budgetDecision(account.usage, model, Date.now(), options.taskSize);
     console.log(JSON.stringify({ model, effort: options.effort ?? account.effort, ...decision }, null, 2));
     return decision.state === 'unknown' ? 2 : 0;
   }
   if (command === 'run') { await runQueue(options); return 0; }
-  console.log('Usage: codex-budget status [--repo DIR] [--model MODEL]\n' +
+  console.log('Usage: codex-budget status [--repo DIR] [--model MODEL] [--task-size bounded|large]\n' +
     '       codex-budget run --repo DIR --task FILE [--task FILE ...] [--wait]\n' +
-    '         [--model MODEL] [--effort medium|high] [--max-wait-hours 0..168]\n' +
+    '         [--model MODEL] [--effort medium|high] [--task-size bounded|large] [--max-wait-hours 0..168]\n' +
+    'Task size defaults to bounded (>15%); use large (>30%) for large or uncertain tasks.\n' +
     'Requires Node 22+, Codex ChatGPT sign-in, and a clean Git worktree.\n' +
     'Gates task boundaries; does not impose a hard in-flight spending cap.');
   return 0;
