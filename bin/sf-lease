@@ -329,7 +329,9 @@ process_live() {
   local date_re='^[A-Za-z]{3} [A-Za-z]{3} [0-9]{1,2} [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4}$'
   local state_re='^[RSDZTIXWNU][A-Za-z0-9+<]*$'
   [[ "$pid" =~ ^[1-9][0-9]{0,9}$ && -n "$birth" ]] || return 2
-  observed="$(LC_ALL=C ps -p "$pid" -o lstart= -o stat= 2>/dev/null)" || rc=$?
+  # ps also returns 1 for observation errors. Only an empty, diagnostic-free
+  # result can prove absence; retain stderr here rather than hiding failure.
+  observed="$(LC_ALL=C ps -p "$pid" -o lstart= -o stat= 2>&1)" || rc=$?
   [[ "$rc" == 1 && -z "$observed" ]] && return 1
   [[ "$rc" == 0 && -n "$observed" ]] || return 2
   # Normalize padding introduced by ps without changing the recorded date.

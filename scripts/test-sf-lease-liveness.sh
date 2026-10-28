@@ -15,6 +15,7 @@ case "${PROCESS_STATE:-live}" in
   zombie) printf 'Wed Oct 28 00:00:00 2026 Z\n' ;;
   dead) exit 1 ;;
   error) exit 2 ;;
+  error1) printf 'ps: permission denied\n' >&2; exit 1 ;;
   malformed) printf 'unexpected ps output\n' ;;
   uncertain) printf 'partial'; exit 1 ;;
 esac
@@ -36,7 +37,7 @@ done
 age
 check 'process lookup failure retains exclusion' 1 "$(PROCESS_STATE=error code claim org rival command rival-call)"
 check 'process lookup failure is visible' yes "$(if grep -q 'liveness uncertain' "$tmp/err"; then echo yes; else echo no; fi)"
-for observation in malformed uncertain; do
+for observation in error1 malformed uncertain; do
   check "$observation process observation retains exclusion" 1 "$(PROCESS_STATE="$observation" code claim org rival command rival-call)"
   check "$observation observation reports uncertainty" yes "$(if grep -q 'liveness uncertain' "$tmp/err"; then echo yes; else echo no; fi)"
 done
@@ -66,6 +67,7 @@ age
 check 'released sibling does not lose active sibling exclusion' 1 "$(code claim org rival command replacement)"
 check 'background post cleanup retains a live call' 1 "$(code release-call session b)"
 check 'uncertain background completion retains a call' 1 "$(PROCESS_STATE=error code release-call session b)"
+check 'ps rc1 error on background completion retains a call' 1 "$(PROCESS_STATE=error1 code release-call session b)"
 PROCESS_STATE=dead "$lease" release-call session b
 check 'call cleanup finds its identity without command resolution' 0 "$(code claim org rival command replacement)"
 "$lease" release-call session b
