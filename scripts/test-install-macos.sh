@@ -4,6 +4,19 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 task_tmp="$(mktemp -d)"
 trap 'rm -rf "$task_tmp"' EXIT
 fixture="$task_tmp/repo"
+# Package installation and service sign-in must remain explicit operator actions.
+# Exercise every existing install mode with forbidden external commands on PATH.
+mkdir -p "$task_tmp/forbidden-bin"
+for external in brew codex claude gh npm; do
+  cat > "$task_tmp/forbidden-bin/$external" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$0 $*" >> "$DOTFILES_FORBIDDEN_CALLS"
+exit 1
+SH
+  chmod +x "$task_tmp/forbidden-bin/$external"
+done
+export DOTFILES_FORBIDDEN_CALLS="$task_tmp/forbidden-calls"
+export PATH="$task_tmp/forbidden-bin:$PATH"
 mkdir -p "$fixture/scripts" "$fixture/codex/profiles" "$fixture/codex/skills/example"
 cp "$repo_root/install-macos.sh" "$repo_root/uninstall-macos.sh" "$fixture/"
 cp "$repo_root/scripts/install-targets.sh" "$fixture/scripts/"
@@ -141,5 +154,11 @@ mv "$fixture/codex/skills/example" "$fixture/retired-example"
 run_uninstall "$target_home"
 test ! -e "$target_home/.codex/skills/example"
 test ! -L "$target_home/.codex/skills/example"
+
+if [[ -e "$DOTFILES_FORBIDDEN_CALLS" ]]; then
+  printf 'FAIL: installer invoked a package manager or agent/service CLI\n' >&2
+  cat "$DOTFILES_FORBIDDEN_CALLS" >&2
+  exit 1
+fi
 
 echo 'Install/uninstall preserve and restore configurations in copy and link modes'
