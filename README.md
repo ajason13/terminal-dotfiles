@@ -101,6 +101,38 @@ pane's leftovers cannot linger. If a marker still shows a spinner with no real
 work running - a missed `SubagentStop` left a file behind - clear it by hand:
 `rm -rf ~/.local/state/tmux-llm/panes/<pane>.agents ~/.local/state/tmux-llm/panes/<pane>.busy`.
 
+### Explain a pane's status
+
+Use `tmux list-panes -a -F '#{pane_id}'` to find a pane ID, then run:
+
+```sh
+tmux-llm-status explain %3
+```
+
+For example, a running Claude turn can report `Status/daemon: active; winning
+rule: fresh-busy-marker`, with its busy age and TTL in seconds. A blocked prompt
+wins over busy/depth signals; expired or malformed busy evidence falls through
+to title/command presence. The report lists lower-priority evidence even when
+ignored, and identifies stale needs markers ignored on bare shells.
+
+The command evaluates the existing classifier twice: status/daemon context,
+then table context with live Claude session records. A parked session can be
+`none` in the status bar but `present` in the table; session records require
+`jq`. Missing marker files cannot distinguish unregistered hooks from idle
+agents. Needs/depth have no TTL; future busy timestamps retain the existing
+classifier behavior. Neither a fresh marker nor a session record proves that a
+reused pane ID still belongs to the original process. This is a point-in-time
+observation, so a changing pane may differ on the next status refresh.
+
+Only explicit `%<digits>` IDs are accepted. Exit status is 0 for a live pane
+(including a non-agent), 1 for a missing/dead pane or unavailable server, and 2
+for invalid arguments. The command reads metadata and existing hook/session
+records, never pane content/history, and does not repair files, prune state,
+update status options, or send notifications. It omits raw titles, commands,
+agent names, paths, and marker contents. To report a status bug, paste this
+output with the expected state and whether hooks are registered; do not attach
+transcripts or settings. Review even sanitized output before sharing it.
+
 ### Registering the hooks
 
 `~/.claude/settings.json` is never written by this repo, so merge these by hand,
