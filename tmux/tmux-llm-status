@@ -56,6 +56,9 @@ BUSY_TTL="${TMUX_LLM_BUSY_TTL:-1200}"
 # alternative is a `date` fork per pane.
 refresh_now() { NOW="$(date +%s)"; }
 
+# Hook epochs are decimal integers. Bound malformed input before shell arithmetic.
+valid_busy_stamp() { [[ "$1" =~ ^(0|[1-9][0-9]{0,11})$ ]]; }
+
 # Is a turn running in this pane? The marker holds the epoch of the last hook
 # event in the turn. Read with a redirect rather than $(cat ...) to stay
 # fork-free on the per-pane path.
@@ -64,7 +67,7 @@ is_pane_busy() {
   [[ -f "$file" ]] || return 1
   [[ -n "${NOW:-}" ]] || refresh_now
   read -r stamp < "$file" 2>/dev/null || true
-  [[ "$stamp" =~ ^[0-9]+$ ]] || return 1
+  valid_busy_stamp "$stamp" || return 1
   (( NOW - stamp < BUSY_TTL ))
 }
 
@@ -185,26 +188,89 @@ is_active_title() {
   esac
 }
 
-# One pane's state into PANE_STATE (waiting|active|present|none), plus AGENT_COUNT.
+# One pane's state into PANE_STATE (waiting|active|present|none), plus AGENT_COUNT and PANE_REASON (a fixed, safe diagnostic label).
 # Shared by the status bar and the table so the two can never disagree.
 classify_pane() {
   local pane_id="$1" command="$2" title="$3"
   count_agents "$pane_id"
   # A blocked prompt outranks every working signal: the turn cannot move without you.
-  if is_pane_blocked "$pane_id" && ! is_shell_command "${command##*/}"; then PANE_STATE=waiting
+  if is_pane_blocked "$pane_id" && ! is_shell_command "${command##*/}"; then PANE_STATE=waiting; PANE_REASON='needs-marker'
   # Depth wins over the title: a lead that fanned out and went quiet reports an
   # idle title while its agents are still running, which is the case this exists for.
-  elif (( AGENT_COUNT > 0 )); then PANE_STATE=active
+  elif (( AGENT_COUNT > 0 )); then PANE_STATE=active; PANE_REASON='subagent-depth'
   # Ahead of every title matcher: a working Claude pane's title is now
   # indistinguishable from an idle one, so the marker is the only truth.
-  elif is_pane_busy "$pane_id"; then PANE_STATE=active
-  elif has_spinner_title "$title" || is_active_title "$title"; then PANE_STATE=active
-  elif is_waiting_title "$title"; then PANE_STATE=waiting
-  elif is_codex_title "$title" || is_claude_title "$title" || is_llm_command "${command##*/}"; then PANE_STATE=present
+  elif is_pane_busy "$pane_id"; then PANE_STATE=active; PANE_REASON='fresh-busy-marker'
+  elif has_spinner_title "$title"; then PANE_STATE=active; PANE_REASON='spinner-title'
+  elif is_active_title "$title"; then PANE_STATE=active; PANE_REASON='active-title-prefix'
+  elif is_waiting_title "$title"; then PANE_STATE=waiting; PANE_REASON='waiting-title-prefix'
+  elif is_codex_title "$title" || is_claude_title "$title"; then PANE_STATE=present; PANE_REASON='agent-title'
+  elif is_llm_command "${command##*/}"; then PANE_STATE=present; PANE_REASON='agent-command'
   # A parked session drops the ✳ title; its session record still names the pane.
-  elif [[ "$SESSION_PANES" == *" $pane_id "* ]]; then PANE_STATE=present
-  else PANE_STATE=none
+  elif [[ "$SESSION_PANES" == *" $pane_id "* ]]; then PANE_STATE=present; PANE_REASON='table-session-record'
+  else PANE_STATE=none; PANE_REASON='no-agent-evidence'
   fi
+}
+
+# Only fixed labels, counts and validated pane IDs leave this diagnostic path.
+# Do not render titles, commands, session names, paths or marker contents.
+explain_pane() {
+  local target="${1:-}" id dead pane_found=0 command title stamp='' busy=missing age='unavailable'
+  local needs=missing spinner=no active=no waiting=no presence=no sessions=no status_state status_reason
+  if [[ ! "$target" =~ ^%[0-9]+$ ]]; then
+    printf 'explain: expected a pane ID such as %%0 (list IDs with tmux list-panes -a -F "#{pane_id}").\n' >&2
+    return 2
+  fi
+  while IFS=$'\t' read -r id dead; do
+    [[ "$id" == "$target" ]] || continue
+    pane_found=1
+    if [[ "$dead" == 1 ]]; then
+      printf 'Pane %s: dead; retained hook evidence is not evaluated.\n' "$target"
+      return 1
+    fi
+    break
+  done < <(tmux_cmd list-panes -a -F '#{pane_id}	#{pane_dead}' 2>/dev/null || true)
+  if (( pane_found == 0 )); then
+    printf 'explain: pane unavailable (missing pane or unreachable tmux server).\n' >&2
+    return 1
+  fi
+  command="$(tmux_cmd display-message -p -t "$target" '#{pane_current_command}' 2>/dev/null)" || return 1
+  title="$(tmux_cmd display-message -p -t "$target" '#{pane_title}' 2>/dev/null)" || return 1
+  refresh_now
+  SESSION_PANES=' '
+  classify_pane "$target" "$command" "$title"
+  status_state="$PANE_STATE" status_reason="$PANE_REASON"
+  printf 'Pane %s\nStatus/daemon: %s; winning rule: %s\n' "$target" "$status_state" "$status_reason"
+  SESSION_PANES=" $(agent_panes | cut -f1 | tr '\n' ' ')"
+  [[ "$SESSION_PANES" != *" $target "* ]] || sessions=yes
+  classify_pane "$target" "$command" "$title"
+  printf 'Table: %s; winning rule: %s\n' "$PANE_STATE" "$PANE_REASON"
+  printf 'Precedence: needs > subagents > fresh busy > spinner > active title > waiting title > agent title/command > table session > none\n'
+  if is_pane_blocked "$target"; then
+    needs=present
+    if is_shell_command "${command##*/}"; then needs=ignored-on-shell; fi
+  fi
+  if [[ -f "$STATE_HOME/panes/${target#%}.busy" ]]; then
+    read -r stamp < "$STATE_HOME/panes/${target#%}.busy" 2>/dev/null || true
+    busy=malformed
+    # Use the same freshness decision as the classifier, including future stamps.
+    if valid_busy_stamp "$stamp"; then
+      age=$(( NOW - stamp ))
+      if is_pane_busy "$target"; then busy=fresh; else busy=expired; fi
+      (( age >= 0 )) || busy=future-clock
+    fi
+  fi
+  has_spinner_title "$title" && spinner=yes
+  is_active_title "$title" && active=yes
+  is_waiting_title "$title" && waiting=yes
+  if is_codex_title "$title" || is_claude_title "$title" || is_llm_command "${command##*/}"; then presence=yes; fi
+  printf 'Needs marker: %s (no TTL); subagent files: %d (no TTL)\n' "$needs" "$AGENT_COUNT"
+  # TTL is operator configuration; print it numerically, never as terminal text.
+  printf 'Busy marker: %s; age seconds: %s; TTL seconds: %d\n' "$busy" "$age" "$BUSY_TTL"
+  printf 'Title evidence: spinner=%s active-prefix=%s waiting-prefix=%s; agent presence=%s\n' "$spinner" "$active" "$waiting" "$presence"
+  printf 'Live session record: %s (table only; unavailable when jq/records are absent)\n' "$sessions"
+  printf 'Missing hooks cannot be distinguished from idle/no published evidence. Lower-priority evidence above is ignored when a higher rule wins.\n'
+  printf 'Expired/malformed busy markers are ignored; future-clock stamps follow the existing classifier. Hook identity/freshness cannot prove a reused pane is the same process.\n'
 }
 
 # Scan a window's panes and echo four space-separated counts:
@@ -837,6 +903,10 @@ pick() {
 }
 
 case "${1:-}" in
+  explain)
+    if (( $# != 2 )); then printf 'Usage: tmux-llm-status explain <%%pane-id>\n' >&2; exit 2; fi
+    explain_pane "$2"
+    ;;
   window)
     window_status "${2:-}"
     ;;
@@ -872,7 +942,7 @@ case "${1:-}" in
     start_daemon
     ;;
   *)
-    printf 'Usage: %s window <target> | summary [session] | next-waiting | once | prune | table [tree] | pick | start | stop | restart\n' "${0##*/}" >&2
+    printf 'Usage: %s explain <%%pane-id> | window <target> | summary [session] | next-waiting | once | prune | table [tree] | pick | start | stop | restart\n' "${0##*/}" >&2
     exit 2
     ;;
 esac

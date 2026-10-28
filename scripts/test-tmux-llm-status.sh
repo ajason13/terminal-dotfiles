@@ -636,6 +636,86 @@ check "stale needs on a shell pane is ignored" "◆" "$(marker_of eps:e1)"
 clear_needs_for eps:e1
 t kill-session -t eps
 
+# --- read-only explanation uses the actual classifier, with no title disclosure ---
+t -f /dev/null new-session -d -s explain -n probe 'sleep 600'
+probe="$(t display-message -p -t explain:probe '#{pane_id}')"
+t select-pane -t "$probe" -T '✳ PRIVATE-TASK'
+explain_has() {
+  check "$1" yes "$(has "$("$bin" explain "$probe")" "$2")"
+}
+explain_has 'explain reports title presence' 'Status/daemon: present; winning rule: agent-title'
+busy_for "$probe"
+explain_has 'explain reports fresh busy winner' 'winning rule: fresh-busy-marker'
+explain_has 'explain reports busy TTL' 'TTL seconds: 1200'
+agents_for "$probe" 2
+needs_for "$probe"
+before_state="$(find "$TMUX_LLM_STATE_HOME" -type f -exec cksum {} \; | sort)"
+before_options="$(t show-options -t explain; t show-options -w -t explain:probe)"
+explain_has 'blocked beats depth and busy in explain' 'Status/daemon: waiting; winning rule: needs-marker'
+explain_has 'explain includes lower-priority depth' 'subagent files: 2'
+check 'explain preserves hook state' "$before_state" "$(find "$TMUX_LLM_STATE_HOME" -type f -exec cksum {} \; | sort)"
+check 'explain preserves tmux options' "$before_options" "$(t show-options -t explain; t show-options -w -t explain:probe)"
+check 'explain omits private task' no "$(has "$("$bin" explain "$probe")" PRIVATE-TASK)"
+clear_needs_for "$probe"
+explain_has 'depth beats fresh busy in explain' 'winning rule: subagent-depth'
+clear_agents_for "$probe"
+busy_for "$probe" 99999
+explain_has 'explain reports expired busy' 'Busy marker: expired;'
+explain_has 'expired busy falls back to title' 'Status/daemon: present; winning rule: agent-title'
+printf 'not-an-epoch\n' > "$(busy_file_for "$probe")"
+explain_has 'explain reports malformed busy' 'Busy marker: malformed; age seconds: unavailable'
+for bad_stamp in 08 999999999999999999999999999999; do
+  printf '%s\n' "$bad_stamp" > "$(busy_file_for "$probe")"
+  explain_has 'malformed numeric epoch is bounded' 'Busy marker: malformed; age seconds: unavailable'
+done
+clear_busy_for "$probe"
+explain_has 'explain reports missing busy' 'Busy marker: missing;'
+t select-pane -t "$probe" -T '[Thinking] PRIVATE-TASK | PRIVATE-PROJECT'
+explain_has 'explain uses active prefix' 'winning rule: active-title-prefix'
+t select-pane -t "$probe" -T '[Action Required] PRIVATE-TASK | PRIVATE-PROJECT'
+explain_has 'explain uses waiting prefix' 'winning rule: waiting-title-prefix'
+t select-pane -t "$probe" -T '⠋ PRIVATE-TASK'
+explain_has 'explain uses spinner' 'winning rule: spinner-title'
+# tmux may reject control-bearing titles and retain the previous title.
+t select-pane -t "$probe" -T 'PRIVATE-TASK'
+t select-pane -t "$probe" -T $'PRIVATE-TASK\033[31m\tPRIVATE-PATH\nPRIVATE-MESSAGE'
+report="$("$bin" explain "$probe")"
+check 'unknown pane reports no agent evidence' yes "$(has "$report" 'Status/daemon: none; winning rule: no-agent-evidence')"
+check 'control-bearing title is omitted' no "$(has "$report" PRIVATE)"
+check 'report has no escape controls' no "$(has "$report" $'\033')"
+mkdir -p "$TMUX_LLM_CLAUDE_SESSIONS"
+printf '{"name":"PRIVATE-AGENT","pid":%s,"tmux":"fixture.%s"}\n' "$$" "$probe" > "$TMUX_LLM_CLAUDE_SESSIONS/explain.json"
+explain_has 'status ignores table session presence' 'Status/daemon: none; winning rule: no-agent-evidence'
+explain_has 'table session presence is explicit' 'Table: present; winning rule: table-session-record'
+rm "$TMUX_LLM_CLAUDE_SESSIONS/explain.json"
+# A stale needs marker on a shell is visible as ignored, exactly as in the bar.
+shell_probe="$(t new-window -d -P -F '#{pane_id}' -t explain: -n shell)"
+needs_for "$shell_probe"
+check 'explain discloses ignored shell needs' yes "$(has "$("$bin" explain "$shell_probe")" 'Needs marker: ignored-on-shell')"
+clear_needs_for "$shell_probe"
+# A retained dead pane is different from an ID no longer reported by tmux.
+t set-option -w -t explain:probe remain-on-exit on
+t respawn-pane -k -t "$probe" 'exit 0'
+for (( attempt = 0; attempt < 30; attempt++ )); do
+  [[ "$(t display-message -p -t "$probe" '#{pane_dead}')" == 1 ]] && break
+  sleep 0.1
+done
+rc=0
+report="$("$bin" explain "$probe" 2>&1)" || rc=$?
+check 'dead pane has failing diagnostic status' 1 "$rc"
+check 'dead pane is explicit' yes "$(has "$report" 'dead; retained hook evidence is not evaluated')"
+for invalid in '' 'PRIVATE-TARGET' '%0/../../PRIVATE' $'%1\033[31m'; do
+  rc=0
+  report="$("$bin" explain "$invalid" 2>&1)" || rc=$?
+  check 'invalid target exits with usage status' 2 "$rc"
+  check 'invalid target is not echoed' no "$(has "$report" PRIVATE)"
+done
+rc=0
+report="$("$bin" explain %99999999 2>&1)" || rc=$?
+check 'missing pane exits with unavailable status' 1 "$rc"
+check 'missing pane has bounded result' yes "$(has "$report" 'pane unavailable')"
+t kill-session -t explain
+
 if (( failures > 0 )); then
   printf 'test-tmux-llm-status: %d failure(s)\n' "$failures" >&2
   exit 1
