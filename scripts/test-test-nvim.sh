@@ -22,6 +22,7 @@ printf '%s\n' "$count" >"$NVIM_FIXTURE_WORK/count"
 case "$NVIM_FIXTURE_MODE" in
   silent) exit 42 ;;
   stdout) echo 'E123: fixture failure'; exit 0 ;;
+  lock-change) echo ' ' >>"$XDG_CONFIG_HOME/nvim/lazy-lock.json"; exit 0 ;;
   changelog) echo '[plugin] log | abc123 fix: error handling'; exit 0 ;;
   stderr) echo 'E123: fixture failure' >&2; exit 0 ;;
   lua-*)
@@ -37,10 +38,27 @@ STUB
 cat >"$work/fixture.lua" <<'LUA'
 local mode = vim.env.NVIM_FIXTURE_MODE
 local installed = {}
-package.preload['lazy.core.config'] = function()
-  return { plugins = { fixture = { _ = { tasks = {
+local lock = vim.json.decode(table.concat(vim.fn.readfile(vim.env.XDG_CONFIG_HOME .. '/nvim/lazy-lock.json'), '\n'))
+local plugins = {}
+for name in pairs(lock) do
+  plugins[name] = { dir = name, _ = { tasks = {
     { has_errors = function() return mode == 'lua-plugin-task' end },
-  } } } } }
+  } } }
+end
+if mode == 'lua-lock-missing' then plugins.unlocked = { dir = 'unlocked', _ = {} } end
+if mode == 'lua-plugin-missing' then plugins['oil.nvim'] = nil end
+package.preload['lazy.core.config'] = function() return { plugins = plugins } end
+package.preload['lazy.manage.lock'] = function() return {} end
+vim.fn.isdirectory = function() return mode == 'lua-bootstrap-fail' and 0 or 1 end
+vim.fn.system = function(args)
+  if mode == 'lua-bootstrap-fail' or (mode == 'lua-git-fail' and args[3] == 'oil.nvim') then
+    -- Set the real shell_error rather than just returning an error-like string.
+    return vim.fn.systemlist({ 'sh', '-c', 'exit 1' })[1] or 'fixture git failure'
+  end
+  local name = args[3]:match('([^/]+)$')
+  if mode == 'lua-wrong-revision' and name == 'oil.nvim' then return string.rep('0', 40) end
+  if mode == 'lua-manager-revision' and name == 'lazy.nvim' then return string.rep('0', 40) end
+  return lock[name].commit
 end
 package.preload['nvim-treesitter'] = function()
   return {
@@ -64,7 +82,7 @@ vim.treesitter.get_parser = function()
 end
 -- Keep the real :cquit; skip plugin commands, but actually open probe buffers.
 local cmd = vim.cmd
-vim.cmd = setmetatable({ edit = cmd.edit }, { __call = function(_, command)
+vim.cmd = setmetatable({ edit = cmd.edit, source = function() end }, { __call = function(_, command)
   if command == 'cquit 1' then cmd(command) end
 end })
 if mode == 'lua-errmsg' then vim.v.errmsg = 'fixture fault' end
@@ -102,11 +120,15 @@ for phase in 1 2 3; do
 done
 run_case changelog 1 pass 'plugin install'
 run_case success 0 pass 'all phases'
+run_case lock-change 1 fail 'plugin install'
 run_case lua-plugin-task 1 fail 'plugin install'
+for mode in lua-lock-missing lua-plugin-missing lua-wrong-revision lua-manager-revision lua-git-fail lua-bootstrap-fail; do
+  run_case "$mode" 1 fail 'plugin install'
+done
 run_case lua-parser-throw 2 fail 'parser install'
 run_case lua-parser-false 2 fail 'parser install'
 run_case lua-parser-missing 2 fail 'parser install'
 run_case lua-probe-throw 3 fail 'config probe'
 run_case lua-errmsg 3 fail 'config probe'
 (( failed == 0 )) || exit 1
-echo 'Neovim harness regression checks passed (20 cases)'
+echo 'Neovim harness regression checks passed (27 cases)'
