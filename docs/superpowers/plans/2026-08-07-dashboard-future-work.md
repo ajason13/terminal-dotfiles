@@ -1,7 +1,27 @@
 # Night Pass dashboard future work
 
-All candidates below are unimplemented and unauthorized. Recording them does
-not authorize design, implementation, staging, commit, or push.
+## Current outcome (2026-10-27)
+
+This list records an earlier baseline, not pending implementation. The rejected
+Lantern Coil reversal was integrated in
+[c21b671](https://github.com/ajason13/terminal-dotfiles/commit/c21b671).
+Harbor Yard Rallycross later shipped in
+[316e4a9](https://github.com/ajason13/terminal-dotfiles/commit/316e4a9); the current
+catalog has three courses. Neutral screenshot-state assertions shipped in
+[2d9daa5](https://github.com/ajason13/terminal-dotfiles/commit/2d9daa5) and two-course
+breakpoint clearance/overlap checks in
+[709d0b7](https://github.com/ajason13/terminal-dotfiles/commit/709d0b7).
+
+Only extending those matrices to Harbor Yard remains as
+[#99](https://github.com/ajason13/terminal-dotfiles/issues/99). Use
+[GitHub Issues](https://github.com/ajason13/terminal-dotfiles/issues) as the active
+backlog and the [dashboard guide](../../../dashboard/README.md) for current behavior.
+The stash warning below remains historical recovery guidance, not an instruction
+to restore the two-course catalog.
+
+## Original candidates (historical)
+
+At the time of writing, these candidates were unimplemented and unauthorized:
 
 1. Remove the rejected Lantern Coil course from current `main` and restore the
    catalog to Ridge Pass and Cypress Run without reverting any newer dashboard

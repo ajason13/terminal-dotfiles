@@ -42,6 +42,11 @@ terminal backgrounds.
 - `Ctrl-Shift-Space` opens selected text paths in a tmux Neovim split, PNG
   images in Preview, and web targets in the browser.
 - WezTerm backgrounds rotate every 15 minutes by default.
+- The optional [Night Pass dashboard](dashboard/README.md) has three courses:
+  Ridge Pass, Cypress Run, and Harbor Yard Rallycross. It starts with fixtures;
+  manual snapshot import and loopback live polling are explicit opt-ins.
+  Cars follow the route with orientation/drift where supported; stationary cars
+  share 18 pit slots grouped by tmux session, alongside 16 route slots.
 - Codex defaults to `gpt-6.1-sol` with `medium` reasoning for routine sessions
   and includes pinned Astra and Sol profiles for research, architecture, and
   implementation.
@@ -490,8 +495,9 @@ the installed script by hand:
 { "statusLine": { "type": "command", "command": "~/.claude/statusline.sh" } }
 ```
 
-The hook snippets that feed it are listed under Status bar markers (subagent
-depth) and Salesforce Org Leases (the lease guard and the CRM-org tracker).
+The activity hooks are listed under [Status bar markers](#status-bar-markers).
+The [Salesforce lease hooks](#salesforce-org-leases) are separate; the retired
+CRM-org tracker no longer feeds the status line.
 Hooks added to a running session may need `/hooks` opened once, or a restart,
 before they take effect.
 
@@ -774,6 +780,8 @@ env file is present and unreadable.
 - Calls from the same session retain independent claims when hook call IDs
   are available. This excludes rival sessions until all claims finish; it does
   **not** serialize the owning session's own calls against each other.
+  This fixes [#91](https://github.com/ajason13/terminal-dotfiles/issues/91),
+  delivered in [PR #112](https://github.com/ajason13/terminal-dotfiles/pull/112).
 - A single active call can still outlive the TTL and lose exclusion; see
   [#92](https://github.com/ajason13/terminal-dotfiles/issues/92). Missing call
   IDs and missed post hooks retain claims until the cleanup described above.
