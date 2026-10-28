@@ -365,9 +365,11 @@ test suite never contacts the user's real/default tmux server.
 
 `validCombination` (`src/import-snapshot.mjs`) is an exact allowlist of **full
 tuples** - `status | activity.kind | permissionState | confidence | provenance` -
-with one entry per shape `classifyPane` can return. Nothing enforces the link
-between them, and the validator rejects the **whole** snapshot rather than the
-one bad session: a classifier state the allowlist does not carry throws
+with one entry per shape `classifyPane` can return. A synthetic branch matrix in
+`tests/live-adapter.test.mjs` passes real `buildSnapshot` output through
+`normalizeImportedSnapshot` to check compatibility. The validator rejects the
+**whole** snapshot rather than the one bad session: a classifier state the
+allowlist does not carry throws
 `SnapshotValidationError(['LIVE_SNAPSHOT_INVALID'])` and the dashboard falls back
 to fixtures. It goes blank, not wrong, which is why this is easy to ship and hard
 to notice.
@@ -380,15 +382,16 @@ commit:
 | the returned tuples | `src/tmux-classifier.mjs` |
 | the closed provenance enum | `PROVENANCE_VALUES`, `src/import-snapshot.mjs` |
 | the tuple allowlist | `validCombination`, `src/import-snapshot.mjs` |
-| three tuple tables | `tests/live-adapter.test.mjs` |
+| tuple assertions and round-trip branch matrix | `tests/live-adapter.test.mjs` |
 
 The two validators also speak different vocabularies: the fixture path uses
 `FIXTURE_STATUSES` (`src/session-contract.mjs`), which omits `unknown` entirely,
 while the live path uses `validCombination`. No single snapshot exercises every
 state, so **a fixture-only test cannot cover this path** - pass synthetic
 classifier outputs through `normalizeImportedSnapshot`.
-[Issue #96](https://github.com/ajason13/terminal-dotfiles/issues/96) tracks the
-missing permanent round-trip coverage; real tmux access is unnecessary for it.
+The permanent round-trip matrix covers the current classifier branches without
+real tmux access. Extend its raw-pane cases whenever a new branch is added;
+independent allowlist and rejection tests remain in place.
 
 ### Courses, motion, and capacity
 
