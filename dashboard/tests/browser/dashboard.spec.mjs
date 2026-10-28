@@ -13,7 +13,7 @@ const TRACK_SCHEDULES = new Map(COMPILED.schedules.map((item) => [item.route.id,
 const CYPRESS_TRACK = getTrack('cypress-run');
 const CYPRESS_MOBILE_HEADINGS = TRACK_SCHEDULES.get('cypress-run').mobileStaticHeadings;
 const BREAKPOINT_WIDTHS = [759, 760, 959, 960];
-const BREAKPOINT_COURSES = ['ridge-pass', 'cypress-run'];
+const COURSE_IDS = COMPILED.schedules.map(({ route }) => route.id);
 const ROUTE_LAP_MS = 64_000;
 const NEUTRAL_REFERENCE_CASES = Object.freeze([
   Object.freeze({
@@ -30,6 +30,14 @@ const NEUTRAL_REFERENCE_CASES = Object.freeze([
     references: Object.freeze({
       'desktop-chromium': Object.freeze(['desktop-cypress-run.png']),
       'mobile-chromium': Object.freeze(['mobile-cypress-run.png']),
+    }),
+  }),
+  Object.freeze({
+    id: 'harbor-yard-rallycross',
+    title: 'Harbor Yard Rallycross',
+    references: Object.freeze({
+      'desktop-chromium': Object.freeze(['desktop-harbor-yard-rallycross.png']),
+      'mobile-chromium': Object.freeze(['mobile-harbor-yard-rallycross.png']),
     }),
   }),
 ]);
@@ -756,7 +764,7 @@ test('fixtures render a nonblank, framed, horizontally safe dashboard', async ({
   });
   await expect(page.locator('#map-stage')).toBeVisible();
 
-  for (const course of ['ridge-pass', 'cypress-run']) {
+  for (const course of COURSE_IDS) {
     await page.locator('#track-select').selectOption(course);
     const layout = await page.evaluate(() => {
       const stage = document.querySelector('#map-stage').getBoundingClientRect();
@@ -787,6 +795,8 @@ test('fixtures render a nonblank, framed, horizontally safe dashboard', async ({
 test('neutral reference preconditions settle before any future capture', async ({
   page,
 }, testInfo) => {
+  expect(NEUTRAL_REFERENCE_CASES.map(({ id }) => id), 'neutral inventory covers every course')
+    .toEqual(COURSE_IDS);
   for (const course of NEUTRAL_REFERENCE_CASES) {
     const settled = await prepareNeutralReferenceState(page, testInfo, course);
     testInfo.annotations.push({
@@ -825,7 +835,7 @@ test('layout boundaries preserve all course targets, controls, and transform iso
   if (page.viewportSize().width < 1000) return;
   for (const width of [759, 760, 959, 960, 961]) {
     await page.setViewportSize({ width, height: 900 });
-    for (const trackId of ['ridge-pass', 'cypress-run']) {
+    for (const trackId of COURSE_IDS) {
       await page.locator('#track-select').selectOption(trackId);
       if (width === 961) {
         const button = page.locator('.vehicle-anchor .session-car').first();
@@ -908,7 +918,7 @@ test('breakpoint pairs preserve phased focus clearance and target separation', a
     try {
       for (const width of BREAKPOINT_WIDTHS) {
         await opened.page.setViewportSize({ width, height: 900 });
-        for (const course of BREAKPOINT_COURSES) {
+        for (const course of COURSE_IDS) {
           await opened.page.locator('#track-select').selectOption(course);
           const profileName = width <= 759 ? 'mobile' : 'desktop';
           const phases = mode === 'normal-motion' ? phaseLattice(course, profileName) : [0];
@@ -973,7 +983,7 @@ test('header status text cannot grow the bar or squeeze route clearance', async 
   if (page.viewportSize().width < 1000) return;
   for (const width of [960, 1100, 1440]) {
     await page.setViewportSize({ width, height: 900 });
-    for (const course of BREAKPOINT_COURSES) {
+    for (const course of COURSE_IDS) {
       await page.locator('#track-select').selectOption(course);
       const measure = () => page.evaluate(() => {
         const stage = document.querySelector('#map-stage').getBoundingClientRect();
@@ -1058,7 +1068,7 @@ test('mobile Cypress scale switches without replacing focused pinned route contr
 
 test('generated geometry hydrates and responsive animation cascade stays exact', async ({ page }) => {
   const mobile = page.viewportSize().width <= 759;
-  for (const course of ['ridge-pass', 'cypress-run']) {
+  for (const course of COURSE_IDS) {
     await page.locator('#track-select').selectOption(course);
     const art = page.locator(`#${course}-art`);
     const centerline = art.locator(`#${course}-centerline`);
@@ -1088,9 +1098,10 @@ test('generated geometry hydrates and responsive animation cascade stays exact',
   }
 });
 
-test('generated route sweep keeps visible targets aligned, separated, and contained', async ({ page }) => {
-  test.setTimeout(60_000);
-  for (const course of ['ridge-pass', 'cypress-run']) {
+for (const course of COURSE_IDS) {
+  test(`generated route sweep keeps visible targets aligned, separated, and contained (${course})`, async ({ page }) => {
+    // Each course retains its own bounded sweep budget as the catalog grows.
+    test.setTimeout(60_000);
     await page.locator('#track-select').selectOption(course);
     const results = await page.evaluate(async ({ courseId }) => {
       const samples = [0, 1234, 7777, 15999, 31888, 47999, 63000];
@@ -1136,10 +1147,11 @@ test('generated route sweep keeps visible targets aligned, separated, and contai
         const point = screenPoint((low + high) / 2);
         return Math.hypot(x - point.x, y - point.y);
       };
-      let maximumRouteDistance = 0;
-      let minimumSeparation = Infinity;
-      let clipped = 0;
+      const measurements = [];
       for (const sample of samples) {
+        let maximumRouteDistance = 0;
+        let minimumSeparation = Infinity;
+        let clipped = 0;
         for (const wrapper of wrappers) {
           const animation = wrapper.getAnimations()[0];
           animation.pause();
@@ -1171,20 +1183,19 @@ test('generated route sweep keeps visible targets aligned, separated, and contai
             ));
           }
         }
+        measurements.push({ sample, maximumRouteDistance, minimumSeparation, clipped });
       }
-      return {
-        maximumRouteDistance,
-        minimumSeparation,
-        clipped,
-        targetDiameter: innerWidth <= 759 ? 44 : 52,
-      };
+      return { measurements, targetDiameter: innerWidth <= 759 ? 44 : 52 };
     }, { courseId: course });
-    expect(results.maximumRouteDistance, `${course} centerline alignment`).toBeLessThanOrEqual(1);
-    expect(results.minimumSeparation, `${course} target separation`)
-      .toBeGreaterThanOrEqual(results.targetDiameter);
-    expect(results.clipped, `${course} target containment`).toBe(0);
-  }
-});
+    for (const measurement of results.measurements) {
+      const context = `${course}/${page.viewportSize().width}/normal-motion/${measurement.sample}ms`;
+      expect(measurement.maximumRouteDistance, `${context} centerline alignment`).toBeLessThanOrEqual(1);
+      expect(measurement.minimumSeparation, `${context} target separation`)
+        .toBeGreaterThanOrEqual(results.targetDiameter);
+      expect(measurement.clipped, `${context} target containment`).toBe(0);
+    }
+  });
+}
 
 test('Cypress mobile retained frames keep every phased target clear and CTM-aligned', async ({
   page,
@@ -1656,7 +1667,7 @@ test('active route motion pauses and resumes for hover, focus, and pin', async (
       wrapper: expected, driftName: 'none', before: expected, after: expected,
     });
   };
-  for (const trackId of ['ridge-pass', 'cypress-run']) {
+  for (const trackId of COURSE_IDS) {
     await page.locator('#track-select').selectOption(trackId);
     const wrapper = page.locator('.vehicle-anchor.state-active').first();
     const button = wrapper.locator('.session-car');
@@ -2031,7 +2042,7 @@ test('prefers-reduced-motion disables traversal, compiled drift, and smoke', asy
   await page.reload();
   await expect(page.locator('#snapshot-summary')).toContainText('24 sessions');
 
-  for (const trackId of ['ridge-pass', 'cypress-run']) {
+  for (const trackId of COURSE_IDS) {
     await page.locator('#track-select').selectOption(trackId);
     const wrapper = page.locator('.vehicle-anchor.state-active').first();
     const nestedMotion = wrapper.locator('.car-motion');
@@ -2102,7 +2113,7 @@ test('registered headings match every retained boundary, seven samples, and midp
   page,
 }) => {
   const profileName = page.viewportSize().width <= 759 ? 'mobile' : 'desktop';
-  for (const trackId of ['ridge-pass', 'cypress-run']) {
+  for (const trackId of COURSE_IDS) {
     await page.locator('#track-select').selectOption(trackId);
     const frames = TRACK_SCHEDULES.get(trackId)[profileName].frames;
     const percentages = [
@@ -2153,7 +2164,7 @@ test('route reset milestones preserve position, heading, and opacity without car
   page,
 }) => {
   const profileName = page.viewportSize().width <= 759 ? 'mobile' : 'desktop';
-  for (const trackId of ['ridge-pass', 'cypress-run']) {
+  for (const trackId of COURSE_IDS) {
     await page.locator('#track-select').selectOption(trackId);
     const frames = TRACK_SCHEDULES.get(trackId)[profileName].frames;
     const first = frames[0];
@@ -2209,7 +2220,7 @@ test('route reset milestones preserve position, heading, and opacity without car
 
 test('every compiled corner has signed zero-peak-zero yaw and clear body bounds', async ({ page }) => {
   const profileName = page.viewportSize().width <= 759 ? 'mobile' : 'desktop';
-  for (const trackId of ['ridge-pass', 'cypress-run']) {
+  for (const trackId of COURSE_IDS) {
     await page.locator('#track-select').selectOption(trackId);
     const schedule = TRACK_SCHEDULES.get(trackId)[profileName];
     const samples = schedule.corners.flatMap((corner, cornerIndex) => [
@@ -2572,7 +2583,7 @@ test('atmosphere geometry, envelopes, mobile policy, hit testing, and bounds sta
       },
     },
   };
-  for (const trackId of ['ridge-pass', 'cypress-run']) {
+  for (const trackId of COURSE_IDS) {
     await page.locator('#track-select').selectOption(trackId);
     for (const state of ['active', 'thinking']) {
       const wrapper = page.locator(`.vehicle-anchor.state-${state}`).first();

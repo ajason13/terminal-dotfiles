@@ -28,6 +28,61 @@ The current Auto label is `Auto · workday schedule`. Exact browser-local
 contracts covered by `multi-track.test.mjs`; this manual procedure does not
 claim wall-clock boundary evidence.
 
+## Three-course regression baseline — 2026-10-28
+
+The generic geometry and motion matrices use the compiled course inventory:
+Ridge Pass, Cypress Run, and Harbor Yard Rallycross. This includes responsive
+hydration, layout boundaries, target containment/separation, hover/focus/pin
+pause and resume, reduced motion, registered headings, reset milestones,
+corner yaw/body bounds, and atmosphere checks. Cypress-specific scale and
+mobile audits remain specific to Cypress.
+
+The breakpoint matrix covers all three courses at `759`, `760`, `959`, and
+`960` pixels in normal motion, reduced motion, and missing-registerProperty
+fallback, using the existing sixteen-session synthetic fixture and synthetic
+live import. Normal motion audits every retained compiled frame with the
+production phase delays; static modes audit all anchors. No geometry tolerance
+has changed. Breakpoint failures include width/course/source/mode and the
+limiting phase/target/pair; the generic route sweep now reports each of its
+seven samples separately with course, width, motion mode, and sample time.
+
+Neutral preparation runs in catalog order at `1440x900` and `390x844`, with
+fixture source, no focused/hovered/pressed/pinned session, hidden tooltips, a
+closed legend, and deterministic paused animation clocks. The three-course
+neutral reference inventory is:
+
+- `desktop-ridge-pass.png` and its `desktop.png` alias;
+- `mobile-ridge-pass.png` and its `mobile.png` alias;
+- `desktop-cypress-run.png` and `mobile-cypress-run.png`;
+- `desktop-harbor-yard-rallycross.png` and
+  `mobile-harbor-yard-rallycross.png`.
+
+Harbor references are captured after the same neutral helper assertions;
+desktop captures the viewport and mobile captures the full page at a `390x844`
+viewport. Existing references are retained. These PNGs are reviewed evidence,
+not automated pixel-diff gates. Runtime, route art, generated assets, and motion
+contracts are unchanged. The dated two-course results below remain historical
+evidence; their counts and timings do not describe the expanded baseline.
+
+Adding Harbor increases each normal-motion breakpoint traversal from 1,060
+to 1,587 retained global frames across courses (about 50 percent), before
+multiplying by widths and any live resweeps. The expanded focused matrix
+passed 16 cases in 7.6 minutes on the local workstation. The older 4.7-minute
+two-course result below is historical, not a controlled performance baseline;
+full-suite timing is recorded with the delivery evidence in issue #99 and its
+linked PR. Most cases iterate the courses; the generic route sweep has one
+case per course. Each sweep retains the existing 60-second budget, rather than sharing
+one budget across a growing catalog. This separation addresses the initial
+CI timeout when all three courses shared 60 seconds; samples and assertions
+are unchanged.
+
+Focused checks (the complete suite is still required before delivery):
+
+```sh
+npm --prefix dashboard run verify
+npm --prefix dashboard run test:browser -- --grep 'neutral reference|layout boundaries|breakpoint pairs|header status|generated geometry|generated route sweep|prefers-reduced-motion|active route motion'
+```
+
 ## Neutral reference precondition regression — 2026-08-08
 
 `dashboard.spec.mjs` now owns the reusable test-side
