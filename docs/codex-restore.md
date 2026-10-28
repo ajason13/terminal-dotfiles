@@ -24,6 +24,9 @@ run-shell '~/.tmux/plugins/tmux-continuum/continuum.tmux'
 Reload tmux (`Ctrl-a r`) after enabling it. Install `jq` (`brew install jq`)
 for the JSON adapter. The installed `~/.codex/config.toml` registers a
 `SessionStart` command: `"$HOME/.local/bin/codex-restore" capture-hook`.
+This capture integration shipped for
+[#90](https://github.com/ajason13/terminal-dotfiles/issues/90) in
+[PR #111](https://github.com/ajason13/terminal-dotfiles/pull/111).
 Open `/hooks` in Codex and review/trust that exact definition before relying on
 recovery; untrusted hooks are skipped. Other active lifecycle hooks still run.
 Copy and link installs both include the configuration and helper; uninstall

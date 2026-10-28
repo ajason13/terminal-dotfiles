@@ -1,5 +1,24 @@
 # Night Pass dashboard: design review
 
+## Current outcome (2026-10-27)
+
+This review preserves the original findings and decisions. The state matrix,
+glyph badges, and label hierarchy fixes shipped in
+[PR #63](https://github.com/ajason13/terminal-dotfiles/pull/63); the desktop pit
+layout and chrome fixes shipped in
+[PR #64](https://github.com/ajason13/terminal-dotfiles/pull/64). The encoding
+sub-decision and suggested steps below are historical, not open implementation.
+The catalog contains three courses; the original assumption about "other three"
+courses was unverified and is not a current count.
+
+Findings 7/8 stay closed by the mobile product decision, with mobile retained
+as a regression net. Finding 6 remains deferred pending the owner decision in
+[#101](https://github.com/ajason13/terminal-dotfiles/issues/101). Use
+[GitHub Issues](https://github.com/ajason13/terminal-dotfiles/issues) as the active
+backlog and the [dashboard guide](../../../dashboard/README.md) for current behavior.
+
+## Original review
+
 Reviewed against a live render of current `main` at 1440x900 and 390x844, not
 the committed screenshots in `dashboard/tests/screenshots/` (those are from
 Jul 27-29 and predate the full-bleed track, the combined pit lane, and the pit
@@ -18,9 +37,9 @@ This records decisions and findings. It does not authorize implementation.
    project: the ledger" below. A local state-matrix harness buys the useful
    part for a fraction of the cost.
 
-One sub-decision is still open and is the first thing implementation must
-settle: **which encoding** goes on the car - ring, upright plate, or glyph
-badge. See "Constraints on the encoding" for what the code already permits.
+At the initial review, one sub-decision was open: **which encoding** goes on the
+car - ring, upright plate, or glyph badge. It was settled with the glyph badge;
+see Status below. "Constraints on the encoding" records the original options.
 
 ## Assumptions I have not verified
 
@@ -242,6 +261,10 @@ mobile `select` padding override let the label run under the new caret. The
 legend toggle now sits with the state chips it explains, and the bar is 148px.
 
 ## Suggested sequence
+
+Historical sequence: steps 1–3 and the desktop parts of 4/5 shipped as recorded
+under Status. Findings 7/8 are closed by decision; finding 6 remains deferred in
+[#101](https://github.com/ajason13/terminal-dotfiles/issues/101).
 
 1. **Build `dashboard/tests/states.html`.** One static page that `<link>`s the
    real `styles.css` and renders every state in both pools, route and pit, at

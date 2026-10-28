@@ -12,6 +12,10 @@ from the repository root, open the printed loopback URL, and select **Go live**.
 The local server reads pane metadata; it does not control terminals, read pane
 content, persist observations, or send telemetry to a remote service.
 
+Track current work in [GitHub Issues](https://github.com/ajason13/terminal-dotfiles/issues).
+The dated notes under `docs/superpowers/` retain historical decisions and
+verification evidence; their original candidate lists are not the active backlog.
+
 ## Verification and module boundaries
 
 From `dashboard/`, use Node 22+ and the committed npm lockfile:
@@ -86,11 +90,21 @@ reads active, over it reads idle, and a pane whose title carries stronger
 evidence (a spinner, `Thinking`, `Working`, `Action Required`) still wins on the
 title.
 
-This is why `confidence` is medium and never high. tmux exposes activity per
+Confidence is medium for spinner, working/thinking, and usable window-activity
+evidence, low for permission/ready/idle title tokens or a static provider title
+without usable activity, and none for an unclassified command candidate. It is
+never high. tmux exposes activity per
 **window**, not per pane, so a second pane in the same window - an editor, a
 `tail -f` - marks its neighbour active. Running one agent pane per window is what
 keeps that rare, which makes the convention below load-bearing for accuracy, not
 just for tooltips.
+
+The dashboard does not read the busy/needs/subagent state files used by
+[`tmux-llm-status`](../README.md#status-bar-markers). That status bar gives
+Claude's hook observations precedence over title fallback; the dashboard uses
+title tokens and window activity alone. The two surfaces can disagree, including
+when a sibling pane produces output. [#100](https://github.com/ajason13/terminal-dotfiles/issues/100)
+tracks research into that evidence boundary; no shared-hook collector is shipped.
 
 A reading the collector could not stand behind renders as unsettled rather than
 settled: a dashed state ring, a dimmed car, and `unconfirmed` in the tooltip and
@@ -134,8 +148,9 @@ names); otherwise the ref disappears when the command changes.
 
 ## Live auto-refresh (opt-in)
 
-`node serve-live.mjs` starts a server bound to 127.0.0.1 that serves the
-dashboard and one read-only endpoint, `GET /live/snapshot`, which runs the same
+From the repository root, `node dashboard/serve-live.mjs` starts a server bound
+to 127.0.0.1 that serves the dashboard and one read-only endpoint,
+`GET /live/snapshot`, which runs the same
 one-shot collector on each request. Open the printed URL, click "Go live", and
 the dashboard polls every 5 seconds.
 
@@ -278,16 +293,16 @@ selected course's SVG art, route centerlines, and moving session cars. A
 corner heading (`#map-heading`) names the active course in the top-left, and a
 calm corner overflow pill (`#overflow-notice`) appears top-right only when
 there are more on-track (active/thinking) sessions than the course's route
-anchor slots, distinct from the separate `.pit-overflow` affordance inside
-each pit bay.
+anchor slots, distinct from the single `#pit-overflow` notice for the pit pool.
 
-`section#pit-lane` is a row of labeled bays below the stage: Service Bay
-(errored sessions), Permission Checkpoint (awaiting permission), and the
-shared idle/complete Pit Stop, plus a fourth Unclassified hold bay that only
-appears when there are unknown sessions to show (the lane reflows to fill the
-row when that bay is empty). Each bay is its own labeled region with a heading
-and its own overflow affordance, replacing the former `aside.pit-stack` side
-column.
+`section#pit-lane` groups stationary cars by **tmux session**, not by state.
+Named bays sort alphabetically; a session with only on-track cars still has an
+empty bay marked `Clear`. A final `Unassigned` bay appears only when an allocated
+pit car has no session prefix in its display name. Each bay mixes permission,
+idle, error, complete, and unknown states, distinguished by the car's glyph and
+status text. [PR #41](https://github.com/ajason13/terminal-dotfiles/pull/41)
+combined the pit pool; [PR #54](https://github.com/ajason13/terminal-dotfiles/pull/54)
+added session bays without changing that shared capacity.
 
 Per-session detail (identity, state, location, and exact activity time) is
 shown by each car's own tooltip on hover, keyboard focus, or pin - there is no
@@ -312,17 +327,19 @@ while wrappers and tooltip previews keep their existing transforms. The generate
 use read-only local vehicle images only as stance, proportion, and lighting
 references: the resulting generic cars contain no manufacturer badges, logos,
 text, or copied liveries. The generated PNG artwork renders unobscured, without
-legacy polygon or SVG artwork layered over it. In-car state glyphs, map-code
-labels, and their CSS are intentionally absent;
-accessible button labels, tooltip status wording, state colors and boundaries,
-and separate work-reference chips carry those semantics instead. A tooltip includes that matching
+legacy polygon or SVG artwork layered over it. Every car carries a state glyph
+badge, added in [PR #63](https://github.com/ajason13/terminal-dotfiles/pull/63),
+alongside accessible button labels, tooltip status wording, state colors and
+boundaries, and separate work-reference chips. Map-code labels are absent from
+the car art. A tooltip includes that matching
 non-interactive preview and an assistive-text equivalent; model and livery
 never replace state colors, boundaries, accessible labels, or status wording.
 
-Below 760px, the bar wraps to multiple rows, the pit lane reflows to a 2x2
-grid of bays, route targets shrink to a true 44px hit region, and the stage
-keeps a minimum height so the track stays the visual hero within the
-available chrome budget.
+Below 760px, the bar wraps to multiple rows, session bays stack at full width,
+and route targets use a true 44px hit region. The pit lane has a capped height
+and scrolls internally. Mobile CSS and browser tests remain a second-width
+regression net; mobile product expansion is closed by the
+[design-review decision](../docs/superpowers/plans/2026-08-24-dashboard-design-review.md#status).
 
 ## Architecture
 
@@ -368,8 +385,12 @@ commit:
 The two validators also speak different vocabularies: the fixture path uses
 `FIXTURE_STATUSES` (`src/session-contract.mjs`), which omits `unknown` entirely,
 while the live path uses `validCombination`. No single snapshot exercises every
-state, so **a fixture test cannot cover this path** - exercise it against live
-tmux, or with a hand-built schema-v2 payload through `normalizeImportedSnapshot`.
+state, so **a fixture-only test cannot cover this path** - pass synthetic
+classifier outputs through `normalizeImportedSnapshot`.
+[Issue #96](https://github.com/ajason13/terminal-dotfiles/issues/96) tracks the
+missing permanent round-trip coverage; real tmux access is unnecessary for it.
+
+### Courses, motion, and capacity
 
 The browser-local catalog contains three original continuous courses:
 **Ridge Pass**, from upper-left High Moor through Pass Ladder, Cedar Chain,
@@ -412,16 +433,29 @@ motion disables traversal and nested car motion, returning each route car to
 its deterministic static anchor without changing accessible location text. At
 the mobile breakpoint, route buttons use a true 44px-diameter circular hit
 region; the original car silhouette is contained inside it while the focus ring
-and tooltip remain unclipped. Tangent-based car orientation and drifting remain
-deferred.
+and tooltip remain unclipped. Tangent-based orientation, signed corner-aware
+drift, and active/thinking smoke are implemented. They require successful
+registration of all four angle properties in `src/route-motion-capability.mjs`;
+unsupported registration falls back to static anchors. Reduced motion also
+disables traversal, drift, and smoke. The original orientation and corner-drift
+delivery evidence is retained in the
+[historical roadmap](../docs/superpowers/plans/2026-07-27-dashboard-roadmap.md).
 
-Service Bay, Permission Checkpoint, and the shared idle/complete Pit Stop each
-mount their six stationary anchors inside their own bottom pit-lane bay.
-Unknown observations remain stationary in a distinct dashed **Unclassified
-hold** bay with three gray `?` anchors and independent overflow, appearing
-only while an unknown session exists, for a total map capacity of 37. Colors
-are paired with glyphs/patterns, and native buttons provide keyboard and
-screen-reader behavior.
+Capacity is **16 on-route plus 18 in one shared pit pool, 34 total**, with no
+borrowing between pools. Active/thinking sessions use route slots. Permission,
+idle, error, complete, and unknown sessions share the pit's newest-first order
+by `lastActivityAt`, with ID as the tie-breaker, before session-bay grouping.
+Unknowns have no extra capacity. Excess sessions appear in the respective
+route or pit overflow disclosure with map code and display name. See
+`src/track-layout.mjs` for allocation and `src/render-dashboard.mjs` for notices.
+Colors are paired with glyphs/patterns, and native buttons provide keyboard
+and screen-reader behavior.
+
+Permanent neutral-reference assertions and breakpoint focus/overlap checks
+already cover Ridge Pass and Cypress Run. Harbor Yard is shipped, but extending
+those specific matrices remains [#99](https://github.com/ajason13/terminal-dotfiles/issues/99).
+The stretched full-bleed artwork remains an intentional trade-off awaiting the
+decision in [#101](https://github.com/ajason13/terminal-dotfiles/issues/101).
 
 ## Remove
 

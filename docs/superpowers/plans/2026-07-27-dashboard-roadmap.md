@@ -1,6 +1,39 @@
 # Night Pass dashboard roadmap
 
-This roadmap preserves the approved sequence for the optional, local-only
+## Current outcome (2026-10-27)
+
+This dated roadmap retains delivery evidence and the earlier reversal decision.
+[GitHub Issues](https://github.com/ajason13/terminal-dotfiles/issues) is the active
+backlog; the [dashboard guide](../../../dashboard/README.md) describes current behavior.
+
+- Items 1–4 shipped, including tangent orientation and corner-aware drift
+  ([0a1fc9e](https://github.com/ajason13/terminal-dotfiles/commit/0a1fc9e)).
+- Item 5's manual file workflow remains supported. Later
+  [PR #37](https://github.com/ajason13/terminal-dotfiles/pull/37) added explicit
+  loopback auto-refresh; the old no-server/no-polling boundary applies to
+  fixture/file-import mode, not that opt-in transport. Nothing starts it by default.
+- Item 6 describes the rejected course at that date. It is superseded by shipped
+  Harbor Yard Rallycross
+  ([316e4a9](https://github.com/ajason13/terminal-dotfiles/commit/316e4a9)); the current
+  catalog is Ridge Pass, Cypress Run, and Harbor Yard Rallycross.
+- Neutral-state and two-course breakpoint checks subsequently shipped in
+  [2d9daa5](https://github.com/ajason13/terminal-dotfiles/commit/2d9daa5) and
+  [709d0b7](https://github.com/ajason13/terminal-dotfiles/commit/709d0b7).
+  Harbor Yard matrix coverage remains [#99](https://github.com/ajason13/terminal-dotfiles/issues/99).
+- The combined pit pool and tmux-session bays shipped in
+  [#41](https://github.com/ajason13/terminal-dotfiles/pull/41) and
+  [#54](https://github.com/ajason13/terminal-dotfiles/pull/54); state badges and
+  desktop layout fixes shipped in [#63](https://github.com/ajason13/terminal-dotfiles/pull/63)
+  and [#64](https://github.com/ajason13/terminal-dotfiles/pull/64).
+
+Mobile remains a regression net, and the full-bleed aspect-ratio trade-off is
+deferred; see the [design-review status](2026-08-24-dashboard-design-review.md#status)
+and decision issue [#101](https://github.com/ajason13/terminal-dotfiles/issues/101).
+These historical notes authorize no new runtime work.
+
+## Original roadmap (historical)
+
+This roadmap preserved the approved sequence for the optional, local-only
 dashboard. It does not authorize changes to tmux or WezTerm configuration, the
 wallpaper workflow, LLM-status behavior, default startup, or live collector
 behavior. The dashboard remains browser-local: no backend, daemon, polling,
@@ -90,7 +123,7 @@ automatic terminal access, or app/runtime dependency is introduced.
    decision and verification contract are recorded in
    `docs/superpowers/specs/2026-08-01-dashboard-third-course-reversal-design.md`.
 
-Items 1 through 5 remain Complete. Item 6 is Reverted, unimplemented, and
-unauthorized. There is no remaining authorized roadmap implementation item.
-The only recorded candidates are listed as unimplemented and unauthorized in
-`docs/superpowers/plans/2026-08-01-dashboard-future-work.md`.
+At this roadmap's original cutoff, items 1 through 5 were Complete and item 6
+was Reverted, unimplemented, and unauthorized. The then-unimplemented candidates
+were recorded in [the August 1 note](2026-08-01-dashboard-future-work.md).
+See Current outcome above for subsequent deliveries and remaining issues.
