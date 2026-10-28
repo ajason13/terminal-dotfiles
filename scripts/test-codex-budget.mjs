@@ -17,10 +17,39 @@ function usage(primary = 10, secondary = 10) {
 const account = value => ({ usage: value, model: 'gpt-6.1-sol', effort: 'medium' });
 
 test('either window constrains work at exact reserve thresholds', () => {
-  for (const [used, expected] of [[69, 'ready'], [70, 'finish-current'], [85, 'finish-current'], [86, 'checkpoint'], [100, 'exhausted']]) {
+  for (const [used, expected] of [[69, 'ready'], [70, 'ready'], [71, 'ready'], [84, 'ready'], [85, 'finish-current'], [86, 'finish-current'], [95, 'finish-current'], [96, 'checkpoint'], [100, 'exhausted']]) {
     assert.equal(budgetDecision(usage(used), 'gpt-6.1-sol', now).state, expected);
     assert.equal(budgetDecision(usage(0, used), 'gpt-6.1-sol', now).state, expected);
   }
+});
+
+test('large tasks retain a 30% start reserve in either window', () => {
+  for (const [used, expected] of [[69, 'ready'], [70, 'finish-current'], [71, 'finish-current'], [85, 'finish-current'], [95, 'finish-current'], [96, 'checkpoint'], [100, 'exhausted']]) {
+    for (const raw of [usage(used), usage(0, used)]) {
+      const decision = budgetDecision(raw, 'gpt-6.1-sol', now, 'large');
+      assert.equal(decision.state, expected);
+      assert.equal(decision.taskSize, 'large');
+      assert.equal(decision.startReservePercent, 30);
+    }
+  }
+  assert.equal(budgetDecision(usage(), 'gpt-6.1-sol', now, 'small').state, 'unknown');
+});
+
+test('85% five-hour / 29% weekly permits bounded tasks but holds large tasks', async () => {
+  const read = async () => account(usage(15, 71));
+  const ready = await waitForBudget({ read, now: () => now });
+  assert.equal(ready.decision.state, 'ready');
+  assert.equal(ready.decision.taskSize, 'bounded');
+  assert.equal(ready.decision.startReservePercent, 15);
+  await assert.rejects(waitForBudget({ read, now: () => now, taskSize: 'large' }), /finish-current/);
+});
+
+test('task size selects only the resets that constrain its start reserve', () => {
+  const bounded = budgetDecision(usage(85, 71), 'gpt-6.1-sol', now, 'bounded');
+  const large = budgetDecision(usage(85, 71), 'gpt-6.1-sol', now, 'large');
+  assert.equal(bounded.nextCheckAt, now + 105000);
+  assert.equal(large.nextCheckAt, now + 1005000);
+  assert.equal(budgetDecision(usage(15, 71), 'gpt-6.1-sol', now).nextCheckAt, null);
 });
 
 test('missing, invalid, and stale data never permit a task', () => {
@@ -97,6 +126,53 @@ test('clean task writes a compact report and checks allowance before and after',
   assert.equal(result.status, 'completed'); assert.equal(reads, 2); assert.equal(executions, 1);
   const entries = await readdir(join(repo, '.git', 'codex-budget'));
   assert.equal(entries.includes('runner.lock'), false);
+});
+
+test('queue applies task size to admission, execution, and saved observations', async t => {
+  for (const taskSize of ['bounded', 'large']) {
+    const { repo, task } = await fixture(t);
+    let executions = 0;
+    const options = { repo, tasks: [task], taskSize };
+    const dependencies = {
+      read: async () => account(usage(15, 71)), timing: { now: () => now }, log: () => {},
+      execute: async options => {
+        executions++;
+        assert.equal(options.taskSize, taskSize);
+        await writeFile(options.reportPath, JSON.stringify(report('completed')));
+        return { code: 0 };
+      },
+    };
+    if (taskSize === 'bounded') {
+      const saved = await runQueue(options, dependencies);
+      assert.equal(saved.usage.state, 'ready');
+      assert.equal(saved.usage.taskSize, taskSize);
+      assert.equal(executions, 1);
+    } else {
+      await assert.rejects(runQueue(options, dependencies), /finish-current/);
+      assert.equal(executions, 0);
+    }
+    const root = join(repo, '.git', 'codex-budget');
+    const [run] = await readdir(root);
+    const saved = JSON.parse(await readFile(join(root, run, 'checkpoint.json')));
+    assert.equal(saved.usage.taskSize, taskSize);
+    assert.equal(saved.usage.startReservePercent, taskSize === 'large' ? 30 : 15);
+  }
+});
+
+test('large queue preserves its classification after an admitted task', async t => {
+  const { repo, task } = await fixture(t);
+  let reads = 0;
+  const saved = await runQueue({ repo, tasks: [task], taskSize: 'large' }, {
+    read: async () => account(++reads === 1 ? usage() : usage(15, 71)),
+    timing: { now: () => now }, log: () => {},
+    execute: async options => {
+      assert.equal(options.taskSize, 'large');
+      await writeFile(options.reportPath, JSON.stringify(report('completed')));
+      return { code: 0 };
+    },
+  });
+  assert.equal(saved.usage.state, 'finish-current');
+  assert.equal(saved.usage.taskSize, 'large');
 });
 
 test('failed task is recorded once and never replayed', async t => {
@@ -217,6 +293,12 @@ test('arguments reject unsupported switches and invalid wait bounds', () => {
   assert.throws(() => parseArgs(['run', '--max-wait-hours', 'Infinity']), /bound/);
   assert.throws(() => parseArgs(['run', '--effort', 'ultra']), /effort/);
   assert.throws(() => parseArgs(['run', '--dangerously-bypass-approvals-and-sandbox']), /Unknown/);
+  assert.throws(() => parseArgs(['run', '--task-size', 'small']), /Task size/);
+  assert.throws(() => parseArgs(['run', '--task-size', 'toString']), /Task size/);
+  assert.throws(() => parseArgs(['run', '--task-size']), /missing/);
+  assert.equal(parseArgs(['run']).options.taskSize, 'bounded');
+  assert.equal(parseArgs(['run', '--task-size', 'large']).options.taskSize, 'large');
+  assert.equal(parseArgs(['status', '--task-size', 'large']).options.taskSize, 'large');
 });
 
 test('SIGINT remains an interruption when the child handles it and exits zero', async t => {

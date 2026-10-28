@@ -81,9 +81,17 @@ findings before handoff.
 
 Before large work and between tasks, use `codex-budget status --model <active-model>`
 when installed, otherwise `/status` or Settings → Usage. Never infer remaining
-allowance from tokens. Start queued work only above 30% in every applicable
-window. At 15–30%, finish the current task. Below 15%, save a checkpoint and
-stop starting work. At a limit, wait for the reported reset and recheck both
+allowance from tokens. Apply thresholds to remaining allowance in every
+applicable window, including five-hour and weekly; the lowest governs.
+Start bounded tasks only above 15%. Before starting, assess scope, uncertainty,
+and the work needed for implementation, verification, fixes, review, and delivery.
+For large or uncertain work, treat 30% as a caution threshold: split the task
+or defer it if there is insufficient headroom to reach a verified stopping point.
+For unattended runs, classify tasks explicitly: bounded tasks require above 15%,
+and large or uncertain tasks require above 30%; do not lower the classification
+just to bypass a reserve. At 5–15%, finish the active task and checkpoint;
+do not start queued implementation. Below 5%, save a checkpoint and stop
+substantive work. At a limit, wait for the reported reset and recheck both
 windows. Missing usage data is unknown, not permission for an unattended run.
 Do not purchase credits or redeem resets automatically.
 

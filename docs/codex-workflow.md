@@ -242,13 +242,17 @@ Use the [budget runner guide](codex-budget.md) for the full behavior and limits.
 Put one bounded task in a local file outside the repo, then run:
 
 ```sh
-codex-budget run --repo /absolute/path/to/repo --task /absolute/path/to/task.md --wait
+codex-budget run --repo /absolute/path/to/repo --task /absolute/path/to/task.md --task-size bounded --wait
 ```
 
 The runner requires a clean repository or isolated worktree. Keep it running
 in a terminal or tmux. It checks real usage before each task, waits for a
 reported reset when requested, and rechecks before proceeding. The default
 wait bound is 24 hours; a weekly reset may require `--max-wait-hours 168`.
+Bounded tasks require above 15% remaining in every applicable window; use
+`--task-size large` for large or uncertain tasks, which require above 30%.
+Assess headroom for implementation, checks, fixes, review, and delivery before
+classifying a task. One task-size setting applies to the whole invocation.
 Ordinary interactive chats do not gain automatic wait/resume from this command.
 
 The printed checkpoint path is under the repository's Git common directory.
