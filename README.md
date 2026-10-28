@@ -1,9 +1,13 @@
 # Terminal Dotfiles
 
-Portable macOS configuration for a terminal-centric workflow - WezTerm, tmux,
+Shared configuration for a terminal-centric workflow - WezTerm, tmux,
 Neovim, Codex, and Claude Code - focused on LLM sessions, fast pane/window
 management, Quick Select file opening, local branch review, and rotating
 terminal backgrounds.
+
+For native Windows WezTerm with tmux inside WSL 2, follow the
+[Windows 10/11 setup guide](docs/windows-setup.md). The macOS installer and
+Homebrew dependency guide below are for Macs.
 
 ## What This Includes
 

@@ -1,5 +1,7 @@
 # macOS workstation dependencies
 
+For Windows, use the separate [Windows 10/11 + WSL 2 guide](windows-setup.md).
+
 Start in the repository root. Install Apple's Command Line Tools (`xcode-select
 --install`) and [Homebrew](https://brew.sh/) first, following its printed shell
 setup instructions so `brew` is on `PATH`. The Command Line Tools supply Git and

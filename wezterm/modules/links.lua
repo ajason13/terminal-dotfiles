@@ -346,6 +346,19 @@ local function open_selected_text(wezterm, window, pane)
     return
   end
 
+  -- Native Windows cannot identify the Linux tmux client behind wsl.exe.
+  -- Keep paths available without querying an unrelated host tmux server or
+  -- resolving Linux paths against the Windows user's home directory.
+  if wezterm.target_triple:find('windows') then
+    if target:lower():match('^https?://') or target:lower():match('^www%.') or has_web_domain(target) then
+      open_browser_target(wezterm, pane, target)
+    else
+      window:copy_to_clipboard(target)
+      window:toast_notification('WSL path copied', 'Open this path from your WSL shell or editor.', nil, 4000)
+    end
+    return
+  end
+
   if is_web_target(target) then
     open_browser_target(wezterm, pane, target)
     return
@@ -383,6 +396,14 @@ function M.apply(config, wezterm)
   })
 
   wezterm.on('open-uri', function(_, pane, uri)
+    -- Leave explicit web links to the native handler, but prevent Linux file
+    -- links from being interpreted as Windows/VS Code local file paths.
+    if wezterm.target_triple:find('windows') then
+      if uri:match('^wezterm%-file:') or uri:match('^vscode://file') or uri:match('^file:') then
+        return false
+      end
+      return
+    end
     local payload = uri:match('^wezterm%-file:(.+)$')
     if not payload then
       return
@@ -392,7 +413,8 @@ function M.apply(config, wezterm)
     return false
   end)
 
-  -- Cmd+click opens the link under the cursor. A binding is matched only in the
+  -- Cmd+click on macOS (Ctrl+Shift+click elsewhere) opens the link under the cursor.
+  -- A binding is matched only in the
   -- mouse-reporting state it declares, and mouse_reporting defaults to false, so
   -- both states have to be bound: tmux runs with `mouse on`, which keeps mouse
   -- tracking enabled for the whole session, and WezTerm hands mouse events
@@ -402,13 +424,13 @@ function M.apply(config, wezterm)
   for _, reporting in ipairs({ false, true }) do
     table.insert(config.mouse_bindings, {
       event = { Up = { streak = 1, button = 'Left' } },
-      mods = 'CMD',
+      mods = wezterm.target_triple:find('darwin') and 'CMD' or 'CTRL|SHIFT',
       mouse_reporting = reporting,
       action = wezterm.action.OpenLinkAtMouseCursor,
     })
     table.insert(config.mouse_bindings, {
       event = { Down = { streak = 1, button = 'Left' } },
-      mods = 'CMD',
+      mods = wezterm.target_triple:find('darwin') and 'CMD' or 'CTRL|SHIFT',
       mouse_reporting = reporting,
       action = wezterm.action.Nop,
     })
