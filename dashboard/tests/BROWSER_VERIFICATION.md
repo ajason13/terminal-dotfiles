@@ -70,7 +70,11 @@ multiplying by widths and any live resweeps. The expanded focused matrix
 passed 16 cases in 7.6 minutes on the local workstation. The older 4.7-minute
 two-course result below is historical, not a controlled performance baseline;
 full-suite timing is recorded with the delivery evidence in issue #99 and its
-linked PR. The case count stays fixed because each case iterates the courses.
+linked PR. Most cases iterate the courses; the generic route sweep has one
+case per course. Each sweep retains the existing 60-second budget, rather than sharing
+one budget across a growing catalog. This separation addresses the initial
+CI timeout when all three courses shared 60 seconds; samples and assertions
+are unchanged.
 
 Focused checks (the complete suite is still required before delivery):
 

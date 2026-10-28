@@ -1098,9 +1098,10 @@ test('generated geometry hydrates and responsive animation cascade stays exact',
   }
 });
 
-test('generated route sweep keeps visible targets aligned, separated, and contained', async ({ page }) => {
-  test.setTimeout(60_000);
-  for (const course of COURSE_IDS) {
+for (const course of COURSE_IDS) {
+  test(`generated route sweep keeps visible targets aligned, separated, and contained (${course})`, async ({ page }) => {
+    // Each course retains its own bounded sweep budget as the catalog grows.
+    test.setTimeout(60_000);
     await page.locator('#track-select').selectOption(course);
     const results = await page.evaluate(async ({ courseId }) => {
       const samples = [0, 1234, 7777, 15999, 31888, 47999, 63000];
@@ -1193,8 +1194,8 @@ test('generated route sweep keeps visible targets aligned, separated, and contai
         .toBeGreaterThanOrEqual(results.targetDiameter);
       expect(measurement.clipped, `${context} target containment`).toBe(0);
     }
-  }
-});
+  });
+}
 
 test('Cypress mobile retained frames keep every phased target clear and CTM-aligned', async ({
   page,
