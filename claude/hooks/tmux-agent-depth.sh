@@ -52,17 +52,27 @@ notify() {  # title body
 }
 
 payload="$(cat 2>/dev/null || true)"
-# One jq call for all six fields, joined on 0x1F not tab: `read` treats tab as
+# One jq call for all seven fields, joined on 0x1F not tab: `read` treats tab as
 # IFS whitespace and collapses empty fields regardless of how IFS is set, which
 # would misparse an absent .source. Garbage payload -> jq fails silently -> no-op.
-# `subagent` is .agent_id alone, NOT the id fallback chain: it decides whether a
+# `subagent` uses agent_id/subagent_id, never tool_use_id: it decides whether a
 # turn-ending event belongs to the lead, and a tool_use_id would answer that wrong.
-event="" agent="" source="" subagent="" ntype="" message=""
-IFS=$'\x1f' read -r event agent source subagent ntype message < <(
+event="" agent="" source="" subagent="" ntype="" message="" session=""
+IFS=$'\x1f' read -r event agent source subagent ntype message session < <(
   printf '%s' "$payload" | jq -r \
-    '[(.hook_event_name // ""), (.agent_id // .subagent_id // .tool_use_id // ""), (.source // ""), (.agent_id // ""), (.notification_type // ""), ((.message // "") | gsub("[\n\u001f]"; " "))] | join("\u001f")' \
+    '[(.hook_event_name // ""), (.agent_id // .subagent_id // .tool_use_id // ""), (.source // ""), (.agent_id // .subagent_id // ""), (.notification_type // ""), ((.message // "") | gsub("[\n\u001f]"; " ")), ((.session_id // "") | if type == "string" and test("^[A-Za-z0-9_-]+$") then . else "" end)] | join("\u001f")' \
     2>/dev/null || true
 )
+
+# The installed status helper owns pane-local completion evidence. Older installs
+# retain their existing lifecycle behavior until the helper is upgraded too.
+if [[ -z "$subagent" ]] && [[ "$event" == SessionStart || "$event" == SessionEnd ||
+    "$event" == UserPromptSubmit || "$event" == PostToolBatch || "$event" == Stop || "$event" == StopFailure ]]; then
+  status_bin="${TMUX_LLM_STATUS_BIN:-${HOME:-}/.local/bin/tmux-llm-status}"
+  if [[ -x "$status_bin" ]]; then
+    "$status_bin" observe "$event" "$session" >/dev/null 2>&1 || true
+  fi
+fi
 
 # Ids are opaque upstream values that become filenames, so keep only characters
 # that cannot escape the directory.

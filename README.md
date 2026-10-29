@@ -65,6 +65,7 @@ Homebrew dependency guide below are for Macs.
 | `⠹` | a turn is running, no fan-out |
 | `⠹N` | N subagents in flight |
 | `◆` | agent present, idle |
+| `○` | Claude turn ended while unviewed; awaiting acknowledgement |
 | `!` | a permission or question prompt is waiting on you |
 
 `N` is suppressed at 1. Both working states come from `tmux-agent-depth.sh`,
@@ -85,6 +86,44 @@ interrupt a turn, so an existence check alone would spin forever afterwards.
 `UserPromptSubmit` opens the turn, `PostToolBatch` heartbeats it, and
 `Stop`/`StopFailure` close it; the marker ages out after
 `TMUX_LLM_BUSY_TTL` seconds (default 1200, comfortably above one tool batch).
+
+Claude completion evidence is separate from working/idle/blocked state. A
+registered top-level `UserPromptSubmit` with a session ID opens a turn;
+`PostToolBatch` can refresh it while fresh. Only a matching top-level `Stop`
+within the busy TTL records an unseen completion. Startup, subagent stops,
+`StopFailure`, interruption (which has no Stop), and TTL expiry never create
+one. A new prompt, session start/end, or failure clears it. A session restart
+(including compact/resume) conservatively invalidates completion tracking until
+the next prompt. Missing IDs/hooks or an expired turn can miss a completion;
+they cannot substitute idle/title heuristics for completion evidence.
+
+The badge means **an observed turn ending**, not passing tests, verified work,
+or a completed issue/PR. Like other [Stop observers](https://code.claude.com/docs/en/hooks#stop), it sees
+the hook event, not the outcome of other Stop hooks that might ask Claude to continue.
+Working and blocked evidence always outrank it. Window/session rollups show
+`○N` for windows dominated by unseen completions; the agent table shows
+`○ unseen` ahead of ordinary idle rows. Other providers retain their existing
+behavior and never gain a completion badge from title text.
+
+A pane counts as viewed when it is the **active pane in the current window of
+any attached, non-control tmux client**, as observed at Stop or by a status/table
+refresh (normally every second). Detached sessions, background windows, inactive
+split panes, and control-mode clients do not acknowledge it. Any viewing client
+can acknowledge for everyone, including clients in different sessions viewing a
+linked window. This is a tmux selection rule: it cannot prove OS focus or human
+attention, and a visit shorter than the polling interval may be missed. To clear
+explicitly, run `tmux-llm-status ack %3` (find IDs with
+`tmux list-panes -a -F '#{pane_id}'`). `explain` remains read-only and reports
+completion eligibility separately from lifecycle state.
+
+Completion/turn records use pane-local `@llm_unseen`, `@llm_turn`, and
+`@llm_owner` tmux options, bound to the pane process and Claude session. Hook
+producers must descend from the current pane process and name the current server
+PID; unavailable process/server identity suppresses completion tracking. Delayed
+events from another session cannot clear current evidence. They disappear with the pane or
+server; respawning a pane rejects the prior process's evidence. No transcript,
+prompt, or response text is saved. Install the hook and status helper together;
+no dashboard snapshot/schema change or new notification channel is involved.
 
 Codex task/project titles count as present; only a spinner or a structured
 `[Thinking]`/`[Working]` (and other active status) prefix counts as working.

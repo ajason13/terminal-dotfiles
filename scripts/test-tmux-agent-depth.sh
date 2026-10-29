@@ -10,6 +10,8 @@ hook="$repo_root/claude/hooks/tmux-agent-depth.sh"
 test_home="$(mktemp -d /tmp/tmux-agent-depth-test-XXXXXX)"
 TMUX_LLM_STATE_HOME="$test_home/state"
 export TMUX_LLM_STATE_HOME
+# This suite stubs tmux; completion has real private-server coverage in the status suite.
+export TMUX_LLM_STATUS_BIN=/dev/null
 trap 'rm -rf "$test_home"' EXIT
 
 # Every run records notifications instead of raising them, and never asks the live

@@ -14,6 +14,8 @@ tmux_cmd() {
 
   if [[ -n "${TMUX_SOCKET:-}" ]]; then
     "$tmux_bin" -S "$TMUX_SOCKET" "$@"
+  elif [[ -n "${TMUX:-}" ]]; then
+    "$tmux_bin" -S "${TMUX%%,*}" "$@"
   elif [[ -S "$default_socket" ]]; then
     "$tmux_bin" -S "$default_socket" "$@"
   else
@@ -69,6 +71,116 @@ is_pane_busy() {
   read -r stamp < "$file" 2>/dev/null || true
   valid_busy_stamp "$stamp" || return 1
   (( NOW - stamp < BUSY_TTL ))
+}
+
+# Completion is separate from lifecycle state. tmux owns these pane options,
+# so destroying a pane/server destroys its evidence; pane_pid also guards respawn.
+pane_identity() { tmux_cmd display-message -p -t "$1" '#{pane_pid}' 2>/dev/null; }
+pane_viewed() {
+  local control pane
+  while IFS=: read -r control pane; do
+    [[ "$control" == 0 && "$pane" == "$1" ]] && return 0
+  done < <(tmux_cmd list-clients -F '#{client_control_mode}:#{pane_id}' 2>/dev/null || true)
+  return 1
+}
+
+ack_completion() {
+  [[ "${1:-}" =~ ^%[0-9]+$ ]] || return 2
+  tmux_cmd set-option -pqu -t "$1" @llm_unseen 2>/dev/null || true
+}
+
+ack_viewed() {
+  local control pane
+  while IFS=: read -r control pane; do
+    [[ "$control" == 0 && "$pane" =~ ^%[0-9]+$ ]] || continue
+    ack_completion "$pane"
+  done < <(tmux_cmd list-clients -F '#{client_control_mode}:#{pane_id}' 2>/dev/null || true)
+}
+
+# An inherited pane ID alone does not identify the producer. Require the same
+# server PID and a hook process descended from this pane's current process.
+valid_turn_producer() {
+  local pane_pid="$1" server inherited probe="$$" parent hops
+  [[ -n "${TMUX:-}" ]] || return 1
+  inherited="${TMUX#*,}"; inherited="${inherited%%,*}"
+  server="$(tmux_cmd display-message -p '#{pid}' 2>/dev/null)" || return 1
+  [[ "$inherited" == "$server" && "$server" =~ ^[0-9]+$ ]] || return 1
+  for (( hops=0; hops<64; hops++ )); do
+    [[ "$probe" == "$pane_pid" ]] && return 0
+    [[ "$probe" =~ ^[0-9]+$ ]] && (( probe > 1 )) || return 1
+    parent="$(ps -o ppid= -p "$probe" 2>/dev/null)" || return 1
+    parent="${parent//[[:space:]]/}"
+    [[ "$parent" != "$probe" ]] || return 1
+    probe="$parent"
+  done
+  return 1
+}
+
+# Called only by the Claude lifecycle hook. Missing/invalid session IDs cannot
+# establish a turn. Heartbeats cannot open one, nor can TTL expiry complete one.
+observe_turn() {
+  local event="$1" session="$2" pane="${TMUX_PANE:-}" identity current turn='' owner='' stamp='' extra=''
+  case "$event" in SessionStart | SessionEnd | StopFailure | UserPromptSubmit | PostToolBatch | Stop) ;; *) return 0 ;; esac
+  [[ "$pane" =~ ^%[0-9]+$ ]] || return 0
+  identity="$(pane_identity "$pane")" || return 0
+  [[ "$identity" =~ ^[0-9]+$ ]] && valid_turn_producer "$identity" || return 0
+  if [[ ! "$session" =~ ^[A-Za-z0-9_-]+$ ]]; then
+    if [[ "$event" == UserPromptSubmit ]]; then
+      ack_completion "$pane"
+      tmux_cmd set-option -pqu -t "$pane" @llm_turn 2>/dev/null || true
+      tmux_cmd set-option -pqu -t "$pane" @llm_owner 2>/dev/null || true
+    fi
+    return 0
+  fi
+  current="$(tmux_cmd show-options -pqv -t "$pane" @llm_owner 2>/dev/null || true)"
+  if [[ -n "$current" && "$current" != "$identity-"* ]]; then
+    # A verified replacement process can remove the previous process's records.
+    ack_completion "$pane"
+    tmux_cmd set-option -pqu -t "$pane" @llm_turn 2>/dev/null || true
+    tmux_cmd set-option -pqu -t "$pane" @llm_owner 2>/dev/null || true
+    current=''
+  fi
+  case "$event" in
+    SessionStart | UserPromptSubmit)
+      tmux_cmd set-option -pq -t "$pane" @llm_owner "$identity-$session" 2>/dev/null || return 0 ;;
+    *) [[ "$current" == "$identity-$session" ]] || return 0 ;;
+  esac
+  case "$event" in
+    SessionStart | SessionEnd | StopFailure)
+      ack_completion "$pane"
+      tmux_cmd set-option -pqu -t "$pane" @llm_turn 2>/dev/null || true
+      if [[ "$event" == SessionEnd ]]; then
+        tmux_cmd set-option -pqu -t "$pane" @llm_owner 2>/dev/null || true
+      fi
+      return 0 ;;
+    UserPromptSubmit)
+      ack_completion "$pane"
+      tmux_cmd set-option -pqu -t "$pane" @llm_turn 2>/dev/null || true ;;
+  esac
+  refresh_now
+  turn="$(tmux_cmd show-options -pqv -t "$pane" @llm_turn 2>/dev/null || true)"
+  IFS=: read -r owner stamp extra <<< "$turn"
+  case "$event" in
+    UserPromptSubmit)
+      tmux_cmd set-option -pq -t "$pane" @llm_turn "$identity-$session:$NOW" 2>/dev/null || true ;;
+    PostToolBatch)
+      if [[ "$owner" == "$identity-$session" && -z "$extra" ]] && valid_busy_stamp "$stamp" &&
+          (( NOW >= stamp && NOW - stamp < BUSY_TTL )); then
+        tmux_cmd set-option -pq -t "$pane" @llm_turn "$owner:$NOW" 2>/dev/null || true
+      fi ;;
+    Stop)
+      tmux_cmd set-option -pqu -t "$pane" @llm_turn 2>/dev/null || true
+      if [[ "$owner" == "$identity-$session" && -z "$extra" ]] && valid_busy_stamp "$stamp" &&
+          (( NOW >= stamp && NOW - stamp < BUSY_TTL )) && ! pane_viewed "$pane"; then
+        tmux_cmd set-option -pq -t "$pane" @llm_unseen "$identity" 2>/dev/null || true
+      fi ;;
+  esac
+}
+
+is_pane_unseen() {
+  local marker
+  marker="$(tmux_cmd show-options -pqv -t "$1" @llm_unseen 2>/dev/null || true)"
+  [[ -n "$marker" && "$marker" == "$(pane_identity "$1")" ]]
 }
 
 # Parked on a permission or question prompt? No TTL on purpose: a prompt can wait
@@ -193,6 +305,7 @@ is_active_title() {
 classify_pane() {
   local pane_id="$1" command="$2" title="$3"
   count_agents "$pane_id"
+  PANE_UNSEEN=0
   # A blocked prompt outranks every working signal: the turn cannot move without you.
   if is_pane_blocked "$pane_id" && ! is_shell_command "${command##*/}"; then PANE_STATE=waiting; PANE_REASON='needs-marker'
   # Depth wins over the title: a lead that fanned out and went quiet reports an
@@ -210,6 +323,9 @@ classify_pane() {
   elif [[ "$SESSION_PANES" == *" $pane_id "* ]]; then PANE_STATE=present; PANE_REASON='table-session-record'
   else PANE_STATE=none; PANE_REASON='no-agent-evidence'
   fi
+  if [[ "$PANE_STATE" == present ]] && ! is_shell_command "${command##*/}" &&
+      { is_claude_title "$title" || [[ "${command##*/}" == claude ]]; } &&
+      is_pane_unseen "$pane_id"; then PANE_UNSEEN=1; fi
 }
 
 # Only fixed labels, counts and validated pane IDs leave this diagnostic path.
@@ -268,43 +384,46 @@ explain_pane() {
   # TTL is operator configuration; print it numerically, never as terminal text.
   printf 'Busy marker: %s; age seconds: %s; TTL seconds: %d\n' "$busy" "$age" "$BUSY_TTL"
   printf 'Title evidence: spinner=%s active-prefix=%s waiting-prefix=%s; agent presence=%s\n' "$spinner" "$active" "$waiting" "$presence"
+  printf 'Unseen completion eligible for display: %d (separate from lifecycle state; ack with tmux-llm-status ack %s)\n' "$PANE_UNSEEN" "$target"
   printf 'Live session record: %s (table only; unavailable when jq/records are absent)\n' "$sessions"
   printf 'Missing hooks cannot be distinguished from idle/no published evidence. Lower-priority evidence above is ignored when a higher rule wins.\n'
   printf 'Expired/malformed busy markers are ignored; future-clock stamps follow the existing classifier. Hook identity/freshness cannot prove a reused pane is the same process.\n'
 }
 
-# Scan a window's panes and echo four space-separated counts:
-# "<active> <present> <waiting> <depth>" = working / present-but-idle /
+# Scan a window's panes and echo five space-separated counts:
+# "<active> <present> <waiting> <depth> <unseen>" = working / present-but-idle /
 # awaiting-input panes, then total subagents in flight across the window.
 count_window() {
   local target="${1:?window target required}"
-  local active=0 present=0 waiting=0 depth_sum=0 pane_id command title
+  local active=0 present=0 waiting=0 depth_sum=0 unseen=0 pane_id command title
 
   while IFS=$'\t' read -r pane_id command title; do
     classify_pane "$pane_id" "$command" "${title:-}"
     case "$PANE_STATE" in
       active) active=$((active + 1)); depth_sum=$((depth_sum + AGENT_COUNT)) ;;
       waiting) waiting=$((waiting + 1)) ;;
-      present) present=$((present + 1)) ;;
+      present) present=$((present + 1)); unseen=$((unseen + PANE_UNSEEN)) ;;
     esac
   done < <(tmux_cmd list-panes -t "$target" -F '#{pane_id}	#{pane_current_command}	#{pane_title}' 2>/dev/null || true)
 
   # Trailing newline is required: callers use `read`, which returns non-zero at
   # EOF without one, and under `set -e` that would silently abort the caller.
-  printf '%d %d %d %d\n' "$active" "$present" "$waiting" "$depth_sum"
+  printf '%d %d %d %d %d\n' "$active" "$present" "$waiting" "$depth_sum" "$unseen"
 }
 
 # Per-window marker, by precedence: blocked (bang) > working (spinner) >
-# present (diamond). The spinner's number is agents-in-flight when we have that
-# count, else panes working - never the two summed, they are different units.
+# unseen completion (circle) > present (diamond). The spinner counts subagents
+# when available, else working panes; those different units are never summed.
 format_marker() {
-  local active="$1" present="$2" waiting="$3" depth="${4:-0}" n
+  local active="$1" present="$2" waiting="$3" depth="${4:-0}" unseen="${5:-0}" n
 
   if (( waiting > 0 )); then
     if (( waiting == 1 )); then printf '!'; else printf '!%d' "$waiting"; fi
   elif (( active > 0 )); then
     if (( depth > 0 )); then n="$depth"; else n="$active"; fi
     if (( n == 1 )); then spinner_frame; else printf '%s%d' "$(spinner_frame)" "$n"; fi
+  elif (( unseen > 0 )); then
+    if (( unseen == 1 )); then printf '○'; else printf '○%d' "$unseen"; fi
   elif (( present > 0 )); then
     if (( present == 1 )); then printf '◆'; else printf '◆%d' "$present"; fi
   fi
@@ -313,20 +432,21 @@ format_marker() {
 # The single category a window contributes to the fleet roll-up: its dominant
 # marker, same precedence as format_marker.
 window_category() {
-  local active="$1" present="$2" waiting="$3"
+  local active="$1" present="$2" waiting="$3" unseen="${4:-0}"
   if (( waiting > 0 )); then printf 'waiting'
   elif (( active > 0 )); then printf 'active'
+  elif (( unseen > 0 )); then printf 'unseen'
   elif (( present > 0 )); then printf 'present'
   else printf 'none'
   fi
 }
 
-# Compact roll-up across one session's windows: working, present, waiting (zeros
-# omitted).
+# Compact roll-up across one session's windows, with zero counts omitted.
 format_fleet() {
-  local active_w="$1" present_w="$2" waiting_w="$3" out=''
+  local active_w="$1" present_w="$2" waiting_w="$3" unseen_w="${4:-0}" out=''
 
   if (( active_w > 0 )); then out="${out}$(spinner_frame)${active_w} "; fi
+  if (( unseen_w > 0 )); then out="${out}○${unseen_w} "; fi
   if (( present_w > 0 )); then out="${out}◆${present_w} "; fi
   if (( waiting_w > 0 )); then out="${out}!${waiting_w} "; fi
 
@@ -334,18 +454,20 @@ format_fleet() {
 }
 
 window_status() {
+  ack_viewed
   local target="${1:?window target required}"
-  local active present waiting depth
-  read -r active present waiting depth < <(count_window "$target")
-  format_marker "$active" "$present" "$waiting" "$depth"
+  local active present waiting depth unseen
+  read -r active present waiting depth unseen < <(count_window "$target")
+  format_marker "$active" "$present" "$waiting" "$depth" "$unseen"
 }
 
 # Roll-up for one session, defaulting to the current one. Falls back to every
 # window only when run outside tmux, where there is no session to scope to.
 fleet_summary() {
+  ack_viewed
   local target="${1:-}"
-  local window active present waiting depth
-  local active_w=0 present_w=0 waiting_w=0
+  local window active present waiting depth unseen
+  local active_w=0 present_w=0 waiting_w=0 unseen_w=0
   local scope=(-a)
 
   [[ -n "$target" ]] || target="$(tmux_cmd display-message -p '#{session_id}' 2>/dev/null || true)"
@@ -353,21 +475,22 @@ fleet_summary() {
 
   while IFS= read -r window; do
     [[ -n "$window" ]] || continue
-    read -r active present waiting depth < <(count_window "$window")
-    case "$(window_category "$active" "$present" "$waiting")" in
+    read -r active present waiting depth unseen < <(count_window "$window")
+    case "$(window_category "$active" "$present" "$waiting" "$unseen")" in
       active) active_w=$((active_w + 1)) ;;
       present) present_w=$((present_w + 1)) ;;
+      unseen) unseen_w=$((unseen_w + 1)) ;;
       waiting) waiting_w=$((waiting_w + 1)) ;;
     esac
   done < <(tmux_cmd list-windows "${scope[@]}" -F '#{window_id}' 2>/dev/null || true)
 
-  format_fleet "$active_w" "$present_w" "$waiting_w"
+  format_fleet "$active_w" "$present_w" "$waiting_w" "$unseen_w"
 }
 
 # Jump to the next window (after the current one, wrapping) blocked on you, or
 # failing that, one with an agent present but not working.
 next_waiting() {
-  local current window active present waiting depth
+  local current window active present waiting depth unseen
   local windows=()
 
   current="$(tmux_cmd display-message -p '#{window_id}' 2>/dev/null || true)"
@@ -388,7 +511,7 @@ next_waiting() {
   for pass in blocked idle; do
     for (( off = 1; off <= n; off++ )); do
       target="${windows[$(( (start + off) % n ))]}"
-      read -r active present waiting depth < <(count_window "$target")
+      read -r active present waiting depth unseen < <(count_window "$target")
       case "$pass" in
         blocked) (( waiting > 0 )) || continue ;;
         idle) (( active == 0 && present > 0 )) || continue ;;
@@ -408,17 +531,18 @@ next_waiting() {
 # same fleet-wide count, so a fresh session displayed another session's agents.
 update_session() {
   local target="${1:?session target required}"
-  local window active present waiting depth
-  local active_w=0 present_w=0 waiting_w=0
+  local window active present waiting depth unseen
+  local active_w=0 present_w=0 waiting_w=0 unseen_w=0
 
   while IFS= read -r window; do
     [[ -n "$window" ]] || continue
-    read -r active present waiting depth < <(count_window "$window")
+    read -r active present waiting depth unseen < <(count_window "$window")
     tmux_cmd set-option -wq -t "$window" @llm_status \
-      "$(format_marker "$active" "$present" "$waiting" "$depth")" 2>/dev/null || true
-    case "$(window_category "$active" "$present" "$waiting")" in
+      "$(format_marker "$active" "$present" "$waiting" "$depth" "$unseen")" 2>/dev/null || true
+    case "$(window_category "$active" "$present" "$waiting" "$unseen")" in
       active) active_w=$((active_w + 1)) ;;
       present) present_w=$((present_w + 1)) ;;
+      unseen) unseen_w=$((unseen_w + 1)) ;;
       waiting) waiting_w=$((waiting_w + 1)) ;;
     esac
   done < <(tmux_cmd list-windows -t "$target" -F '#{window_id}' 2>/dev/null || true)
@@ -426,7 +550,7 @@ update_session() {
   # Always set, even when empty: a session whose agents all finished must clear,
   # and an unset session option falls back to the global one.
   tmux_cmd set-option -q -t "$target" @llm_fleet \
-    "$(format_fleet "$active_w" "$present_w" "$waiting_w")" 2>/dev/null || true
+    "$(format_fleet "$active_w" "$present_w" "$waiting_w" "$unseen_w")" 2>/dev/null || true
 }
 
 update_all_windows() {
@@ -434,6 +558,7 @@ update_all_windows() {
   # Once per pass, so busy markers age against the current clock in the daemon's
   # long-lived process rather than against whenever it started.
   refresh_now
+  ack_viewed
 
   # Clear the global fallback so a session created between passes renders empty
   # rather than inheriting whatever the last session to be scanned reported.
@@ -521,7 +646,7 @@ collect_rows() {  # [tree]
   while IFS=$'\t' read -r pane_id pane_pid name activity command path session sid widx pidx title; do
     classify_pane "$pane_id" "$command" "${title:-}"
     case "$PANE_STATE" in
-      waiting) rank=0 ;; active) rank=1 ;; present) rank=2 ;; *) continue ;;
+      waiting) rank=0 ;; active) rank=1 ;; present) rank=$((3 - PANE_UNSEEN)) ;; *) continue ;;
     esac
     age=$(( NOW - ${activity:-$NOW} )); (( age >= 0 )) || age=0
     # choose-tree orders sessions by id (creation), then window and pane index.
@@ -725,6 +850,7 @@ term_cols() {
 }
 
 render_table() {  # [tree]
+  ack_viewed
   local mode="${1:-}" last_session=''
   local -a rows=() names=() targets=() projects=()
   local row rank age pane_id name state agents pane_pid path session tree title i=0 key label ctx
@@ -846,7 +972,7 @@ render_table() {  # [tree]
     pad PROJECT "${projects[i]}" "$project_w"
     key="${TABLE_KEYS:i:1}"
     TABLE_PANES+=("$pane_id")
-    case "$state" in waiting) label='! needs' ;; active) label='working' ;; *) label='idle' ;; esac
+    case "$state" in waiting) label='! needs' ;; active) label='working' ;; *) if [[ "$rank" == 2 ]]; then label='○ unseen'; else label='idle'; fi ;; esac
     # A corrupt reading must cost one cell, not the table: printf dies on non-numbers.
     ctx='-'; [[ "$META_CTX" =~ ^[0-9]+([.][0-9]+)?$ ]] && ctx="$(LC_NUMERIC=C printf '%.0f%%' "$META_CTX")"
     printf '%-3s %s %-8s %4s %3s %4s %-9.9s %s %-*.*s' \
@@ -903,6 +1029,14 @@ pick() {
 }
 
 case "${1:-}" in
+  observe)
+    (( $# == 3 )) || exit 2
+    observe_turn "$2" "$3"
+    ;;
+  ack)
+    (( $# == 2 )) || exit 2
+    ack_completion "$2"
+    ;;
   explain)
     if (( $# != 2 )); then printf 'Usage: tmux-llm-status explain <%%pane-id>\n' >&2; exit 2; fi
     explain_pane "$2"
@@ -942,7 +1076,7 @@ case "${1:-}" in
     start_daemon
     ;;
   *)
-    printf 'Usage: %s explain <%%pane-id> | window <target> | summary [session] | next-waiting | once | prune | table [tree] | pick | start | stop | restart\n' "${0##*/}" >&2
+    printf 'Usage: %s explain <%%pane-id> | ack <%%pane-id> | window <target> | summary [session] | next-waiting | once | prune | table [tree] | pick | start | stop | restart\n' "${0##*/}" >&2
     exit 2
     ;;
 esac

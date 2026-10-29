@@ -716,6 +716,8 @@ check 'missing pane exits with unavailable status' 1 "$rc"
 check 'missing pane has bounded result' yes "$(has "$report" 'pane unavailable')"
 t kill-session -t explain
 
+python3 "$repo_root/scripts/test-tmux-completion.py"
+
 if (( failures > 0 )); then
   printf 'test-tmux-llm-status: %d failure(s)\n' "$failures" >&2
   exit 1
