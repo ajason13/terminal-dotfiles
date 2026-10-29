@@ -4,19 +4,10 @@ const COMMANDS = new Set(['codex', 'claude', 'gemini', 'aider', 'opencode']);
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/u;
 const BRAILLE_SPINNER = /^[\u2800-\u28ff]/u;
 const OTHER_SPINNER = /^(?:◐ |◓ |◑ |◒ |- |\\ |\| |\/ )/u;
-const CODEX_STATIC = /^\[[^\]\r\n]+\] [^\r\n]*\|/u;
+// Match the shell's current "task | project" and legacy bracketed forms.
+const CODEX_STATIC = / \| |^\[.*\] .*\|/u;
 const CLAUDE_STATIC = /^✳/u;
-
-function hasToken(title, token) {
-  let start = title.indexOf(token);
-  while (start !== -1) {
-    const before = start === 0 ? '' : title[start - 1];
-    const after = title[start + token.length] ?? '';
-    if ((!before || !/[A-Za-z]/.test(before)) && (!after || !/[A-Za-z]/.test(after))) return true;
-    start = title.indexOf(token, start + 1);
-  }
-  return false;
-}
+const CODEX_STATUS = /^\[([^\]]+)\] /u;
 
 function commandBasename(command) {
   const slash = command.lastIndexOf('/');
@@ -48,34 +39,31 @@ export function classifyPane(record, observedAtMs = Date.now()) {
   const claudeStatic = CLAUDE_STATIC.test(title);
   if (!(spinner || codexStatic || claudeStatic || commandCandidate)) return null;
 
-  if (hasToken(title, 'Action Required')) {
-    return Object.freeze({
-      status: 'waiting_for_permission', permissionState: 'requested',
-      confidence: 'low', provenance: 'tmux_title_action_required',
-    });
-  }
-  if (hasToken(title, 'Thinking')) {
-    return Object.freeze({
-      status: 'thinking', permissionState: 'unknown',
-      confidence: 'medium', provenance: 'tmux_title_thinking',
-    });
-  }
+  // Spinner evidence wins even when its task text contains status words.
+  // Only a Codex status prefix is meaningful; task/Claude/command text is not.
+  const status = codexStatic ? CODEX_STATUS.exec(title)?.[1] : undefined;
   if (spinner) {
     return Object.freeze({
       status: 'active', permissionState: 'unknown',
       confidence: 'medium', provenance: 'tmux_title_spinner',
     });
   }
-  if (['Working', 'Running', 'Processing', 'Executing', 'Loading'].some((token) => hasToken(title, token))) {
+  if (status === 'Thinking') {
+    return Object.freeze({
+      status: 'thinking', permissionState: 'unknown',
+      confidence: 'medium', provenance: 'tmux_title_thinking',
+    });
+  }
+  if (['Working', 'Running', 'Processing', 'Executing', 'Loading'].includes(status)) {
     return Object.freeze({
       status: 'active', permissionState: 'unknown',
       confidence: 'medium', provenance: 'tmux_title_working',
     });
   }
-  if (['Ready', 'Idle'].some((token) => hasToken(title, token))) {
+  if (status === 'Action Required') {
     return Object.freeze({
-      status: 'idle', permissionState: 'unknown',
-      confidence: 'low', provenance: 'tmux_title_ready_idle',
+      status: 'waiting_for_permission', permissionState: 'requested',
+      confidence: 'low', provenance: 'tmux_title_action_required',
     });
   }
   if (codexStatic || claudeStatic) {
