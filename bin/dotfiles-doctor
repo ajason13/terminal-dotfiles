@@ -1,0 +1,288 @@
+#!/usr/bin/env python3
+"""Read-only workstation checks. Never execute hook or agent commands."""
+import argparse
+import json
+import os
+from pathlib import Path
+import re
+import selectors
+import shutil
+import signal
+import stat
+import subprocess
+import sys
+import time
+
+if sys.version_info < (3, 11):
+    sys.exit('FAIL doctor: Python 3.11+ required; install/select python3 on PATH')
+import tomllib
+
+LIMIT = 64 * 1024
+TIMEOUT = 2
+INTEGRATIONS = ('claude', 'codex', 'github', 'dashboard', 'checks', 'leases')
+
+
+def probe(argv):
+    """Cap time and output, kill the process group, and suppress raw diagnostics."""
+    proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                            stdin=subprocess.DEVNULL, start_new_session=True)
+    output = bytearray()
+    try:
+        with selectors.DefaultSelector() as selector:
+            selector.register(proc.stdout, selectors.EVENT_READ)
+            deadline = time.monotonic() + TIMEOUT
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise ValueError('probe timed out')
+                if not selector.select(remaining):
+                    raise ValueError('probe timed out')
+                chunk = os.read(proc.stdout.fileno(), 4096)
+                if not chunk:
+                    break
+                output.extend(chunk)
+                if len(output) > LIMIT:
+                    raise ValueError('probe output exceeded limit')
+        proc.wait(timeout=max(0.01, deadline - time.monotonic()))
+        if proc.returncode:
+            raise ValueError('probe failed')
+        return output.decode('utf-8', errors='replace')
+    finally:
+        # Also remove descendants that outlived their parent or closed stdout.
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        proc.wait()
+        proc.stdout.close()
+
+
+def settings(path, parser):
+    """Only regular files, bounded reads; parser errors never reach the output."""
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+    with os.fdopen(fd, 'rb') as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            raise ValueError('settings must be a regular file')
+        data = stream.read(LIMIT + 1)
+    if len(data) > LIMIT:
+        raise ValueError('settings exceed limit')
+    result = parser(data.decode('utf-8'))
+    if not isinstance(result, dict):
+        raise ValueError('settings must be an object')
+    return result
+
+
+class Doctor:
+    def __init__(self, repo, home):
+        self.repo, self.home = repo.resolve(), home.resolve()
+        self.failed = False
+
+    def report(self, state, name, message):
+        # Names and messages are fixed strings or validated inventory-relative paths.
+        print(f'{state} {name}: {message}')
+        self.failed |= state == 'FAIL'
+
+    def tool(self, name, args=('--version',), minimum=None):
+        executable = shutil.which(name)
+        if not executable:
+            self.report('FAIL', name, 'missing on PATH; see docs/workstation-setup.md')
+            return
+        try:
+            output = probe([executable, *args])
+            if minimum is not None:
+                match = re.search(r'\b(?:v)?(\d+)\.(\d+)', output)
+                if not match or int(match[1]) < minimum:
+                    self.report('FAIL', name, f'requires version {minimum}+; select a supported version on PATH')
+                    return
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            self.report('FAIL', name, 'version probe failed, timed out, or exceeded 64 KiB; check executable on PATH')
+            return
+        self.report('OK', name, 'available on PATH; version probe passed')
+
+    def targets(self):
+        try:
+            inventory = probe(['/bin/bash', '-c',
+                               'source "$1/scripts/install-targets.sh"; install_targets "$1"',
+                               'doctor', str(self.repo)])
+            rows = []
+            for line in inventory.splitlines():
+                kind, source, target, mode = line.split('|')
+                for relative in (source, target):
+                    if not re.fullmatch(r'[A-Za-z0-9_./-]+', relative) or '..' in Path(relative).parts or Path(relative).is_absolute():
+                        raise ValueError('invalid inventory')
+                if kind not in ('file', 'tree', 'skill') or not re.fullmatch(r'0[0-7]{3}', mode):
+                    raise ValueError('invalid inventory')
+                rows.append((kind, source, target, mode))
+            if not rows:
+                raise ValueError('empty inventory')
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            self.report('FAIL', 'inventory', 'cannot read inventory; supply --repo with this repository checkout')
+            return
+        for kind, source, target, mode in rows:
+            expected, actual = self.repo / source, self.home / target
+            try:
+                if actual.is_symlink():
+                    if not actual.exists():
+                        message = 'stale link; rerun installer --link from the intended checkout'
+                    elif actual.resolve() != expected.resolve():
+                        message = 'wrong link; rerun installer --link from the intended checkout'
+                    else:
+                        message = None
+                elif not (actual.is_file() if kind == 'file' else actual.is_dir()):
+                    message = 'missing or wrong type; rerun installer --copy or --link'
+                else:
+                    message = None
+                if message is None and int(mode, 8) & 0o111 and not os.access(actual, os.X_OK):
+                    message = 'not executable; rerun installer'
+                if message:
+                    self.report('FAIL', target, message)
+                else:
+                    self.report('OK', target, 'managed target present (copy contents not compared)')
+            except (OSError, RuntimeError):
+                self.report('FAIL', target, 'unreadable or cyclic link; repair target with installer')
+
+    def read_settings(self, relative, parser):
+        try:
+            path = self.home / relative
+            if path.is_symlink():
+                expected = self.repo / 'codex/config.toml'
+                # The installer owns this one settings symlink. Do not allow
+                # arbitrary settings links to redirect reads to private stores.
+                if relative != '.codex/config.toml' or path.resolve() != expected:
+                    raise ValueError('unsupported settings symlink')
+                path = expected
+            return settings(path, parser)
+        except (OSError, ValueError, RecursionError, RuntimeError):
+            self.report('FAIL', relative, 'missing, unreadable, malformed, unsafe link, nonregular, or over 64 KiB; review registration guide')
+            return None
+
+    def command_matches(self, command, relative):
+        # Accept documented literal paths only. No expansion or execution.
+        return isinstance(command, str) and command in {f'$HOME/{relative}', f'"$HOME/{relative}"',
+                           f'~/{relative}', str(self.home / relative),
+                           f'"{self.home / relative}"'}
+
+    def hook(self, config, event, script, matcher=None):
+        hooks = config.get('hooks', {})
+        entries = hooks.get(event, []) if isinstance(hooks, dict) else []
+        found = False
+        if isinstance(entries, list):
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                # Matcher checks deliberately accept only the documented scope.
+                if entry.get('matcher', '') != (matcher or ''):
+                    continue
+                commands = entry.get('hooks', [])
+                if not isinstance(commands, list):
+                    continue
+                for hook in commands:
+                    if isinstance(hook, dict) and hook.get('type') == 'command' and self.command_matches(hook.get('command'), script):
+                        found = True
+        self.report('OK' if found else 'FAIL', event,
+                    'documented hook registered' if found else 'missing/unsupported hook registration; see README.md hook examples')
+
+    def claude(self, leases=False):
+        self.presence('claude')
+        if leases and not (self.home / '.claude/settings.json').exists() and os.environ.get('SF_LEASE_ENABLE', '').lower() not in ('1', 'on', 'true', 'yes'):
+            self.report('OFF', 'leases', 'disabled; no global settings or enabled environment flag')
+            return
+        config = self.read_settings('.claude/settings.json', json.loads)
+        if config is None:
+            return
+        if config.get('disableAllHooks') is True:
+            self.report('FAIL', 'claude hooks', 'disabled by global settings; review hook configuration')
+        if leases:
+            env = config.get('env', {})
+            armed = os.environ.get('SF_LEASE_ENABLE', env.get('SF_LEASE_ENABLE', '') if isinstance(env, dict) else '')
+            if str(armed).lower() not in ('1', 'on', 'true', 'yes'):
+                self.report('OFF', 'leases', 'disabled in inspected environment/settings; no lease store or identity mapping read')
+                return
+            for event, script, matcher in [('PreToolUse', 'guard', 'Bash'), ('PostToolUse', 'post', 'Bash'),
+                                           ('SessionEnd', 'end', None), ('SessionStart', 'table', None)]:
+                self.hook(config, event, f'.claude/hooks/sf-lease-{script}.sh', matcher)
+            self.report('WARN', 'leases', 'registration only; identity mapping and live org access require manual verification')
+            return
+        for event in ('UserPromptSubmit', 'PostToolBatch', 'Stop', 'StopFailure',
+                      'SubagentStart', 'SubagentStop', 'SessionStart', 'SessionEnd', 'Notification'):
+            self.hook(config, event, '.claude/hooks/tmux-agent-depth.sh',
+                      'permission_prompt|elicitation_dialog' if event == 'Notification' else None)
+        status = config.get('statusLine', {})
+        found = isinstance(status, dict) and status.get('type') == 'command' and self.command_matches(status.get('command'), '.claude/statusline.sh')
+        self.report('OK' if found else 'FAIL', 'statusLine',
+                    'registered' if found else 'missing/unsupported registration; see README.md Claude settings')
+        self.report('WARN', 'claude', 'global settings only; project/local settings and runtime hook activation require manual verification')
+
+    def presence(self, name):
+        found = shutil.which(name) is not None
+        self.report('OK' if found else 'FAIL', name,
+                    'available on PATH; account access not checked' if found else 'missing on PATH; install separately if using this integration')
+
+    def codex(self):
+        self.presence('codex')
+        self.tool('node', minimum=22)
+        config = self.read_settings('.codex/config.toml', tomllib.loads)
+        if config is not None:
+            hooks = config.get('hooks', {})
+            entries = hooks.get('SessionStart', []) if isinstance(hooks, dict) else []
+            found = False
+            if isinstance(entries, list):
+                for entry in entries:
+                    commands = entry.get('hooks', []) if isinstance(entry, dict) else []
+                    if isinstance(commands, list):
+                        found |= any(isinstance(h, dict) and h.get('type') == 'command' and
+                                     h.get('command') == '"$HOME/.local/bin/codex-restore" capture-hook' for h in commands)
+            self.report('OK' if found else 'FAIL', 'Codex SessionStart',
+                        'capture hook registered' if found else 'missing/unsupported capture hook; see docs/codex-restore.md')
+            self.report('WARN', 'codex', 'manually review /hooks trust and tmux persistence; sign-in, models and allowance not checked')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--repo', type=Path, default=Path(__file__).resolve().parent.parent,
+                        help='repository checkout (required for an installed copy)')
+    parser.add_argument('--home', type=Path, default=Path(os.environ.get('DOTFILES_TARGET_HOME', Path.home())),
+                        help='installation home to inspect')
+    parser.add_argument('--integration', action='append', choices=INTEGRATIONS, default=[],
+                        help='explicit optional checks; repeat for multiple integrations')
+    args = parser.parse_args()
+    doctor = Doctor(args.repo.resolve(), args.home.expanduser().resolve())
+    for tool, flags in [('bash', ('--version',)), ('git', ('--version',)), ('cc', ('--version',)),
+                        ('curl', ('--version',)), ('tmux', ('-V',)), ('nvim', ('--version',)),
+                        ('tree-sitter', ('--version',)), ('rg', ('--version',)), ('jq', ('--version',))]:
+        doctor.tool(tool, flags)
+    for name, app in [('wezterm', 'WezTerm.app'), ('code', 'Visual Studio Code.app')]:
+        if shutil.which(name) or any((path / app).is_dir() for path in (Path('/Applications'), doctor.home / 'Applications')):
+            doctor.report('OK', name, 'CLI or application present')
+        else:
+            doctor.report('FAIL', name, 'missing application/CLI; see docs/workstation-setup.md')
+    path_dirs = {Path(entry).resolve() for entry in os.environ.get('PATH', '').split(os.pathsep) if entry}
+    if doctor.home / '.local/bin' not in path_dirs:
+        doctor.report('FAIL', 'PATH', 'add the installation home .local/bin to PATH')
+    else:
+        doctor.report('OK', 'PATH', 'installation home .local/bin is on PATH')
+    doctor.targets()
+    for name in INTEGRATIONS:
+        if name not in args.integration:
+            doctor.report('OFF', name, 'optional checks not selected; use --integration ' + name)
+        elif name == 'claude':
+            doctor.claude()
+        elif name == 'leases':
+            doctor.claude(leases=True)
+        elif name == 'codex':
+            doctor.codex()
+        elif name == 'github':
+            doctor.presence('gh')
+        elif name == 'dashboard':
+            doctor.tool('node', minimum=22)
+            doctor.presence('npm')
+            doctor.tool('python3', minimum=3)
+            doctor.report('WARN', 'dashboard', 'live exporter targets tmux 3.7; npm dependencies/browser readiness not checked')
+        elif name == 'checks':
+            doctor.tool('shellcheck')
+            doctor.tool('lua', ('-v',))
+    return 1 if doctor.failed else 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

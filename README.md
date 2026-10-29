@@ -334,6 +334,9 @@ VS Code must be registered for `vscode://file` links. If needed, open VS Code
 and run `Shell Command: Install 'code' command in PATH` from the command
 palette.
 
+For read-only dependency, installed-link and opt-in hook checks, see
+[installation diagnostics](docs/workstation-setup.md#read-only-installation-diagnostics).
+
 ## Install On A Mac
 
 Clone this repo, then run:

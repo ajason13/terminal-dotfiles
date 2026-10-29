@@ -23,7 +23,7 @@ cp "$repo_root/scripts/install-targets.sh" "$fixture/scripts/"
 # Build only the inputs needed by the inventory, without real local wallpapers.
 # shellcheck source=scripts/install-targets.sh
 source "$fixture/scripts/install-targets.sh"
-while IFS='|' read -r kind relative_source _ _; do
+while IFS='|' read -r kind relative_source _ file_mode; do
   source_path="$fixture/$relative_source"
   if [[ "$kind" == tree || "$kind" == skill ]]; then
     mkdir -p "$source_path"
@@ -31,6 +31,7 @@ while IFS='|' read -r kind relative_source _ _; do
   else
     mkdir -p "$(dirname "$source_path")"
     printf 'managed\n' > "$source_path"
+    chmod "$file_mode" "$source_path"
   fi
 done < <(install_targets "$fixture")
 printf 'skill\n' > "$fixture/codex/skills/example/SKILL.md"
@@ -91,6 +92,7 @@ for mode in copy link; do
   check old-nvim "$(cat "$target_home/.config/nvim/managed.txt")" 'dry run changed content'
   run_install "$target_home" "--$mode"
   check managed "$(cat "$target_home/.config/nvim/managed.txt")" 'nvim not installed'
+  test -x "$target_home/.local/bin/dotfiles-doctor"
   test ! -e "$target_home/.codex/agents/workflow-coordinator.toml"
   test ! -e "$target_home/.codex/workflow-coordinator.config.toml"
   for manifest in general vehicles anime; do
@@ -117,6 +119,7 @@ for mode in copy link; do
   check old-profile "$(cat "$target_home/.codex/workflow-coordinator.config.toml")" 'retired profile not restored'
   test -f "$target_home/.codex/skills/unrelated/SKILL.md"
   test ! -e "$target_home/.codex/example.config.toml"
+  test ! -e "$target_home/.local/bin/dotfiles-doctor"
 done
 # Copying over an existing nested symlink must never overwrite its referent.
 target_home="$task_tmp/symlink"
