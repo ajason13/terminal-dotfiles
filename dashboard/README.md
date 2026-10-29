@@ -104,7 +104,9 @@ The dashboard does not read the busy/needs/subagent state files used by
 Claude's hook observations precedence over title fallback; the dashboard uses
 title tokens and window activity alone. The two surfaces can disagree, including
 when a sibling pane produces output. [#100](https://github.com/ajason13/terminal-dotfiles/issues/100)
-tracks research into that evidence boundary; no shared-hook collector is shipped.
+records the [evidence comparison and recommendation](../docs/activity-evidence-research.md):
+defer shared collection pending identity/privacy decisions and align title fallback
+separately. No shared-hook collector is shipped.
 
 A reading the collector could not stand behind renders as unsettled rather than
 settled: a dashed state ring, a dimmed car, and `unconfirmed` in the tooltip and
