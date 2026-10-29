@@ -1,0 +1,4 @@
+interface:
+  display_name: "Complete One GitHub Issue"
+  short_description: "Deliver one Ready issue through the repository SDLC"
+  default_prompt: "Use $complete-one-issue to complete one GitHub issue through this repository’s AI SDLC."
