@@ -70,6 +70,13 @@ jobs:
       - name: Check manifest paths
         run: ./scripts/check-manifest-paths.sh
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check read-only workstation diagnostics
+        run: python3 scripts/test-dotfiles-doctor.py
+
       - name: Run script test suites
         run: |
           bash scripts/test-check-shell.sh

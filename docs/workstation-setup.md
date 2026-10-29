@@ -91,3 +91,69 @@ Return to the root [installation guide](../README.md#install-on-a-mac) for copy,
 link, preview and uninstall commands. `install-macos.sh` manages files only:
 normal and dry-run modes do not invoke Bundle, install packages or sign in to
 services. Claude hook registration and all integration opt-ins remain manual.
+
+## Read-only installation diagnostics
+
+`dotfiles-doctor` checks the core tools on PATH, the managed targets from the
+installer inventory, and the installation home's `.local/bin` PATH entry. Run
+from the repository root with **Python 3.11+** on PATH (`brew install python`
+if needed). This runtime is required only for this optional diagnostic command.
+The normal copy/link installer installs the command; uninstall removes or
+restores it through the same inventory.
+
+```sh
+./bin/dotfiles-doctor
+# An installed copy needs the checkout to read its current target inventory:
+dotfiles-doctor --repo /path/to/terminal-dotfiles
+# Select optional integrations explicitly; repeat the flag as needed:
+./bin/dotfiles-doctor --integration claude --integration codex
+./bin/dotfiles-doctor --integration leases
+```
+
+Use `--home /path/to/installation` (or `DOTFILES_TARGET_HOME`) to inspect another
+installation. Checks use the invoking process's PATH. Each line starts with
+`OK`, `FAIL`, `WARN` (manual verification needed), or `OFF` (optional checks not
+selected, or inspected leases disabled). Exit **0** means no checked failure,
+**1** means at least one failure, and **2** means invalid arguments. Missing or
+unsupported Python exits nonzero before checks run. Exit 0 does not certify
+account access, model availability, runtime hooks, or live integrations.
+
+The core inventory follows the [Brewfile](../Brewfile). Executable probes use
+only version flags, with a two-second and 64 KiB output limit per probe (including
+the installer inventory); they never install or upgrade tools. Homebrew's
+current-stable guidance is not an exact minimum-version test. App checks accept
+WezTerm/VS Code on PATH or in `/Applications` / the installation's `Applications`;
+URL registration still requires opening VS Code manually. Managed files and
+directories are checked for type, executable access where required, and correct
+symlink destination. Copied contents and files inside managed directories are
+not compared; local customizations remain valid, and this is not a drift audit.
+
+Optional selections:
+
+| Flag value | Checks and limits |
+| --- | --- |
+| `claude` | Claude CLI presence; documented activity, notification and status-line registrations in global `.claude/settings.json`. Project/local settings and runtime activation need manual verification. |
+| `codex` | Codex CLI presence, Node 22+ for budget helpers, global TOML capture-hook registration. Review `/hooks` trust and persistence manually; account, models and allowance are not checked. |
+| `github` | `gh` on PATH; authentication and repository access are not checked. |
+| `dashboard` | Node 22+, npm and Python presence; the live exporter still targets tmux 3.7. npm packages, browser installation and live collection are not checked. |
+| `checks` | ShellCheck and `lua` on PATH; use the documented suites to verify the configuration. |
+| `leases` | Inspected environment/global settings enable flag; when enabled, the four documented lease hook registrations. Identity mapping, lease state and live org access remain manual. Selecting this check does not enable leases. |
+
+Settings reads are limited to regular files up to 64 KiB. Settings-file
+symlinks are rejected except the installer-managed Codex link to the selected
+checkout; arbitrary links cannot redirect inspection to another private file. Only the selected
+integration's global configuration is parsed; output contains fixed diagnostic
+messages and inventory-relative names, never setting values, raw command output,
+parser errors, tokens, prompts or org identities. Registrations must use the
+documented literal command paths; wrappers and alternative matchers require
+manual review and are reported as unsupported. The command does not execute
+hooks or agent CLIs, read credential/identity stores, mutate tmux or settings,
+start model turns, or make network requests. Version probes execute local tools
+from PATH; use a trusted PATH and checkout.
+
+Fixture verification from the repository root:
+
+```sh
+python3 scripts/test-dotfiles-doctor.py
+bash scripts/test-install-macos.sh
+```
