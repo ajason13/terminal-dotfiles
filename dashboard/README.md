@@ -13,8 +13,6 @@ The local server reads pane metadata; it does not control terminals, read pane
 content, persist observations, or send telemetry to a remote service.
 
 Track current work in [GitHub Issues](https://github.com/ajason13/terminal-dotfiles/issues).
-The dated notes under `docs/superpowers/` retain historical decisions and
-verification evidence; their original candidate lists are not the active backlog.
 
 ## Verification and module boundaries
 
@@ -346,8 +344,7 @@ never replace state colors, boundaries, accessible labels, or status wording.
 Below 760px, the bar wraps to multiple rows, session bays stack at full width,
 and route targets use a true 44px hit region. The pit lane has a capped height
 and scrolls internally. Mobile CSS and browser tests remain a second-width
-regression net; mobile product expansion is closed by the
-[design-review decision](../docs/superpowers/plans/2026-08-24-dashboard-design-review.md#status).
+regression net; mobile product expansion remains out of scope.
 
 ## Architecture
 
@@ -448,9 +445,7 @@ and tooltip remain unclipped. Tangent-based orientation, signed corner-aware
 drift, and active/thinking smoke are implemented. They require successful
 registration of all four angle properties in `src/route-motion-capability.mjs`;
 unsupported registration falls back to static anchors. Reduced motion also
-disables traversal, drift, and smoke. The original orientation and corner-drift
-delivery evidence is retained in the
-[historical roadmap](../docs/superpowers/plans/2026-07-27-dashboard-roadmap.md).
+disables traversal, drift, and smoke.
 
 Capacity is **16 on-route plus 18 in one shared pit pool, 34 total**, with no
 borrowing between pools. Active/thinking sessions use route slots. Permission,
