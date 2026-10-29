@@ -100,6 +100,7 @@ exists() { if [[ -e "$1" ]]; then printf 'present'; else printf 'absent'; fi; }
 t() { tmux -S "$TMUX_SOCKET" "$@"; }
 cleanup() {
   t kill-server 2>/dev/null || true
+  if [[ -n "${other_socket:-}" ]]; then tmux -S "$other_socket" kill-server 2>/dev/null || true; fi
   [[ -z "${outside_pid:-}" ]] || kill "$outside_pid" 2>/dev/null || true
   rm -rf "$test_home"
 }
@@ -715,6 +716,76 @@ report="$("$bin" explain %99999999 2>&1)" || rc=$?
 check 'missing pane exits with unavailable status' 1 "$rc"
 check 'missing pane has bounded result' yes "$(has "$report" 'pane unavailable')"
 t kill-session -t explain
+
+# --- publisher ownership survives duplicate launches and is server-local ---
+publisher_bin="$test_home/publisher"
+ln -s "$bin" "$publisher_bin"
+t -f /dev/null new-session -d -s publisher -n agent 'sleep 600'
+t select-pane -t publisher:agent -T '✳ idle agent'
+publisher_pid() { t show-options -gqv @llm_daemon_pid; }
+poll_for() {
+  local attempt
+  for (( attempt=0; attempt<80; attempt++ )); do
+    if "$@"; then return 0; fi
+    sleep 0.05
+  done
+  return 1
+}
+owns_publisher() { [[ "$(publisher_pid)" == "$1" ]]; }
+process_gone() { ! kill -0 "$1" 2>/dev/null; }
+"$publisher_bin" run &
+first_publisher=$!
+check 'direct run registers its publisher' yes "$(if poll_for owns_publisher "$first_publisher"; then echo yes; else echo no; fi)"
+"$publisher_bin" start
+check 'start keeps a live publisher' "$first_publisher" "$(publisher_pid)"
+"$publisher_bin" run &
+replacement_publisher=$!
+check 'direct run replaces the publisher' yes "$(if poll_for owns_publisher "$replacement_publisher"; then echo yes; else echo no; fi)"
+check 'superseded publisher exits' yes "$(if poll_for process_gone "$first_publisher"; then echo yes; else echo no; fi)"
+wait "$first_publisher" || true
+
+# A second server must be able to start and stop independently of the first.
+other_socket="$test_home/other.sock"
+tmux -S "$other_socket" -f /dev/null new-session -d -s other
+TMUX_SOCKET="$other_socket" "$publisher_bin" run &
+other_publisher=$!
+other_owns_publisher() { [[ "$(tmux -S "$other_socket" show-options -gqv @llm_daemon_pid)" == "$other_publisher" ]]; }
+check 'second server owns its publisher' yes "$(if poll_for other_owns_publisher; then echo yes; else echo no; fi)"
+TMUX_SOCKET="$other_socket" "$publisher_bin" stop
+check 'stop exits the second server publisher' yes "$(if poll_for process_gone "$other_publisher"; then echo yes; else echo no; fi)"
+wait "$other_publisher" || true
+tmux -S "$other_socket" kill-server
+check 'other server stop preserves the first publisher' "$replacement_publisher" "$(publisher_pid)"
+
+"$publisher_bin" stop
+check 'stop exits the current publisher' yes "$(if poll_for process_gone "$replacement_publisher"; then echo yes; else echo no; fi)"
+wait "$replacement_publisher" || true
+check 'stop revokes publisher ownership' '' "$(publisher_pid)"
+
+# Race several start callers against an empty registration. Whichever run
+# claims ownership last must be the only publisher left after convergence.
+launchers=()
+for (( attempt=0; attempt<8; attempt++ )); do
+  "$publisher_bin" start &
+  launchers+=("$!")
+done
+for launcher in "${launchers[@]}"; do wait "$launcher"; done
+has_publisher() { [[ "$(publisher_pid)" =~ ^[0-9]+$ ]]; }
+check 'concurrent starts establish a publisher' yes "$(if poll_for has_publisher; then echo yes; else echo no; fi)"
+# Let all competing runs reach their ownership check before testing stability.
+sleep 2
+settled_publisher="$(publisher_pid)"
+publisher_count="$(ps -axo command= | awk -v cmd="bash $publisher_bin run" '$0 == cmd { n++ } END { print n+0 }')"
+check 'concurrent starts leave exactly one publisher' 1 "$publisher_count"
+"$publisher_bin" start
+check 'concurrent starts settle on a live publisher' yes "$(if kill -0 "$settled_publisher" 2>/dev/null; then echo yes; else echo no; fi)"
+check 'start preserves the settled owner' "$settled_publisher" "$(publisher_pid)"
+"$publisher_bin" restart
+new_publisher() { has_publisher && [[ "$(publisher_pid)" != "$settled_publisher" ]]; }
+check 'restart registers a replacement' yes "$(if poll_for new_publisher; then echo yes; else echo no; fi)"
+check 'restart retires the previous publisher' yes "$(if poll_for process_gone "$settled_publisher"; then echo yes; else echo no; fi)"
+"$publisher_bin" stop
+t kill-session -t publisher
 
 python3 "$repo_root/scripts/test-tmux-completion.py"
 

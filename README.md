@@ -140,6 +140,14 @@ pane's leftovers cannot linger. If a marker still shows a spinner with no real
 work running - a missed `SubagentStop` left a file behind - clear it by hand:
 `rm -rf ~/.local/state/tmux-llm/panes/<pane>.agents ~/.local/state/tmux-llm/panes/<pane>.busy`.
 
+The status publisher records its owner in the server-local `@llm_daemon_pid`
+option. Duplicate publishers retire themselves when a replacement takes over,
+so different versions cannot continually overwrite each other's icons. Each
+tmux server has its own publisher. `tmux-llm-status restart` replaces it;
+`stop` revokes ownership and lets it finish its current polling cycle. When
+upgrading from the older PID-file launcher, stop any surviving old
+`tmux-llm-status run` processes once before starting the new publisher.
+
 ### Explain a pane's status
 
 Use `tmux list-panes -a -F '#{pane_id}'` to find a pane ID, then run:
