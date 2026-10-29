@@ -852,7 +852,11 @@ env file is present and unreadable.
 
 - `cd "$VAR" && ...`, `pushd`, and any `cd` that is not the first command are
   not followed. The lease keys off the payload's own working directory instead,
-  which in practice means no lease rather than the wrong one.
+  which can mean no lease or a lease for the wrong org if that directory has
+  resolvable configuration. Leading literal cd chains are limited to four hops.
+  The [shell-intent research](docs/sf-shell-intent-research.md) reproduces these
+  cases and compares parsing and explicit-wrapper alternatives; runtime behavior
+  remains unchanged.
 - **Matching is still on command text, not intent - and it can still block.**
   Anchoring to a command segment fixed the single-line cases: with a rival holding
   the org, `git commit -m "fix flake in npx playwright test"`, an `echo` into a
