@@ -259,13 +259,14 @@ test('classifier asserts full tuples for precedence, spinner families, tokens, a
   const thinking = ['thinking', 'unknown', 'medium', 'tmux_title_thinking'];
   const spinner = ['active', 'unknown', 'medium', 'tmux_title_spinner'];
   const working = ['active', 'unknown', 'medium', 'tmux_title_working'];
-  const ready = ['idle', 'unknown', 'low', 'tmux_title_ready_idle'];
   const staticProvider = ['idle', 'unknown', 'medium', 'tmux_activity_idle'];
   const command = ['unknown', 'unknown', 'none', 'tmux_command_candidate'];
 
-  assert.deepEqual(tuple('⠧ Action Required Thinking'), waiting);
-  assert.deepEqual(tuple('✳ Thinking Action Required'), waiting);
-  assert.deepEqual(tuple('✳ Thinking'), thinking);
+  assert.deepEqual(tuple('⠧ Action Required Thinking'), spinner);
+  assert.deepEqual(tuple('[Action Required] Thinking | local'), waiting);
+  assert.deepEqual(tuple('✳ Thinking Action Required'), staticProvider);
+  assert.deepEqual(tuple('[Thinking] Action Required | local'), thinking);
+  assert.deepEqual(tuple('✳ Thinking'), staticProvider);
   assert.deepEqual(tuple('⠧ Ready'), spinner);
   for (const prefix of [
     '\u2800', '\u2840', '\u2880', '\u28c0',
@@ -274,9 +275,12 @@ test('classifier asserts full tuples for precedence, spinner families, tokens, a
     assert.deepEqual(tuple(`${prefix}work`), spinner, prefix);
   }
   for (const token of ['Working', 'Running', 'Processing', 'Executing', 'Loading']) {
-    assert.deepEqual(tuple(`[codex] ${token} | local`), working, token);
+    assert.deepEqual(tuple(`[${token}] Action Required | local`), working, token);
   }
-  for (const token of ['Ready', 'Idle']) assert.deepEqual(tuple(`✳ ${token}`), ready, token);
+  for (const token of ['Ready', 'Idle']) {
+    assert.deepEqual(tuple(`[${token}] Action Required Thinking Working | local`), staticProvider, token);
+    assert.deepEqual(tuple(`✳ ${token}`), staticProvider, token);
+  }
   assert.deepEqual(tuple('✳ waiting'), staticProvider);
   assert.deepEqual(tuple('[codex] waiting | local'), staticProvider);
   for (const allowed of ['codex', 'claude', 'gemini', 'aider', 'opencode']) {
@@ -284,7 +288,7 @@ test('classifier asserts full tuples for precedence, spinner families, tokens, a
   }
   assert.deepEqual(tuple('✳ thinking'), staticProvider);
   assert.deepEqual(tuple('✳ NotThinkingNow'), staticProvider);
-  assert.deepEqual(tuple('✳ Thinkingé'), thinking);
+  assert.deepEqual(tuple('✳ Thinkingé'), staticProvider);
   assert.equal(tuple('Thinking'), null);
   assert.equal(tuple('⠧\u0085Thinking'), null);
   assert.deepEqual(tuple('✳\u0001Ready', 'claude'), command);
@@ -580,10 +584,10 @@ test('window silence splits static-provider panes into evidenced active and idle
   // Positive title evidence still outranks silence in both directions.
   assert.deepEqual(shape(call(8 * 3600 * 1000, { pane_title: '⠧ building' })),
     ['active', 'unknown', 'medium', 'tmux_title_spinner']);
-  assert.deepEqual(shape(call(8 * 3600 * 1000, { pane_title: '✳ Action Required' })),
+  assert.deepEqual(shape(call(8 * 3600 * 1000, { pane_title: '[Action Required] task | local' })),
     ['waiting_for_permission', 'requested', 'low', 'tmux_title_action_required']);
-  assert.deepEqual(shape(call(0, { pane_title: '✳ Ready' })),
-    ['idle', 'unknown', 'low', 'tmux_title_ready_idle']);
+  assert.deepEqual(shape(call(0, { pane_title: '[Ready] task | local' })),
+    ['active', 'unknown', 'medium', 'tmux_activity_recent']);
 
   // Silence classifies an agent banner, not any quiet pane.
   assert.equal(call(0, { pane_title: 'plain shell' }), null);
@@ -621,18 +625,37 @@ test('collector snapshots round-trip every classifier branch through the live va
   const recent = String(NOW / 1000 - 1);
   const silent = String(NOW / 1000 - LIVE_CONSTANTS.ACTIVITY_ACTIVE_WINDOW_MS / 1000);
   const cases = [
-    ['permission outranks thinking and spinner', { pane_title: '⠧ Action Required Thinking' },
+    ['structured permission ignores task words', { pane_title: '[Action Required] Thinking | local' },
       ['waiting_for_permission', 'tmux_title_action_required']],
-    ['thinking outranks spinner', { pane_title: '⠧ Thinking' },
+    ['structured thinking', { pane_title: '[Thinking] Action Required | local' },
       ['thinking', 'tmux_title_thinking']],
     ['braille spinner outranks idle', { pane_title: '⠧ Ready' },
       ['active', 'tmux_title_spinner']],
     ['other spinner', { pane_title: '◐ building' },
       ['active', 'tmux_title_spinner']],
-    ['working token', { pane_title: '[codex] Running | synthetic' },
+    ['working prefix', { pane_title: '[Running] task | synthetic' },
       ['active', 'tmux_title_working']],
-    ['explicit idle outranks recent activity', { pane_title: '✳ Idle', window_activity: recent },
-      ['idle', 'tmux_title_ready_idle']],
+    ['ready presence uses recent activity', { pane_title: '[Ready] task | local', window_activity: recent },
+      ['active', 'tmux_activity_recent']],
+    ...['node', 'codex', '/usr/local/bin/codex'].flatMap((pane_current_command) =>
+      ['task | project', '[legacy] task|project', '[Ready] Action Required Thinking Working | project',
+        '[Idle] Working | project', 'Working | project', '[Other] Thinking | project'].map((pane_title) =>
+        [`presence ${pane_current_command} ${pane_title}`, { pane_title, pane_current_command },
+          ['idle', 'tmux_activity_idle']])),
+    ...['Working', 'Running', 'Processing', 'Executing', 'Loading'].map((status) =>
+      [`active prefix ${status}`, { pane_title: `[${status}] Action Required | project` },
+        ['active', 'tmux_title_working']]),
+    ...['⠋ [Action Required] task | project', '◐ [Thinking] task | project',
+      '/ [Idle] task | project'].map((pane_title) =>
+      [`spinner conflict ${pane_title}`, { pane_title }, ['active', 'tmux_title_spinner']]),
+    ...['✳ Action Required Thinking Working', '✳ Ready'].map((pane_title) =>
+      [`Claude task ${pane_title}`, { pane_title }, ['idle', 'tmux_activity_idle']]),
+    ...['Thinking', '[Thinking] task', 'task|project', '[Action Required] task'].map((pane_title) =>
+      [`unrelated node ${pane_title}`, { pane_title, pane_current_command: 'node' }, null]),
+    ...['Action Required', 'Thinking', 'Working', 'Ready', '[Thinking] task'].map((pane_title) =>
+      [`command text ${pane_title}`, { pane_title, pane_current_command: 'codex' },
+        ['unknown', 'tmux_command_candidate']]),
+    ['control current title', { pane_title: 'task | project\u0001', pane_current_command: 'node' }, null],
     ['missing activity', { pane_title: '✳ synthetic', window_activity: '' },
       ['idle', 'tmux_title_static_provider']],
     ['zero activity', { pane_title: '[codex] synthetic | local', window_activity: '0' },

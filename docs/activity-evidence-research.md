@@ -2,9 +2,10 @@
 
 Research for [#100](https://github.com/ajason13/terminal-dotfiles/issues/100),
 2026-10-28, against `5256156`. This is a comparison and recommendation, not a
-new observation contract. No runtime, schema, hook registration, or collection
-boundary changes are made. Live disagreement frequency and operator impact
-remain unverified; all examples below are synthetic.
+new observation contract. The original research made no runtime, schema, hook
+registration, or collection boundary changes. The title-only implementation
+update for #129 is recorded below. Live disagreement frequency and operator
+impact remain unverified; all examples below are synthetic.
 
 ## Recommendation
 
@@ -20,7 +21,7 @@ This recommendation does not authorize expanding the dashboard's file access.
 The existing one-agent-pane-per-window convention remains useful for reducing
 sibling activity contamination, but does not prove that a silent agent is idle.
 
-## Evidence and precedence
+## Historical evidence and precedence (`5256156`)
 
 Sources: [shell classifier and diagnostics](../tmux/tmux-llm-status),
 [Claude hook producer](../claude/hooks/tmux-agent-depth.sh),
@@ -86,8 +87,9 @@ The script loads the real shell classifier definitions before its diagnostic
 functions, invokes only `classify_pane` with synthetic strings, fixed time and
 private temporary marker files, and imports the real dashboard classifier and
 validator. It executes no supplied command/title text, contacts no socket and
-reads no live state. It fails if the source extraction boundary moves. It is a
-research snapshot, not an assertion that current semantics are desirable.
+reads no live state. It fails if the source extraction boundary moves. The table
+below preserves the original research snapshot; the script now asserts the
+current #129 behavior documented in the following section.
 Each emitted snapshot must pass the live validator; ID assertions demonstrate
 server-epoch separation and the lack of process-respawn separation.
 
@@ -114,6 +116,35 @@ startup/compact/resume cleanup and actual private-server diagnostics are covered
 by the existing [hook suite](../scripts/test-tmux-agent-depth.sh) and
 [status suite](../scripts/test-tmux-llm-status.sh); those tests complement this
 fixed classifier corpus. No production observation is claimed.
+
+## Title alignment update (#129)
+
+The historical table above remains evidence of the original differences.
+The current corpus now expects these three changed dashboard results:
+
+| Fixture | Current dashboard result / provenance | Meaning |
+| --- | --- | --- |
+| spinner-with-prompt-text | active / title_spinner | Spinner wins over task words |
+| codex-task-text | active / activity_recent | `[Ready] Action Required \| project` is presence; the fixture has recent window output |
+| codex-current-title | idle / activity_idle | `task \| project` with `node` is recognized; the fixture has 120 seconds of window silence |
+
+All other corpus expectations remain unchanged. Current precedence is control
+rejection → candidate gate → spinner → structured Codex Thinking/active prefix
+→ structured Codex Action Required prefix → static provider with window-activity
+fallback → command candidate unknown. Current and legacy Codex candidates match
+the shell's title shapes. Claude static text, unstructured task words and
+Ready/Idle prefixes provide presence only; they do not bypass activity fallback.
+The shell still reports presence where the dashboard estimates activity from
+window silence. This is intentional and does not prove idle.
+
+The expanded [classifier round-trip matrix](../dashboard/tests/live-adapter.test.mjs)
+covers direct/node candidates, negative titles, structured statuses, task-token
+false positives, spinner conflicts, control rejection and every emitted branch.
+Every produced snapshot passes the independent live validator. No fields,
+accepted tuples, collection access, hooks or shell behavior changed. Historical
+`tmux_title_ready_idle` imports remain supported, although current classification
+uses the existing activity fallback for Ready/Idle titles. Shared-hook work in
+#122 remains blocked on the decisions below.
 
 ## Options and the collection boundary
 

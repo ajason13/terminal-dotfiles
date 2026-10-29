@@ -77,36 +77,42 @@ nothing to stdout.
 
 ## How a session is judged active or idle
 
-The pane title says which agent is attached, never what it is doing: Claude Code
-shows a spinner only while working in the foreground, so a session driving a
-subagent looks the same as one stopped hours ago. Judging on the title alone put
-every tracked pane in the pit.
+Titles identify candidates through a spinner, Claude's `✳` prefix, current Codex
+`task | project` titles, or legacy `[Status] task|project` titles. Direct agent
+command basenames also identify candidates; unrelated `node` titles do not.
+Presence alone does not prove idle or active work.
 
-State therefore comes from **window silence** - how long since the window last
-produced output. A working pane writes continuously, spinner redraws included, so
-recent output is evidence of work even when the title cannot show it; an idle
-pane goes quiet for minutes to hours with no heartbeat. Silence under a minute
-reads active, over it reads idle, and a pane whose title carries stronger
-evidence (a spinner, `Thinking`, `Working`, `Action Required`) still wins on the
-title.
+Title precedence matches the shell for equivalent evidence: spinner first,
+then a structured Codex `[Thinking] ` or active prefix (`Working`, `Running`,
+`Processing`, `Executing`, `Loading`), then `[Action Required] `. Codex status
+prefixes require a recognized Codex title. Task words never become status
+signals: `[Ready] Action Required | project` is presence, and `✳ Thinking` is a
+static Claude title. A spinner with Action Required text remains active.
 
-Confidence is medium for spinner, working/thinking, and usable window-activity
-evidence, low for permission/ready/idle title tokens or a static provider title
-without usable activity, and none for an unclassified command candidate. It is
-never high. tmux exposes activity per
-**window**, not per pane, so a second pane in the same window - an editor, a
-`tail -f` - marks its neighbour active. Running one agent pane per window is what
-keeps that rare, which makes the convention below load-bearing for accuracy, not
-just for tooltips.
+Static Claude and Codex titles, including `[Ready] ` and `[Idle] `, use the
+existing **window silence** fallback. Silence under 60 seconds reads active;
+60 seconds or more reads idle. Unusable activity gives low-confidence idle;
+this is a fallback label, not measured silence or proof that a turn ended.
+Command-only candidates remain unknown. Control-bearing titles are rejected;
+a direct command candidate with such a title remains unknown.
+
+Confidence is medium for spinner, structured working/thinking, and usable
+window-activity evidence, low for structured permission or a static provider
+title without usable activity, and none for an unclassified command candidate.
+It is never high. tmux exposes activity per **window**, not per pane, so output
+from a sibling editor or `tail -f` can mark an agent active. One agent pane per
+window reduces this ambiguity. A silent agent driving a subagent can still look
+idle; silence is not authoritative lifecycle evidence.
 
 The dashboard does not read the busy/needs/subagent state files used by
 [`tmux-llm-status`](../README.md#status-bar-markers). That status bar gives
 Claude's hook observations precedence over title fallback; the dashboard uses
-title tokens and window activity alone. The two surfaces can disagree, including
+titles and window activity alone. The two surfaces can disagree, including
 when a sibling pane produces output. [#100](https://github.com/ajason13/terminal-dotfiles/issues/100)
-records the [evidence comparison and recommendation](../docs/activity-evidence-research.md):
-defer shared collection pending identity/privacy decisions and align title fallback
-separately. No shared-hook collector is shipped.
+records the [historical comparison and current title-alignment results](../docs/activity-evidence-research.md).
+Shared hook collection remains deferred pending identity/privacy decisions.
+Existing exported fields and the validator's closed tuple vocabulary are
+unchanged, including support for historical `tmux_title_ready_idle` snapshots.
 
 A reading the collector could not stand behind renders as unsettled rather than
 settled: a dashed state ring, a dimmed car, and `unconfirmed` in the tooltip and
