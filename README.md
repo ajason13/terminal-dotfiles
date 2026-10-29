@@ -9,6 +9,46 @@ For native Windows WezTerm with tmux inside WSL 2, follow the
 [Windows 10/11 setup guide](docs/windows-setup.md). The macOS installer and
 Homebrew dependency guide below are for Macs.
 
+## Quick setup
+
+1. Check [requirements](#requirements), then [install](#install-on-a-mac) in
+   copy mode or use [link mode](#local-editing-mode) for live editing.
+2. Apply [local overrides](#local-overrides); agent hooks and status-line
+   settings are [manual setup](docs/agent-status.md#registering-the-hooks).
+3. Use the keys below. See [uninstall and restore](#uninstall-and-restore)
+   to remove the setup or restore backups.
+
+| Task | Guide |
+| --- | --- |
+| Agent markers, hook registration, session ordering | [Agent activity](docs/agent-status.md) |
+| Claude status-line settings | [Claude status line](docs/claude-statusline.md) |
+| Optional Salesforce coordination | [Org leases](docs/salesforce-leases.md) |
+| Optional tools and reboot recovery | [Tools and persistence](docs/optional-tools.md), [Codex recovery](docs/codex-restore.md) |
+| Optional dashboard, fixtures and live opt-in | [Night Pass](dashboard/README.md) |
+| Wallpaper rotation, inbox and publishing | [Backgrounds](docs/backgrounds.md) |
+| Issue delivery and usage | [Codex workflow](docs/codex-workflow.md), [budget runner](docs/codex-budget.md) |
+| Repository layout and contributor checks | [Repository guide](docs/repository-guide.md) |
+| Editor setup and review keys | [Neovim](nvim/README.md) |
+
+## Main keybindings
+
+`Ctrl-a` is the tmux prefix; release it before the next key.
+
+| Keys | Action |
+| --- | --- |
+| `Ctrl-a \` / `Ctrl-a -` | Split horizontally / vertically |
+| `Ctrl-a h/j/k/l` | Move between panes |
+| `Ctrl-a s` / `Ctrl-a S` / `Ctrl-a $` | Pick / create / rename a session |
+| `Ctrl-a A` / `Ctrl-a a` | Open agent table / jump to next waiting agent |
+| `Ctrl-a P` | Copy the pane's whole scrollback |
+| `Ctrl-a r` | Reload tmux configuration |
+| `Cmd-r` | Reload WezTerm if module changes have not appeared |
+| `Ctrl-Shift-Space` | Quick Select: open paths, PNGs or web targets |
+
+Press `q` to leave tmux scrollback mode and return to typing. Optional
+[persistence keys](docs/optional-tools.md#tmux-plugins-session-persistence)
+require separate plugin setup.
+
 ## What This Includes
 
 - WezTerm attaches your most recently used tmux session, creating `main` if no
@@ -60,267 +100,23 @@ Homebrew dependency guide below are for Macs.
 
 ## Status bar markers
 
-| Marker | Meaning |
-| --- | --- |
-| `⠹` | a turn is running, no fan-out |
-| `⠹N` | N subagents in flight |
-| `◆` | agent present, idle |
-| `○` | Claude turn ended while unviewed; awaiting acknowledgement |
-| `!` | a permission or question prompt is waiting on you |
-
-`N` is suppressed at 1. Both working states come from `tmux-agent-depth.sh`,
-under `$TMUX_LLM_STATE_HOME/panes/` (default `~/.local/state/tmux-llm`, override
-with `TMUX_LLM_STATE_HOME`):
-
-- **depth** - one file per in-flight subagent in `<pane>.agents/`
-- **busy** - `<pane>.busy`, holding the epoch of the last event in the turn
-
-Busy is not a nicety. Claude Code used to animate its terminal title with
-braille frames while working; since 2.1.2xx it shows a static `✳ <summary>`
-whether it is thinking or idle, so the title can no longer answer "is this pane
-working?" at all. Without the hooks registered, every Claude window sits on `◆`
-forever and the spinner appears only during a fan-out.
-
-Busy is read as **fresh**, not merely present: `Stop` does not fire when you
-interrupt a turn, so an existence check alone would spin forever afterwards.
-`UserPromptSubmit` opens the turn, `PostToolBatch` heartbeats it, and
-`Stop`/`StopFailure` close it; the marker ages out after
-`TMUX_LLM_BUSY_TTL` seconds (default 1200, comfortably above one tool batch).
-
-Claude completion evidence is separate from working/idle/blocked state. A
-registered top-level `UserPromptSubmit` with a session ID opens a turn;
-`PostToolBatch` can refresh it while fresh. Only a matching top-level `Stop`
-within the busy TTL records an unseen completion. Startup, subagent stops,
-`StopFailure`, interruption (which has no Stop), and TTL expiry never create
-one. A new prompt, session start/end, or failure clears it. A session restart
-(including compact/resume) conservatively invalidates completion tracking until
-the next prompt. Missing IDs/hooks or an expired turn can miss a completion;
-they cannot substitute idle/title heuristics for completion evidence.
-
-The badge means **an observed turn ending**, not passing tests, verified work,
-or a completed issue/PR. Like other [Stop observers](https://code.claude.com/docs/en/hooks#stop), it sees
-the hook event, not the outcome of other Stop hooks that might ask Claude to continue.
-Working and blocked evidence always outrank it. Window/session rollups show
-`○N` for windows dominated by unseen completions; the agent table shows
-`○ unseen` ahead of ordinary idle rows. Other providers retain their existing
-behavior and never gain a completion badge from title text.
-
-A pane counts as viewed when it is the **active pane in the current window of
-any attached, non-control tmux client**, as observed at Stop or by a status/table
-refresh (normally every second). Detached sessions, background windows, inactive
-split panes, and control-mode clients do not acknowledge it. Any viewing client
-can acknowledge for everyone, including clients in different sessions viewing a
-linked window. This is a tmux selection rule: it cannot prove OS focus or human
-attention, and a visit shorter than the polling interval may be missed. To clear
-explicitly, run `tmux-llm-status ack %3` (find IDs with
-`tmux list-panes -a -F '#{pane_id}'`). `explain` remains read-only and reports
-completion eligibility separately from lifecycle state.
-
-Completion/turn records use pane-local `@llm_unseen`, `@llm_turn`, and
-`@llm_owner` tmux options, bound to the pane process and Claude session. Hook
-producers must descend from the current pane process and name the current server
-PID; unavailable process/server identity suppresses completion tracking. Delayed
-events from another session cannot clear current evidence. They disappear with the pane or
-server; respawning a pane rejects the prior process's evidence. No transcript,
-prompt, or response text is saved. Install the hook and status helper together;
-no dashboard snapshot/schema change or new notification channel is involved.
-
-Codex task/project titles count as present; only a spinner or a structured
-`[Thinking]`/`[Working]` (and other active status) prefix counts as working.
-A structured `[Action Required]` prefix counts as waiting; `[Ready]` and
-`[Idle]` count as present. Status words inside task names do not change the
-marker. Claude's permission/question and busy hooks retain precedence over titles.
-
-Codex panes get presence and the title-based working state, but never a depth
-number or a busy marker, because Codex fires neither `SubagentStart` nor these
-turn events. The title matchers stay in place for exactly that reason.
-
-`tmux-llm-status prune` drops state for panes tmux no longer reports, so a dead
-pane's leftovers cannot linger. If a marker still shows a spinner with no real
-work running - a missed `SubagentStop` left a file behind - clear it by hand:
-`rm -rf ~/.local/state/tmux-llm/panes/<pane>.agents ~/.local/state/tmux-llm/panes/<pane>.busy`.
-
-The status publisher records its owner in the server-local `@llm_daemon_pid`
-option. Duplicate publishers retire themselves when a replacement takes over,
-so different versions cannot continually overwrite each other's icons. Each
-tmux server has its own publisher. `tmux-llm-status restart` replaces it;
-`stop` revokes ownership and lets it finish its current polling cycle. When
-upgrading from the older PID-file launcher, stop any surviving old
-`tmux-llm-status run` processes once before starting the new publisher.
+See [Status bar markers](docs/agent-status.md#status-bar-markers).
 
 ### Explain a pane's status
 
-Use `tmux list-panes -a -F '#{pane_id}'` to find a pane ID, then run:
-
-```sh
-tmux-llm-status explain %3
-```
-
-For example, a running Claude turn can report `Status/daemon: active; winning
-rule: fresh-busy-marker`, with its busy age and TTL in seconds. A blocked prompt
-wins over busy/depth signals; expired or malformed busy evidence falls through
-to title/command presence. The report lists lower-priority evidence even when
-ignored, and identifies stale needs markers ignored on bare shells.
-
-The command evaluates the existing classifier twice: status/daemon context,
-then table context with live Claude session records. A parked session can be
-`none` in the status bar but `present` in the table; session records require
-`jq`. Missing marker files cannot distinguish unregistered hooks from idle
-agents. Needs/depth have no TTL; future busy timestamps retain the existing
-classifier behavior. Neither a fresh marker nor a session record proves that a
-reused pane ID still belongs to the original process. This is a point-in-time
-observation, so a changing pane may differ on the next status refresh.
-
-Only explicit `%<digits>` IDs are accepted. Exit status is 0 for a live pane
-(including a non-agent), 1 for a missing/dead pane or unavailable server, and 2
-for invalid arguments. The command reads metadata and existing hook/session
-records, never pane content/history, and does not repair files, prune state,
-update status options, or send notifications. It omits raw titles, commands,
-agent names, paths, and marker contents. To report a status bug, paste this
-output with the expected state and whether hooks are registered; do not attach
-transcripts or settings. Review even sanitized output before sharing it.
+See [Explain a pane's status](docs/agent-status.md#explain-a-panes-status).
 
 ### Registering the hooks
 
-`~/.claude/settings.json` is never written by this repo, so merge these by hand,
-appending to any array that already exists:
-
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      { "hooks": [{ "type": "command", "command": "$HOME/.claude/hooks/tmux-agent-depth.sh", "timeout": 5 }] }
-    ],
-    "PostToolBatch": [
-      { "hooks": [{ "type": "command", "command": "$HOME/.claude/hooks/tmux-agent-depth.sh", "timeout": 5 }] }
-    ],
-    "Stop": [
-      { "hooks": [{ "type": "command", "command": "$HOME/.claude/hooks/tmux-agent-depth.sh", "timeout": 5 }] }
-    ],
-    "StopFailure": [
-      { "hooks": [{ "type": "command", "command": "$HOME/.claude/hooks/tmux-agent-depth.sh", "timeout": 5 }] }
-    ],
-    "SubagentStart": [
-      { "hooks": [{ "type": "command", "command": "$HOME/.claude/hooks/tmux-agent-depth.sh", "timeout": 5 }] }
-    ],
-    "SubagentStop": [
-      { "hooks": [{ "type": "command", "command": "$HOME/.claude/hooks/tmux-agent-depth.sh", "timeout": 5 }] }
-    ],
-    "SessionStart": [
-      { "hooks": [{ "type": "command", "command": "$HOME/.claude/hooks/tmux-agent-depth.sh", "timeout": 5 }] }
-    ],
-    "SessionEnd": [
-      { "hooks": [{ "type": "command", "command": "$HOME/.claude/hooks/tmux-agent-depth.sh", "timeout": 5 }] }
-    ],
-    "Notification": [
-      { "matcher": "permission_prompt|elicitation_dialog", "hooks": [{ "type": "command", "command": "$HOME/.claude/hooks/tmux-agent-depth.sh", "timeout": 5 }] }
-    ]
-  }
-}
-```
-
-The first four are the busy marker, the next two are depth, the next two
-reset a pane, and `Notification` is the blocked `!`. Esc on a prompt fires no
-hook, so `!` stays until you next type in that pane. No event marks a prompt as
-approved, so an approved long-running tool keeps `!` until its batch finishes. Registering only some is fine - each state degrades to absent
-rather than wrong - but dropping `Stop` leaves every pane spinning until the
-TTL expires.
+See [Registering the hooks](docs/agent-status.md#registering-the-hooks).
 
 ## tmux Session Order
 
-`Ctrl-a s` (`choose-tree`) lists sessions in creation order, which is session id
-order, and tmux has no command to move a session within it. `choose-tree -O name`
-sorts by name instead - tempting for keeping a prefixed family like `E2E - *`
-adjacent, but the same sort field applies one level down, so every session's
-window list turns alphabetical too. That is why the picker stays on the default.
-
-`tmux-session-to-end` is the other lever: it rebuilds a session around a fresh
-id so the session lands at the end of the list. Windows are relinked with
-`move-window` rather than recreated, so pane processes - agents, dev servers,
-long-running tests - keep running, and window indices survive.
-
-```bash
-tmux-session-to-end Workflow                        # send one session to the end
-tmux-session-to-end Workflow 'Manual Testing' Scrum # tail order follows argument order
-```
-
-To group a family, send everything that sits between its members to the end. It
-holds until the next session is created, since new sessions also land last.
-
+See [tmux Session Order](docs/agent-status.md#tmux-session-order).
 
 ## Layout
 
-```text
-.
-├── LICENSE
-├── README.md
-├── bin
-│   ├── codex-restore
-│   ├── sf-lease
-│   ├── sf-org-resolve
-│   ├── tmux-agent-resume
-│   └── tmux-session-to-end
-├── claude
-│   ├── hooks
-│   │   ├── sf-lease-end.sh
-│   │   ├── sf-lease-guard.sh
-│   │   ├── sf-lease-post.sh
-│   │   ├── sf-lease-table.sh
-│   │   └── tmux-agent-depth.sh
-│   └── statusline.sh
-├── codex
-│   ├── AGENTS.md
-│   ├── agents
-│   ├── bin
-│   │   └── codex-role
-│   ├── config.toml
-│   └── profiles
-├── install-macos.sh
-├── nvim
-│   ├── init.lua
-│   ├── lazy-lock.json
-│   └── lua
-│       ├── config
-│       │   ├── keymaps.lua
-│       │   └── options.lua
-│       └── plugins
-│           ├── editing.lua
-│           ├── git.lua
-│           ├── oil.lua
-│           ├── telescope.lua
-│           ├── treesitter.lua
-│           ├── ui.lua
-│           └── which-key.lua
-├── scripts
-│   ├── check-background-assets.sh
-│   └── check-background-inbox.sh
-├── tmux
-│   ├── tmux.conf
-│   ├── tmux.local.conf.example
-│   └── tmux-llm-status
-├── uninstall-macos.sh
-└── wezterm
-    ├── .wezterm.lua
-    ├── wezterm.lua
-    ├── local.lua.example
-    ├── modules
-    │   ├── appearance.lua
-    │   ├── backgrounds.lua
-    │   ├── background_manifests
-    │   │   ├── anime.lua
-    │   │   ├── general.lua
-    │   │   └── vehicles.lua
-    │   ├── general.lua
-    │   ├── links.lua
-    │   └── macos.lua
-    └── assets
-        ├── backgrounds
-        │   ├── 000-general
-        │   ├── 100-vehicles
-        │   └── 200-anime
-        └── inbox
-            └── _sample
-```
+See [Layout](docs/repository-guide.md#layout).
 
 ## Requirements
 
@@ -509,427 +305,51 @@ a fully clean slate, quit all WezTerm windows (or run `tmux kill-server`).
 
 ## Claude Code Status Line
 
-`claude/statusline.sh` renders one line under the prompt, joining only the
-segments whose data is available, in this order:
-
-| Segment | Source |
-| --- | --- |
-| `opus-5` | the session model, abbreviated |
-| branch | the worktree's branch, else the branch at `cwd` |
-| `ctx 34%` | share of the context window in use |
-| `5h 2% (3h) · 7d 99% (2d)` | rate-limit usage, and the time left in each window |
-
-`ctx` comes from `context_window.used_percentage`, which Claude Code
-pre-calculates. That field is null before the session's first API call and again
-after `/compact`, so the segment drops out until the next call rather than
-standing in a placeholder `ctx 0%`.
-
-The reset spans are rendered as time remaining rather than a wall-clock time, so
-the number reads without arithmetic; the parenthetical is dropped when the
-payload carries no reset or the window has already rolled over.
-
-The only subprocesses left are a local `git rev-parse`, when the payload carries
-no worktree branch, and one `date +%s`, when there is a reset to measure against
-- macOS ships bash 3.2, which has no `$EPOCHSECONDS`. Nothing touches the
-network or reads a file, so a render never waits on one.
-
-**No path.** A path segment sat between branch and rate-limit usage, rendering
-`cwd` relative to the worktree root. Under one window per task `cwd` is the
-worktree root nearly always, so the segment showed a bare `.` - a character that
-took up room without ever telling one session from another. `worktree.path` was
-read only to build it, so that read went with it.
-
-**No Salesforce org.** An `sf:<org>` segment led the line, red `⚠PROD` when the
-target looked like production, fed by a `PreToolUse` hook that recorded the org
-of the last test command. It was removed because it was silent in the sessions
-that needed it most: the hook matched only Playwright invocations, so canary
-vitest runs never updated it, and its `.env` fallback looked at the project root
-while canary's package lives a directory down. Prod canary runs therefore showed
-nothing at all, and a `⚠PROD` badge that stays silent teaches you to read
-silence as safe. `sf-org-resolve` and the lease system are unaffected - they
-never depended on this - and dropping the hook leaves them the single copy of
-the org-resolution logic.
-
-**No PR state.** A `PR #<n>` segment sat between branch and path, colored by
-open/draft/merged/closed. It cost a backgrounded `gh pr view` per render behind
-a 15-second cache, and the window name already carries the PR. Claude Code does
-now pass `pr.number` and `pr.review_state` in the status-line payload, so
-restoring it costs one `jq` read rather than the cache - worth knowing if the
-window-name habit ever changes.
-
-**No session objective.** A `▸ <objective>` segment used to lead the line,
-seeded from the session's first substantive prompt. One window per task means
-the window name already says what the session is for, so the segment and the
-capture pipeline behind it - `session-objective`, `/objective`, and their
-`UserPromptSubmit`/`SessionStart` hooks - were removed rather than kept as a
-second copy of the window name. Uninstall still clears the two installed paths
-from machines that had them.
+See [Claude Code Status Line](docs/claude-statusline.md#claude-code-status-line).
 
 ### Claude Code settings (manual step)
 
-`~/.claude/settings.json` is **not** installed by this repo: it carries a
-personal MCP tool allowlist and this repo is public. Point the status line at
-the installed script by hand:
-
-```json
-{ "statusLine": { "type": "command", "command": "~/.claude/statusline.sh" } }
-```
-
-The activity hooks are listed under [Status bar markers](#status-bar-markers).
-The [Salesforce lease hooks](#salesforce-org-leases) are separate; the retired
-CRM-org tracker no longer feeds the status line.
-Hooks added to a running session may need `/hooks` opened once, or a restart,
-before they take effect.
+See [Claude Code settings (manual step)](docs/claude-statusline.md#claude-code-settings-manual-step).
 
 ## Salesforce Org Leases
 
-Two Claude sessions running tests against the same shared Salesforce org corrupt
-each other's data. This makes that collision visible instead of silent: a session
-whose Bash call would touch an org another session is already testing is
-**blocked before the command runs**, with the holding session named.
-
-It is **advisory, single-machine, and covers only Claude-driven Bash calls.** A
-command you type in a bare terminal, a task launched from an editor, and anything
-on another machine take no lease and are never blocked. A lease means "another
-session says it is using this org" - it is not a lock on the org itself.
-
-Everything here is **off** until `SF_LEASE_ENABLE` is set. Installing it changes
-nothing on its own.
+See [Salesforce Org Leases](docs/salesforce-leases.md#salesforce-org-leases).
 
 ### The three pieces
 
-Each knows as little as possible about the others.
-
-- **`sf-org-resolve <cwd> <command>`** answers *which org would this command
-  touch?* It recognises test invocations (`playwright test`, `npx playwright`,
-  `npm run test*`, `vitest run`, `test:last-failed`) **at the start of a command
-  segment** - the beginning of the command, or after `&&`, `||`, `;`, `|` or a
-  newline - so `cd repo && npm run test:staging` counts and
-  `git commit -m "fix the npx playwright test flake"` does not. It then reads the
-  same configuration the run itself would read - an inline
-  `SF_ORG_ALIAS=`/`SF_BASE_URL=` prefix, the `dotenv -e` file a `package.json`
-  script names, otherwise `.env`/`.env.<TEST_ENV>` in that directory - and
-  canonicalizes the result through `~/.config/sf-org-identity/map`, because two
-  repos name the same org differently. It prints one identity or nothing, and
-  knows nothing about leases. A run with `SF_SCRATCH_POOL=1` provisions its own
-  org, so it resolves to nothing on purpose (an allowlist: `SF_SCRATCH_POOL=no`
-  is *not* a pooled run and still takes a lease).
-
-  It exits `0` with an identity, `1` for "no lease needed", and `3` for **its
-  configuration being present and unusable** - an unreadable org map or env file,
-  or a map entry that is not a usable identity. rc 3 exists because as rc 1 it was
-  indistinguishable from "not a test command": leasing was simply off, with no log
-  line anywhere. The hooks still let the call through on rc 3, but they say so
-  loudly in the hook log.
-- **`sf-lease`** is the lease store: `claim`, `release`, `release-session`,
-  `bind`, `release-call`, `holder`, `list`, `sweep`, `unwedge`. State lives in
-  `~/.local/state/sf-leases/`, one directory per identity, and every mutation
-  runs under a single store-wide mutex. It knows nothing about Salesforce - it
-  leases opaque strings.
-- **Four Claude Code hooks** connect the two to the session lifecycle:
-  `sf-lease-guard.sh` (PreToolUse/Bash) claims or blocks with exit 2;
-  `sf-lease-post.sh` (PostToolUse/Bash) releases only that call's claim on
-  its original identity, using the shared `tool_use_id`, so another overlapping
-  call from the session keeps its claim; `sf-lease-end.sh` (SessionEnd) releases
-  everything the session still holds; `sf-lease-table.sh` (SessionStart) prints what is already leased.
-
-Every hook fails **open**: a missing binary, an unparseable payload, a busy store
-or any unexpected exit code lets the call through. Only a live competing holder
-blocks. A guard that can stop every Bash call in every session has to be built
-that way - including the session you would fix it from.
+See [The three pieces](docs/salesforce-leases.md#the-three-pieces).
 
 ### Arming it, in this order
 
-1. `./install-macos.sh` puts the two binaries in `~/.local/bin` and the four hook
-   scripts in `~/.claude/hooks`. Both are inert at this point.
-2. Merge the hooks into `~/.claude/settings.json` **by hand**, keeping whatever
-   is already registered there - `PreToolUse` and `SessionStart` commonly
-   already carry entries, so append to those arrays. Do not merge with
-   `jq '.[0] * .[1]'`: that replaces arrays, which silently drops the hooks
-   already in the file.
-
-   ```json
-   {
-     "hooks": {
-       "PreToolUse": [
-         { "matcher": "Bash", "hooks": [{ "type": "command", "command": "$HOME/.claude/hooks/sf-lease-guard.sh", "timeout": 15 }] }
-       ],
-       "PostToolUse": [
-         { "matcher": "Bash", "hooks": [{ "type": "command", "command": "$HOME/.claude/hooks/sf-lease-post.sh", "timeout": 30 }] }
-       ],
-       "SessionEnd": [
-         { "hooks": [{ "type": "command", "command": "$HOME/.claude/hooks/sf-lease-end.sh", "timeout": 30 }] }
-       ],
-       "SessionStart": [
-         { "hooks": [{ "type": "command", "command": "$HOME/.claude/hooks/sf-lease-table.sh", "timeout": 10 }] }
-       ]
-     }
-   }
-   ```
-
-3. **Confirm they are inert.** Restart a session, run a few Bash calls including
-   a test command, and check that nothing was blocked, `sf-lease list` prints
-   nothing, and `~/.local/state/sf-leases/hook.log` has no new lines.
-4. Only then `export SF_LEASE_ENABLE=1` (shell profile) and restart.
-
-To back out, `unset SF_LEASE_ENABLE` and restart - the hooks go inert again with
-their registration intact. `./uninstall-macos.sh` removes the scripts, but it
-does not edit `settings.json`; unregister them there first, since an entry
-pointing at a missing hook errors on every Bash call.
+See [Arming it, in this order](docs/salesforce-leases.md#arming-it-in-this-order).
 
 ### Knobs
 
-- `SF_LEASE_ENABLE` - the arming switch, matched against an allowlist
-  (`1`, `on`, `true`, `yes`, any capitalization). Anything else, including `off`
-  and a typo, leaves it **off**.
-- `SF_LEASE_TTL_MINUTES` (default `120`, range **1-1440**) - the expiry threshold
-  after the last claim or process binding. A bound, live Bash call retains
-  exclusion even beyond this threshold. Once its process exits, the ordinary
-  timeout applies; no heartbeat or background worker renews abandoned calls.
-  Unbound and legacy calls have TTL-only protection. The upper bound
-  is literal, not cosmetic: this knob drives the only multiplication in `sf-lease`,
-  and `200000000000000000` wrapped `ttl * 60` to a *negative* number, which made
-  every lease read stale and handed a rival an org its real holder was still
-  running against. Out of range is `rc 64`, reported in the hook log.
-- `SF_LEASE_MUTEX_WEDGE_SECONDS` (default `60`, range **30-86400**) - how old the
-  claim mutex has to be before `list` warns and `unwedge` will consider clearing
-  it. It has a **floor** as well as a ceiling, because a value below one (or one
-  wrapped negative past int64) let `unwedge` delete a mutex a live claim was
-  holding, with no `--force`.
-- `SF_LEASE_HOOK_RETRIES` (default `2`, **capped at 5**) - how many times the
-  release hooks retry a busy store. `0` is the escape hatch: one attempt, no
-  retry, when a wedged store is making every Bash call slow. Do not try to raise
-  it past the cap - each retry costs a full mutex timeout on *every* Bash call.
-  A value past the cap, a non-integer, or a leading zero (bash reads `08` as
-  octal) falls back to `2` and says so in the hook log.
-- `SF_LEASE_MUTEX_TIMEOUT_MS` (default `5000`, which is also its **ceiling**) -
-  how long a claim waits for the store mutex. It can only be lowered. `20000`
-  made a single Bash call's guard take 26s and `86400000` - the
-  milliseconds-per-day typo - was still spinning at 30s; both are perfectly
-  valid integers, which is why the ceiling is a literal bound rather than a
-  validation rule. This one *clamps* instead of refusing, unlike the two knobs
-  above: it sits on the PreToolUse hot path, where too long a wait is a stall
-  rather than a wrong answer, so clamping keeps leasing working where `rc 64`
-  would switch it off over a typo. Past a day in milliseconds it is refused,
-  because that is a number in the wrong variable rather than a wait.
-
-A malformed value in any of those three is `rc 64` from `sf-lease`, which the hooks
-log naming both possible causes - the knob and their own argument plumbing - and
-then allow the call. **A bad knob means leasing is off**, so it is worth reading
-the log line rather than assuming a hook bug.
-- `SF_LEASE_HOME` (default `~/.local/state/sf-leases`), `SF_ORG_MAP` (default
-  `~/.config/sf-org-identity/map`), `SF_LEASE_LOG`, `SF_LEASE_BIN`,
-  `SF_ORG_RESOLVE_BIN` - relocations, mostly for the test suites.
+See [Knobs](docs/salesforce-leases.md#knobs).
 
 ### Day to day
 
-```sh
-sf-lease list                     # who holds what; silent when nothing is held
-sf-lease holder <org>
-sf-lease release <org> <session> <token> # finish one identified call
-sf-lease release <org> <session>         # finish the legacy CLI claim only
-sf-lease release-session <session>
-```
-
-Claims accept an optional invocation token:
-`sf-lease claim <org> <session> <command> [token]`. Release with the same
-session and token. Tokens are 1–200 ASCII letters, digits, `.`, `_`, `:`, or
-`-`; use a distinct token for each invocation and never reuse it. Duplicate
-claims/releases are harmless while the lease exists. Released tokens remain
-in metadata while sibling claims are active, so a delayed duplicate cannot
-revive a finished call. A wrong session/token cannot release another claim.
-`sf-lease holder <org>` also prints the active/released claim IDs for recovery.
-
-Token-free CLI calls share one legacy slot and keep their historical reentrant
-claim/release behavior. Old metadata is imported as an active legacy slot;
-tokenized calls never discard it. A token-free release clears only that slot,
-leaving identified calls held. `release-session` clears all claims owned by the
-named session across orgs: use it for recovery only after those calls stop.
-
-The hooks use `tool_use_id` from the documented
-[PreToolUse](https://code.claude.com/docs/en/hooks#pretooluse-input) and
-[PostToolUse](https://code.claude.com/docs/en/hooks#posttooluse-input) payloads.
-If the ID is absent or invalid, the guard conservatively claims the legacy
-slot and logs it; the post hook logs and releases nothing. SessionEnd, manual
-legacy release after calls finish, or TTL expiry cleans up that slot. Failed,
-interrupted, or missed post hooks likewise leave inspectable claims for
-SessionEnd/manual cleanup/TTL.
-
-For identified calls, the guard returns a
-[PreToolUse input update](https://code.claude.com/docs/en/hooks#pretooluse-decision-control)
-that prepends `sf-lease bind` to the original command. It preserves all other
-input fields and leaves normal permission decisions to Claude Code. The binding
-runs inside the actual tool shell, recording its PID and process start time
-in that call's metadata. Expiry checks compare both, reject zombies, and retain
-exclusion while any bound active call still matches. An `exec` replacement
-retains that process identity. PostToolUse releases by session/call ID across
-orgs, so the prefix and changes of directory cannot redirect cleanup. If
-PostToolUse arrives while the bound process is still alive (for example, a tool
-started in the background), cleanup retains the claim and logs why. It then
-expires after process exit under the bounds below, or SessionEnd/manual cleanup
-can release it after the call stops. An uncertain process observation likewise
-retains the claim. `release-call <session> <token>` returns 1 in those cases;
-explicit `release` and `release-session` remain operator recovery commands.
-
-This protects the executing shell's lifetime, including foreground commands it
-waits for. Detached descendants that outlive it are outside the call lifetime;
-wait for test commands rather than launching them with `&`, and stop remaining
-children before manual cleanup after a killed shell. Missing post hooks leave
-claims until SessionEnd, manual cleanup, or expiry after the bound process
-exits. If the TTL has already elapsed, the next claim/sweep can reclaim the
-lease immediately after process exit. Otherwise it can remain until the last
-claim/bind timestamp plus the TTL. No worker needs termination or crash cleanup.
-
-Binding refuses missing/released claims, a different session, and rebinding an
-invocation to a different process. Delayed cleanup cannot remove a replacement
-call with a distinct token. If binding fails (including a claim that expired
-while awaiting permission), stderr warns that the call has TTL-only protection;
-the command still runs under the existing advisory/fail-open policy. Check
-`sf-lease list` and stop competing runs before retrying. Older clients that
-ignore input updates likewise have TTL-only protection. If `ps` cannot provide
-a usable observation during expiry, the lease stays held and stderr reports
-`liveness uncertain`. Confirm every call has stopped, inspect
-`sf-lease holder <org>`, and then use `sf-lease release-session <session>`.
-Expiry also reports when bound processes have ended or changed identity. The
-claim hook records these expiry diagnostics in its bounded log.
-`holder` prints the recorded PID/start time alongside each bound call.
-
-Deploy the binary and hooks together with the installer while no leased calls
-are running. Older hooks/binaries do not implement per-call ownership; do not
-mix versions or roll back while tokenized claims remain active. Settings
-registration and the off-by-default arming gate remain manual.
-
-`SF_SCRATCH_POOL=1` on a run bypasses leasing entirely - that run claims its own
-scratch org from the e2e pool, which has its own lock directory. `sf-lease list`
-shows those pool locks alongside the org leases, read-only, so one command gives
-the whole picture.
+See [Day to day](docs/salesforce-leases.md#day-to-day).
 
 ### When the store wedges
 
-The claim mutex is held for tens of milliseconds and is never auto-recovered: an
-age-based "fix" would reintroduce the exact race the mutex exists to close. So a
-process killed inside its critical section leaves the store wedged, and recovery
-is a human step.
-
-Nothing is blocked while it is wedged - claims fail open - but every Bash call in
-every armed session pays for it: about **5s in the PreToolUse hook plus 15.4s in
-the PostToolUse hook, roughly 20.4s per call** at the default retry count, each
-writing an `rc=75` line to the hook log that names the fix.
-
-```sh
-sf-lease list      # warns when the mutex has been held longer than a minute
-sf-lease unwedge   # refuses unless the mutex is old AND its owning pid is gone
-```
-
-`sf-lease unwedge --force` skips both proofs and **can hand the same org to two
-sessions at once**, including every session that claims after it. Use it only
-when you are certain the owning process is dead.
+See [When the store wedges](docs/salesforce-leases.md#when-the-store-wedges).
 
 ### Where the real identifiers live
 
-Both are local, outside this repo, and neither is ever committed:
-
-- `~/.config/sf-org-identity/map` - the two-column raw-to-canonical org map.
-  This repo's tests use fakes (`orga`, `orgb`) only.
-- `~/.local/state/sf-leases/hook.log` - hook diagnostics, and it contains **org
-  identities and Claude session ids**. Rotated at 256KB with one previous copy
-  kept, so about 512KB at most.
-
-`./uninstall-macos.sh` removes the binaries and hooks but **leaves that store in
-place** - it can hold a live lease belonging to another running session, and the
-script only removes what it installed. It prints the path and the `rm -rf` to
-finish the job.
+See [Where the real identifiers live](docs/salesforce-leases.md#where-the-real-identifiers-live).
 
 ### Adding a third repo to the map
 
-Two repos only collide if they resolve to the *same* string, so a new repo has to
-be mapped to whatever the other two already canonicalize to. Ask the resolver
-rather than guessing - it prints the raw value it derived, which is the left-hand
-column the map needs:
-
-```sh
-sf-org-resolve ~/Apps/some-repo 'npm run test:staging'   # prints e.g. 00Dfake0000000001
-sf-org-resolve ~/Apps/e2e-automation 'npx playwright test'
-```
-
-Then add a line per raw value in `~/.config/sf-org-identity/map` (whitespace-
-separated `raw canonical`, `#` comments, first match wins) pointing all of them at
-one canonical name, and re-run both commands: they must now print the same string.
-If the new repo prints nothing, it is not a recognised invocation shape or the
-config it reads is not one of the ones listed above; if it exits `3`, the map or an
-env file is present and unreadable.
+See [Adding a third repo to the map](docs/salesforce-leases.md#adding-a-third-repo-to-the-map).
 
 ### Known gaps
 
-- `cd "$VAR" && ...`, `pushd`, and any `cd` that is not the first command are
-  not followed. The lease keys off the payload's own working directory instead,
-  which can mean no lease or a lease for the wrong org if that directory has
-  resolvable configuration. Leading literal cd chains are limited to four hops.
-  The [shell-intent research](docs/sf-shell-intent-research.md) reproduces these
-  cases and compares parsing and explicit-wrapper alternatives; runtime behavior
-  remains unchanged.
-- **Matching is still on command text, not intent - and it can still block.**
-  Anchoring to a command segment fixed the single-line cases: with a rival holding
-  the org, `git commit -m "fix flake in npx playwright test"`, an `echo` into a
-  notes file, `gh pr create --body "...npx playwright test"` and
-  `git log --grep="playwright test"` used to return exit 2 and now return 0. What
-  is left is narrower but is the same kind of harm, so read it as a limitation on
-  what you can type, not as a leak.
-
-  A **newline counts as a segment boundary**, so any command whose *later lines*
-  begin with a test invocation resolves - which means it **takes a lease, and is
-  blocked outright while another session holds that org**. Measured at exit 2, all
-  of them routine work here:
-
-  - a multi-line `git commit -m` whose body mentions a suite (this repo's own
-    commit conventions mandate multi-line messages), e.g. a second line reading
-    `npx playwright test was red`
-  - `gh pr create --body "## Test plan⏎npx playwright test⏎"`
-  - a heredoc: `cat > notes.md <<EOF⏎npx playwright test⏎EOF`
-  - and the single-line variant of the same thing, a quoted separator:
-    `git commit -m "wip; npx playwright test"`
-
-  If one of these is refused, the command itself is fine - re-run it once the other
-  session finishes, or run that one call with `SF_LEASE_ENABLE= <command>` to make
-  the hook inert for it.
-
-  It cuts the other way too: a test command the segment rule cannot see takes **no
-  lease at all**, so `( npx playwright test )` and `echo $(npx playwright test)`
-  both run unprotected.
-
-  Closing this properly means parsing the shell - knowing which text is a command
-  and which is an argument - not a better regex, so it is deliberately not
-  attempted. A lease taken this way is still released by the PostToolUse hook for
-  the same call.
-- Calls from the same session retain independent claims when hook call IDs
-  are available. This excludes rival sessions until all claims finish; it does
-  **not** serialize the owning session's own calls against each other.
-  This fixes [#91](https://github.com/ajason13/terminal-dotfiles/issues/91),
-  delivered in [PR #112](https://github.com/ajason13/terminal-dotfiles/pull/112).
-- Bound live calls retain exclusion beyond TTL using process identity checks.
-  Missing IDs, ignored input updates, and failed binding leave TTL-only
-  protection. Missed post hooks use the cleanup and expiry bounds above.
-- Only the invocation shapes listed above are recognised. A runner started some
-  other way takes no lease.
+See [Known gaps](docs/salesforce-leases.md#known-gaps).
 
 ### Verifying it end to end
 
-Needs two live sessions. In session A, start a suite in a repo that resolves to a
-shared org; while it runs, ask session B for a test command against the same org.
-B's Bash call should be refused before it executes, naming A; `npm run lint`
-should never be. When A finishes, B's retry should succeed, and a third session's
-SessionStart should list the lease while A holds it.
-
-Use a bare `npx playwright test`. `TEST_ENV=staging` resolves to nothing in the
-e2e repo - there is no `.env.staging` there - so it would read as a false
-negative.
-
-Include one more case in session B while A holds the org: a **multi-line
-`git commit -m`** whose body mentions a suite. That is the shape the text-matching
-gap above governs, and it is the difference between "the guard stops test runs" and
-"the guard stops me writing a commit message". Expect it to be **refused** today -
-the point of running it is to see for yourself how often that would happen, and to
-decide whether that cost is acceptable before leaving the hooks armed.
+See [Verifying it end to end](docs/salesforce-leases.md#verifying-it-end-to-end).
 
 ## Local Overrides
 
@@ -979,234 +399,23 @@ cp tmux/tmux.local.conf.example ~/.tmux.local.conf
 
 ## Recommended Tools
 
-This is a menu, not a checklist. You adopt a tool by replacing a habit, and you
-can only build a habit or two at a time - so start with the short **Start here**
-set, then add the rest only when you hit the specific annoyance each one solves.
-Installing everything at once just leaves you with tools you forget you have.
-
-This repo manages WezTerm and tmux; the shell (`~/.zshrc`) and Git
-(`~/.gitconfig`) snippets below go in your personal dotfiles.
+See [Recommended Tools](docs/optional-tools.md#recommended-tools).
 
 ### Start here
 
-The daily-driver kit. Each item is either passive (install it and existing
-things just work better) or a single new reflex - together they cover most of
-the benefit.
-
-**A Nerd Font** - install first; the prompt and several tools use its glyphs.
-
-```sh
-brew install --cask font-jetbrains-mono-nerd-font
-```
-
-```lua
--- wezterm/local.lua: point WezTerm at it (appearance.lua sets the shared default)
-return {
-  apply = function(config, wezterm, env)
-    config.font = wezterm.font('JetBrainsMono Nerd Font')
-  end,
-}
-```
-
-**zsh-autosuggestions + zsh-syntax-highlighting** - passive: ghost text from
-history (accept with `->`/End) and command coloring. Just keep typing.
-
-```sh
-brew install zsh-autosuggestions zsh-syntax-highlighting
-```
-
-```sh
-# ~/.zshrc  (autosuggestions first; syntax-highlighting MUST be sourced last)
-if command -v brew >/dev/null 2>&1; then
-  ZSH_SHARE="$(brew --prefix)/share"
-  [ -f "$ZSH_SHARE/zsh-autosuggestions/zsh-autosuggestions.zsh" ] &&
-    source "$ZSH_SHARE/zsh-autosuggestions/zsh-autosuggestions.zsh"
-  [ -f "$ZSH_SHARE/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ] &&
-    source "$ZSH_SHARE/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
-fi
-```
-
-**starship** - passive: a more informative prompt (git state, exit codes), no
-new commands to learn.
-
-```sh
-brew install starship
-# ~/.zshrc:  eval "$(starship init zsh)"
-```
-
-**fzf** - one reflex: fuzzy `Ctrl-R` history search (and file pickers).
-
-```sh
-brew install fzf
-# ~/.zshrc:  source <(fzf --zsh)
-```
-
-A useful fzf-powered helper for jumping into git worktrees - handy since Claude
-Code creates them under `.claude/worktrees/` and typing those paths is tedious.
-Run `wt` for the picker, or `wt <filter>` to pre-filter - it jumps straight there
-when only one worktree matches. Worktrees are per-repo, so run it inside the repo:
-
-```sh
-# ~/.zshrc - jump to a git worktree of the current repo by fuzzy pick.
-# `wt` opens the picker; `wt <filter>` pre-filters (jumps if a single match).
-wt() {
-  local dir
-  dir=$(git worktree list 2>/dev/null | fzf --prompt='worktree> ' --query="$*" --select-1 --exit-0 | awk '{print $1}')
-  if [ -n "$dir" ]; then
-    cd "$dir"
-  else
-    echo "wt: no worktree matched (run inside the repo - worktrees are per-repo)" >&2
-  fi
-}
-```
-
-**zoxide** - one new verb: `z proj` instead of a long `cd` path.
-
-```sh
-brew install zoxide
-# ~/.zshrc:  eval "$(zoxide init zsh)"
-```
-
-**git-delta** - passive: syntax-highlighted git diffs.
-
-```sh
-brew install git-delta
-# ~/.gitconfig:  [core] pager = delta   (see `delta --help`)
-```
+See [Start here](docs/optional-tools.md#start-here).
 
 ### Add when you feel the need
 
-Install one only when its trigger actually bites. A tool adopted to solve a real
-annoyance sticks; one installed speculatively becomes clutter. (You already have
-`rg` and `jq`.)
-
-| Tool | Reach for it when... | Install |
-|---|---|---|
-| `lazygit` | multi-step git (staging hunks, rebasing, juggling branches) feels clumsy on the CLI | `brew install lazygit` |
-| `bat` | you `cat` a file and want syntax highlighting | `brew install bat` |
-| `eza` | plain `ls` feels flat and you want git status or a tree at a glance | `brew install eza` |
-| `fd` | `find`'s syntax annoys you | `brew install fd` |
-| `ripgrep` (`rg`) | `grep -r` is slow or noisy (also powers Neovim's finder later) | `brew install ripgrep` |
-| `yazi` | you want to browse, preview, and bulk-move files visually | `brew install yazi` |
-| `jq` / `yq` | you're poking at JSON / YAML (API responses, configs) | `brew install jq yq` |
-| `glow` | you want Markdown / LLM output rendered, not raw | `brew install glow` |
-| `atuin` | fzf's `Ctrl-R` isn't enough; you want searchable, cross-machine history | `brew install atuin` |
-| `btop` | something's hot and `top` isn't enough | `brew install btop` |
-| `dust` / `duf` | "what's eating my disk?" / you want a clearer `df` | `brew install dust duf` |
-| `procs` | `ps aux \| grep` gets old | `brew install procs` |
-| `watchexec` | you keep re-running a command after every file save | `brew install watchexec` |
+See [Add when you feel the need](docs/optional-tools.md#add-when-you-feel-the-need).
 
 ### tmux plugins (session persistence)
 
-Reach for these when you want your window/pane layout to survive a reboot:
-[tmux-resurrect](https://github.com/tmux-plugins/tmux-resurrect) saves and
-restores sessions, and
-[tmux-continuum](https://github.com/tmux-plugins/tmux-continuum) adds background
-auto-save plus auto-restore when the tmux server starts.
-
-Skip TPM here. TPM discovers plugins by scanning `~/.tmux.conf`, but in this repo
-that file is the shared config and machine-local settings belong in
-`~/.tmux.local.conf` (sourced last), which TPM does not scan - and `set -g @plugin`
-is a single option that later declarations overwrite. For a couple of plugins it
-is simpler and reliable to clone them and source their entry scripts directly:
-
-```sh
-git clone https://github.com/tmux-plugins/tmux-resurrect ~/.tmux/plugins/tmux-resurrect
-git clone https://github.com/tmux-plugins/tmux-continuum  ~/.tmux/plugins/tmux-continuum
-```
-
-```tmux
-# ~/.tmux.local.conf
-# Set the @continuum options before sourcing continuum (it reads them at init),
-# and source resurrect before continuum, which depends on it.
-set -g @continuum-restore 'on'         # auto-restore the last save when tmux starts
-set -g @continuum-save-interval '15'   # auto-save every 15 minutes (0 disables)
-run-shell '~/.tmux/plugins/tmux-resurrect/resurrect.tmux'
-run-shell '~/.tmux/plugins/tmux-continuum/continuum.tmux'
-```
-
-Reload with `Ctrl-a r` to activate; save/restore manually with `Ctrl-a Ctrl-s` /
-`Ctrl-a Ctrl-r`. Add other tmux plugins the same way - clone the repo and add a
-matching `run-shell '.../<plugin>.tmux'` line. Update a plugin with
-`git -C ~/.tmux/plugins/<name> pull`.
-
-`@continuum-restore 'on'` is the line that brings sessions back after a reboot:
-continuum auto-saves in the background and auto-restores the last save when the
-tmux server next starts. Without it, continuum still saves, but you would restore
-by hand with `Ctrl-a Ctrl-r`.
-
-**What survives, and what does not.** Restore brings back windows, panes,
-layout, and each pane's working directory - but not live program state. By
-default your Claude Code / Codex panes come back as plain shells in the right
-directories, not resumed conversations.
-
-To resume each Claude pane's exact conversation, add the
-[`tmux-agent-resume`](bin/tmux-agent-resume) save hook to `~/.tmux.local.conf`
-**before** the `run-shell` lines:
-
-```tmux
-set -g @resurrect-hook-post-save-layout '~/.local/bin/tmux-agent-resume'
-set -g @resurrect-processes 'claude'
-```
-
-On every save, the hook reads Claude's live session registry
-(`~/.claude/sessions/<pid>.json`) and rewrites each Claude pane's saved command
-to `claude --resume <session-id>`. The launch command alone goes stale after
-`/clear` or `/resume`, and `claude --continue` is ambiguous when two panes share
-a directory. A Claude pane with no live session record is saved as a plain shell
-instead.
-
-For opt-in recovery of multiple Codex panes, use
-[`codex-restore`](docs/codex-restore.md): start a managed pane with
-`codex-restore start`, then after tmux restores run `codex-restore restore` and
-confirm the exact saved UUID-to-pane matches. It never uses `codex resume --last`
-for every pane. `codex-restore install-login` optionally opens WezTerm after
-graphical login; it deliberately leaves the final resume confirmation to you.
+See [tmux plugins (session persistence)](docs/optional-tools.md#tmux-plugins-session-persistence).
 
 ### Reference
 
-**Optional utility collection (review before installing):**
-
-```sh
-brew install \
-  zsh-autosuggestions zsh-syntax-highlighting starship fzf zoxide atuin \
-  eza bat fd ripgrep dust duf procs btop \
-  jq yq glow yazi lazygit git-delta gh watchexec entr tmux
-brew install --cask wezterm font-jetbrains-mono-nerd-font
-```
-
-The core [Brewfile](Brewfile) intentionally excludes this optional collection.
-See the [dependency guide](docs/workstation-setup.md) for Bundle commands and
-version limitations.
-
-**WezTerm extras:** WezTerm has a plugin system (`wezterm.plugin.require`) - e.g.
-[`resurrect.wezterm`](https://github.com/MLFlexer/resurrect.wezterm) for
-window/tab/pane layouts, and `smart-splits` for unified pane navigation with
-Neovim.
-
-**Neovim.** This repo ships a minimal, purpose-built Neovim config under
-[`nvim/`](nvim/README.md) - navigate, open, git, and read/review, with no LSP or
-autocomplete. It installs alongside WezTerm and tmux (see Local Editing Mode) and
-unlocks **reviewing branches locally instead of in the browser**:
-
-- `diffview.nvim` - `<leader>gd` (`:DiffviewOpen main...HEAD`) shows the whole
-  branch diff as a file tree with side-by-side panes (the "Files changed" view).
-- `gitsigns` + `lazygit` - inline hunks, blame, and a full git TUI (`<leader>gg`).
-- `render-markdown.nvim` - renders `.md` inline for read-heavy work.
-
-Copy the entire current file from normal mode:
-
-```vim
-:%y+
-```
-
-This uses the system clipboard. If the active Neovim build does not expose
-clipboard support, use `:%y` to yank into Neovim's default register instead.
-
-Full loop: `gh pr checkout <n>` -> `wt` -> `nvim` -> `<leader>gd`. See
-[`nvim/README.md`](nvim/README.md) for the keymap cheat sheet. Before Neovim is
-installed, `gh pr diff <n>` (piped through `delta`) or `lazygit` cover branch
-review from the terminal.
+See [Reference](docs/optional-tools.md#reference).
 
 ## Uninstall And Restore
 
@@ -1236,266 +445,23 @@ at scripts that are no longer there, which errors on every Bash call.
 
 ## Verification
 
-From the repository root:
-
-```sh
-bash scripts/check-shell.sh
-bash scripts/check-shell.sh --lint
-bash scripts/test-check-shell.sh
-bash scripts/test-install-macos.sh
-bash scripts/test-import-background-inbox.sh
-bash scripts/test-sf-lease-hooks.sh
-bash scripts/test-sf-lease-liveness.sh
-bash scripts/test-sf-lease-process.sh
-```
-
-Syntax checking visits each shell file individually, including extensionless
-Bash tools. ShellCheck must be installed for `--lint`. The installer suite uses
-a temporary fixture checkout and `DOTFILES_TARGET_HOME` to test copy/link,
-backups, restore, dry runs, and symlink handling without changing your home.
-That variable can also select a staging home for manual installer checks.
-Lease suites run on macOS in CI because they exercise BSD filesystem tools.
-See [dashboard verification](dashboard/README.md) for Node and browser checks.
+See [Verification](docs/repository-guide.md#verification).
 
 ## Backgrounds
 
-Background rotation is configured in:
-
-```text
-wezterm/modules/backgrounds.lua
-```
-
-To change brightness:
-
-```lua
--- wezterm/local.lua
-return {
-  background_hsb = {
-    brightness = 0.16,
-    saturation = 0.90,
-  },
-}
-```
-
-To change the interval:
-
-```lua
--- wezterm/local.lua
-return {
-  background_rotation_seconds = 2 * 60 * 60,
-}
-```
-
-Wallpapers are delivered as split GitHub Release bundles, not committed to git.
-`install-macos.sh` downloads bundle tarballs from rolling releases such as
-`backgrounds-general`, `backgrounds-vehicles`, and `backgrounds-anime`, then
-extracts them into the local wallpaper tree (into the repo tree for `--link`,
-or `~/.config/wezterm` for copy mode). Re-runs skip a bundle only when that
-bundle's published checksum is unchanged **and** its local directory is already
-populated - so rerunning the installer self-heals a missing or deleted bundle.
-Fetch failures are non-fatal per bundle: if one release is unreachable, install
-still completes and leaves the other bundles unchanged.
-
-- Skip the fetch: `./install-macos.sh --skip-backgrounds`
-- Force a re-download: `./install-macos.sh --refresh-backgrounds`
-
-To publish a new set (repo owner): add/update images under
-`wezterm/assets/backgrounds/`, list them in the manifests, then run
-`./scripts/publish-backgrounds.sh`. That publishes one tarball per configured
-bundle. To publish only one bundle:
-
-```sh
-./scripts/publish-backgrounds.sh --bundle anime
-```
-
-List the relative path of any new or changed image in the relevant file under
-`wezterm/modules/background_manifests`.
-
-The background list is intentionally explicit. WezTerm does not auto-scan the
-folders, so archive, experiment, or sensitive folders can exist without showing
-up in rotation unless a file is added to a manifest.
-
-Machine-local excludes are also supported:
-
-```lua
--- wezterm/local.lua
-return {
-  background_excludes = {
-    '200-anime/haikyuu/014-pointing-black.png',
-  },
-}
-```
-
-This is useful when you want to park a background temporarily without removing
-it from the shared curated rotation.
+See [Backgrounds](docs/backgrounds.md#backgrounds).
 
 ## Background Inbox
 
-For repeated wallpaper work, use the inbox workflow instead of hand-describing
-the same defaults every time.
-
-Drop screenshots into:
-
-```text
-wezterm/assets/inbox/
-```
-
-If the screenshots are still on your Desktop, use the helper to import them and
-auto-create sidecars from the sample YAML:
-
-```sh
-./scripts/import-background-inbox.sh --move --series haikyuu --mode stylized --from-dir ~/Desktop
-```
-
-That command:
-
-- moves or copies the image files into `wezterm/assets/inbox/`
-- selects only top-level PNG and JPEG files from the directory (it does not
-  recurse), matching extensions case-insensitively and ordering by basename in
-  deterministic C/byte order
-- imports the first files that fit in the remaining inbox capacity, up to 10
-- creates matching `.yaml` sidecars from `_sample/scene-001.yaml`
-- optionally stamps the same `series` / `mode` onto every imported file
-- enforces a maximum of **10 pending images** in the inbox; process or archive
-  the current batch before importing more
-
-Useful variants:
-
-```sh
-# keep the originals on Desktop
-./scripts/import-background-inbox.sh --copy ~/Desktop/'Screenshot 2026-07-15 at 9.12.01 PM.png'
-
-# import and jump straight into editing the generated YAML files
-./scripts/import-background-inbox.sh --move --series attack-on-titan --mode as_is --edit --from-dir ~/Desktop
-```
-
-Explicit image paths and directory mode support PNG and JPEG files. Directory
-mode cannot be combined with explicit paths.
-
-For each screenshot, add a sidecar YAML file with the same basename:
-
-```text
-wezterm/assets/inbox/scene-001.png
-wezterm/assets/inbox/scene-001.yaml
-```
-
-Processed source screenshots can be moved into:
-
-```text
-wezterm/assets/inbox/_processed/
-```
-
-That archive is ignored by the inbox validator, so it will not stay in the
-active queue.
-
-Only two fields are required:
-
-```yaml
-series: haikyuu
-mode: stylized
-```
-
-You can also add an optional `focus` field when the source frame needs tighter
-direction about what to preserve, crop around, or black out.
-
-Example:
-
-```yaml
-series: haikyuu
-mode: stylized
-focus: >
-  Keep the yellow hair girl, orange hair boy, orange hair woman, and the man on
-  her right. Keep the middle turnstiles and black out everything else.
-```
-
-Use `focus` for things like:
-
-- which characters to keep
-- which object or action is the real subject
-- what background elements to preserve
-- what should fall away into black negative space
-- whether the scene should stay close to the frame or be more selectively reduced
-
-Valid `mode` values are:
-
-- `stylized`
-- `as_is`
-
-Mode meaning is intentionally narrow:
-
-- `stylized`: closer to `200-anime/haikyuu/001` through `008`
-  - darker and more transformed
-  - stronger wallpaper reinterpretation
-- `as_is`: closer to `200-anime/haikyuu/009` and later
-  - preserve the source frame more directly
-  - still apply dark/warm terminal treatment and UI cleanup
-
-The rest is intentionally hardcoded for the current wallpaper workflow:
-
-- `lighting`: `dark_warm`
-- `notes`: terminal-background defaults
-
-Validate the queue before asking Codex to process it:
-
-```sh
-./scripts/check-background-inbox.sh
-./scripts/list-background-inbox.sh
-```
-
-Then hand off the queue with a prompt like:
-
-```text
-Process the background inbox.
-```
-
-Codex should use the inbox file, apply the default dark/warm terminal treatment,
-respect any optional `focus` direction, route the output into the right
-background folder for the declared series, and update the relevant manifest
-file.
-
-`./scripts/list-background-inbox.sh` is the quick preflight view. It prints the
-pending inbox items, their series/mode metadata, and the inferred destination
-path based on the current library numbering. If you want to override the
-generated filename slug, add an optional `slug` field:
-
-```yaml
-series: haikyuu
-mode: stylized
-slug: tsukishima-ushijima-celebration
-```
+See [Background Inbox](docs/backgrounds.md#background-inbox).
 
 ## Asset Scaling
 
-The current scaling approach is:
-
-- Keep rotation on an explicit allowlist rather than a pure exclude model.
-- Split that allowlist into small manifest files by category or franchise.
-- Keep backgrounds grouped under numeric categories, then subfolders such as
-  `200-anime/haikyuu`.
-- Keep individual wallpaper files at or below roughly 2.5 MiB.
-- Split published wallpapers into category bundles instead of one monolithic
-  release.
-- Keep bundle totals within their current caps:
-  - `general`: 16 MiB
-  - `vehicles`: 24 MiB
-  - `anime`: 200 MiB
-
-`./scripts/publish-backgrounds.sh` enforces the current image size limits
-(via `./scripts/check-background-assets.sh`) before publishing bundle releases,
-so an oversized asset fails the publish rather than CI.
-
-If the library outgrows those limits, the next step is to curate older assets
-out of the repo or move larger wallpaper archives to Git LFS or external
-storage, not to loosen the rotation manifest into auto-discovery.
+See [Asset Scaling](docs/backgrounds.md#asset-scaling).
 
 ## Notes
 
-The LLM activity marker is driven primarily by pane titles: it recognizes the
-working spinner and idle state of both Claude Code and Codex, which animate and
-label their terminal titles. Foreground command names are only a fallback for
-other CLIs - Claude and Codex report an unstable process name (e.g. a version
-string), so they are detected by title, not command. CLIs that expose neither
-may only show a generic detected marker.
+See [Notes](docs/agent-status.md#notes).
 
 ## License
 
