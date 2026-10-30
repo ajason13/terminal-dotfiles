@@ -20,6 +20,9 @@ export TMUX_SOCKET
 # write the real status directory.
 TMUX_LLM_STATE_HOME="$test_home/llm-state"
 export TMUX_LLM_STATE_HOME
+# start/stop retire a pre-ownership publisher by its PID file; never the real one.
+TMUX_LLM_LEGACY_PIDFILE="$test_home/legacy.pid"
+export TMUX_LLM_LEGACY_PIDFILE
 
 # A fake org-lock for the whole run, so the table never reads the real lock directory.
 # list replays a fixture; any other subcommand sleeps like a waiter blocked on a claim.
@@ -785,6 +788,36 @@ new_publisher() { has_publisher && [[ "$(publisher_pid)" != "$settled_publisher"
 check 'restart registers a replacement' yes "$(if poll_for new_publisher; then echo yes; else echo no; fi)"
 check 'restart retires the previous publisher' yes "$(if poll_for process_gone "$settled_publisher"; then echo yes; else echo no; fi)"
 "$publisher_bin" stop
+
+# A pre-ownership publisher never reads @llm_daemon_pid; only its PID file can retire it.
+# reap kills before waiting, so a survivor fails a check instead of hanging the suite.
+reap() { kill "$1" 2>/dev/null || true; wait "$1" 2>/dev/null || true; }
+legacy_dir="$test_home/legacy"
+mkdir -p "$legacy_dir"
+printf 'while true; do sleep 1; done\n' > "$legacy_dir/tmux-llm-status"
+bash "$legacy_dir/tmux-llm-status" run &
+legacy_publisher=$!
+printf '%s\n' "$legacy_publisher" > "$TMUX_LLM_LEGACY_PIDFILE"
+"$publisher_bin" stop
+check 'stop retires a legacy publisher' yes "$(if poll_for process_gone "$legacy_publisher"; then echo yes; else echo no; fi)"
+reap "$legacy_publisher"
+check 'stop removes the legacy PID file' absent "$(exists "$TMUX_LLM_LEGACY_PIDFILE")"
+
+bash "$legacy_dir/tmux-llm-status" run &
+legacy_publisher=$!
+printf '%s\n' "$legacy_publisher" > "$TMUX_LLM_LEGACY_PIDFILE"
+"$publisher_bin" start
+check 'start retires a legacy publisher' yes "$(if poll_for process_gone "$legacy_publisher"; then echo yes; else echo no; fi)"
+reap "$legacy_publisher"
+"$publisher_bin" stop
+
+sleep 600 &
+reused_pid=$!
+printf '%s\n' "$reused_pid" > "$TMUX_LLM_LEGACY_PIDFILE"
+"$publisher_bin" stop
+check 'legacy retirement spares a reused PID' yes "$(if kill -0 "$reused_pid" 2>/dev/null; then echo yes; else echo no; fi)"
+check 'stale legacy PID file is removed' absent "$(exists "$TMUX_LLM_LEGACY_PIDFILE")"
+reap "$reused_pid"
 t kill-session -t publisher
 
 python3 "$repo_root/scripts/test-tmux-completion.py"

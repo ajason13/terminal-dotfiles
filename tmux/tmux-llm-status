@@ -584,8 +584,22 @@ run_daemon() {
 
 daemon_pid() { tmux_cmd show-options -gqv @llm_daemon_pid 2>/dev/null || true; }
 
+# Publishers from before @llm_daemon_pid loop forever and never yield, so they
+# fight the current one for @llm_fleet. Kill one only if its PID still runs us.
+retire_legacy_daemon() {
+  local pidfile="${TMUX_LLM_LEGACY_PIDFILE:-/tmp/tmux-llm-status-${UID:-$(id -u)}.pid}" pid=''
+  [[ -f "$pidfile" ]] || return 0
+  read -r pid < "$pidfile" 2>/dev/null || true
+  if [[ "$pid" =~ ^[0-9]+$ && "$pid" != "$(daemon_pid)" ]] \
+    && [[ "$(ps -o command= -p "$pid" 2>/dev/null)" == *"tmux-llm-status run" ]]; then
+    kill "$pid" 2>/dev/null || true
+  fi
+  rm -f "$pidfile"
+}
+
 start_daemon() {
   local pid
+  retire_legacy_daemon
   pid="$(daemon_pid)"
   if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
     return 0
@@ -598,6 +612,7 @@ stop_daemon() {
   # Revoke ownership rather than signal a PID that the OS may have reused.
   # The publisher finishes its current pass and exits within one polling cycle.
   tmux_cmd set-option -gqu @llm_daemon_pid 2>/dev/null || true
+  retire_legacy_daemon
 }
 
 # Row keys in order; q, r and t are taken by quit, refresh and the tree toggle.

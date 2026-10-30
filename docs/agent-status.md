@@ -89,9 +89,9 @@ The status publisher records its owner in the server-local `@llm_daemon_pid`
 option. Duplicate publishers retire themselves when a replacement takes over,
 so different versions cannot continually overwrite each other's icons. Each
 tmux server has its own publisher. `tmux-llm-status restart` replaces it;
-`stop` revokes ownership and lets it finish its current polling cycle. When
-upgrading from the older PID-file launcher, stop any surviving old
-`tmux-llm-status run` processes once before starting the new publisher.
+`stop` revokes ownership and lets it finish its current polling cycle. `start`
+and `stop` also kill a publisher left by the older PID-file launcher
+(`/tmp/tmux-llm-status-<uid>.pid`), which never yields on its own.
 
 ### Explain a pane's status
 
