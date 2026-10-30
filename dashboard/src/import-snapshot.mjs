@@ -1,4 +1,5 @@
 import { LIVE_CONSTANTS } from './live-constants.mjs';
+import { HOOK_COLLECTOR_VERSION, HOOK_SCHEMA_VERSION, HOOK_TTL_MS } from './observation-contract.mjs';
 import { SnapshotValidationError } from './session-contract.mjs';
 import { canonicalizeDisplayName } from './tmux-classifier.mjs';
 
@@ -17,6 +18,10 @@ export const PROVENANCE_VALUES = Object.freeze([
   'tmux_activity_recent',
   'tmux_activity_idle',
   'tmux_command_candidate',
+  'tmux_hook_active',
+  'tmux_hook_permission',
+  'tmux_hook_question',
+  'tmux_hook_turn_ended',
 ]);
 
 const EXACT_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -61,16 +66,37 @@ function validCombination(session) {
   ]).has(key);
 }
 
+function validV3Combination(session, observed) {
+  if (!exactKeys(session.evidence, ['kind', 'eventAt', 'expiresAt'])) return false;
+  const evidence = session.evidence;
+  if (evidence.kind === 'heuristic') {
+    return evidence.eventAt === null && evidence.expiresAt === null && validCombination(session);
+  }
+  if (evidence.kind !== 'hook' || !validTimestamp(evidence.eventAt)
+    || !validTimestamp(evidence.expiresAt)
+    || Date.parse(evidence.eventAt) > observed || Date.parse(evidence.expiresAt) <= observed
+    || Date.parse(evidence.expiresAt) - Date.parse(evidence.eventAt) !== HOOK_TTL_MS
+    || session.activity.at !== evidence.eventAt) return false;
+  return new Set([
+    'active|observed|unknown|medium|tmux_hook_active',
+    'waiting_for_permission|observed|requested|medium|tmux_hook_permission',
+    'waiting_for_input|observed|unknown|medium|tmux_hook_question',
+    'turn_ended|observed|unknown|medium|tmux_hook_turn_ended',
+  ]).has([session.status, session.activity.kind, session.permissionState,
+    session.confidence, session.provenance].join('|'));
+}
+
 function reject() {
   throw new SnapshotValidationError(['LIVE_SNAPSHOT_INVALID']);
 }
 
 export function normalizeImportedSnapshot(snapshot, importNow = Date.now()) {
+  const v3 = snapshot?.schemaVersion === HOOK_SCHEMA_VERSION;
   if (!exactKeys(snapshot, TOP_KEYS)
-    || snapshot.schemaVersion !== LIVE_CONSTANTS.SCHEMA_V2
+    || (!v3 && snapshot.schemaVersion !== LIVE_CONSTANTS.SCHEMA_V2)
     || !exactKeys(snapshot.source, SOURCE_KEYS)
     || snapshot.source.kind !== 'tmux_oneshot'
-    || snapshot.source.collectorVersion !== LIVE_CONSTANTS.COLLECTOR_VERSION
+    || snapshot.source.collectorVersion !== (v3 ? HOOK_COLLECTOR_VERSION : LIVE_CONSTANTS.COLLECTOR_VERSION)
     || !validTimestamp(snapshot.observedAt)
     || !Array.isArray(snapshot.sessions)
     || snapshot.sessions.length > LIVE_CONSTANTS.MAX_SESSION_COUNT) reject();
@@ -81,7 +107,7 @@ export function normalizeImportedSnapshot(snapshot, importNow = Date.now()) {
 
   const ids = new Set();
   const sessions = snapshot.sessions.map((session) => {
-    if (!exactKeys(session, SESSION_KEYS)
+    if (!exactKeys(session, v3 ? [...SESSION_KEYS, 'evidence'] : SESSION_KEYS)
       || !TMUX_ID.test(session.id)
       || typeof session.displayName !== 'string'
       || session.displayName.length === 0
@@ -94,7 +120,7 @@ export function normalizeImportedSnapshot(snapshot, importNow = Date.now()) {
       // point - but a stamp after it is incoherent and rejects the file.
       || !validTimestamp(session.activity.at)
       || Date.parse(session.activity.at) > observed
-      || !validCombination(session)
+      || !(v3 ? validV3Combination(session, observed) : validCombination(session))
       || ids.has(session.id)) reject();
     ids.add(session.id);
     return Object.freeze({
@@ -109,7 +135,7 @@ export function normalizeImportedSnapshot(snapshot, importNow = Date.now()) {
     .sort((left, right) => left.id.localeCompare(right.id))
     .map((session, index) => [session.id, `S${String(index + 1).padStart(2, '0')}`]));
   return Object.freeze({
-    schemaVersion: LIVE_CONSTANTS.SCHEMA_V2,
+    schemaVersion: snapshot.schemaVersion,
     sourceKind: 'tmux_oneshot',
     observedAt: snapshot.observedAt,
     generatedAt: snapshot.observedAt,

@@ -9,6 +9,7 @@ import {
 } from './live-constants.mjs';
 import { classifyPane, sanitizeDisplayName, windowSilenceMs } from './tmux-classifier.mjs';
 import { CollectorError, parseTmuxBuffer } from './tmux-frame.mjs';
+import { readHookObservations, hookClassification, HOOK_SCHEMA_VERSION, HOOK_COLLECTOR_VERSION } from './hook-observations.mjs';
 
 function fail(code) {
   throw new CollectorError(code);
@@ -67,12 +68,13 @@ function lastActivityAt(record, observedAtMs, observedAt) {
   return silence === null ? observedAt : new Date(observedAtMs - silence).toISOString();
 }
 
-export function buildSnapshot(records, observedAt = new Date().toISOString()) {
+export function buildSnapshot(records, observedAt = new Date().toISOString(), observations = null) {
   const emittedIds = new Set();
   const sessions = [];
   const observedAtMs = Date.parse(observedAt);
   for (const record of records) {
-    const classification = classifyPane(record, observedAtMs);
+    const hook = observations === null ? null : hookClassification(observations[record.pane_id], observedAtMs);
+    const classification = hook ?? classifyPane(record, observedAtMs);
     if (!classification) continue;
     const id = stableTmuxId(record);
     if (emittedIds.has(id)) fail('TMUX_IDENTITY_COLLISION');
@@ -83,13 +85,14 @@ export function buildSnapshot(records, observedAt = new Date().toISOString()) {
       ...classification,
       // When the epoch is unusable this falls back to the observation time, which
       // is the old behaviour: no worse a claim than the snapshot already made.
-      activity: { kind: 'observed', at: lastActivityAt(record, observedAtMs, observedAt) },
+      activity: { kind: 'observed', at: hook?.evidence.eventAt ?? lastActivityAt(record, observedAtMs, observedAt) },
+      ...(observations === null || hook ? {} : { evidence: { kind: 'heuristic', eventAt: null, expiresAt: null } }),
     });
     if (sessions.length > LIVE_CONSTANTS.MAX_SESSION_COUNT) fail('TMUX_FIELD_INVALID');
   }
   return {
-    schemaVersion: LIVE_CONSTANTS.SCHEMA_V2,
-    source: { kind: 'tmux_oneshot', collectorVersion: LIVE_CONSTANTS.COLLECTOR_VERSION },
+    schemaVersion: observations === null ? LIVE_CONSTANTS.SCHEMA_V2 : HOOK_SCHEMA_VERSION,
+    source: { kind: 'tmux_oneshot', collectorVersion: observations === null ? LIVE_CONSTANTS.COLLECTOR_VERSION : HOOK_COLLECTOR_VERSION },
     observedAt,
     sessions,
   };
@@ -135,5 +138,8 @@ export async function collectTmuxSnapshot(dependencies = {}) {
   const socketPath = defaultSocketPath(uid);
   await validateSocket(socketPath, { lstatFile: dependencies.lstatFile, uid });
   const stdout = await runTmux(dependencies.execFile ?? nodeExecFile, binary, socketPath);
-  return buildSnapshot(parseTmuxBuffer(stdout, socketPath), (dependencies.now ?? (() => new Date()))().toISOString());
+  const records = parseTmuxBuffer(stdout, socketPath);
+  const observations = dependencies.hookEvidence === true
+    ? await (dependencies.readObservations ?? readHookObservations)(records) : null;
+  return buildSnapshot(records, (dependencies.now ?? (() => new Date()))().toISOString(), observations);
 }

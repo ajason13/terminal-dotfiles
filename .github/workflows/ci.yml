@@ -94,6 +94,15 @@ jobs:
       - name: Install tmux (for tmux-llm-status behavioural tests)
         run: sudo apt-get update && sudo apt-get install -y tmux
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check shared observation contract and real hook parity
+        run: |
+          python3 scripts/test-tmux-agent-observation.py
+          python3 scripts/test-tmux-observation-integration.py
+
       - name: Run tmux-llm-status tests
         run: |
           ./scripts/test-tmux-llm-status.sh
@@ -164,7 +173,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install hook test dependency
-        run: brew install jq
+        run: brew install jq tmux
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check macOS process generations and isolated hook parity
+        run: |
+          python3 scripts/test-tmux-agent-observation.py
+          python3 scripts/test-tmux-observation-integration.py
       - name: Run lease suites
         run: |
           bash scripts/test-sf-org-resolve.sh

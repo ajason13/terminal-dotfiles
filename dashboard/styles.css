@@ -1548,3 +1548,7 @@ details[open] > .overflow-toggle::before {
     transition: none !important;
   }
 }
+
+/* Hook observations distinguish a question and a turn end from permissions/success. */
+.state-waiting-for-input { --state-bg: var(--color-idle-bg); --state-ink: var(--color-idle-ink); --state-glyph: "?"; }
+.state-turn-ended { --state-bg: var(--color-idle-bg); --state-ink: var(--color-idle-ink); --state-glyph: "\2016"; }

@@ -7,7 +7,14 @@ registration, or collection boundary changes. The title-only implementation
 update for #129 is recorded below. Live disagreement frequency and operator
 impact remain unverified; all examples below are synthetic.
 
-## Recommendation
+## Approved implementation update (#122)
+
+The operator approved the bounded shared-observation contract on 2026-10-29,
+superseding the historical deferral below. See the [implementation contract](activity-observations.md)
+for current collection boundaries, identity/expiry rules and snapshot compatibility.
+The original evidence and limitations below remain historical research.
+
+## Recommendation (historical)
 
 **Defer shared hook collection. Proceed with the separately scoped
 [title-fallback alignment follow-up #129](https://github.com/ajason13/terminal-dotfiles/issues/129).** Existing title parsing differences can be reduced without

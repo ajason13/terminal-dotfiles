@@ -115,7 +115,7 @@ test('exports every resolved constant, enum, error code, and exact tmux format',
   });
   assert.deepEqual(ACTIVITY_KINDS, ['observed', 'last_activity', 'last_response', 'unavailable']);
   assert.deepEqual(CONFIDENCE_LEVELS, ['authoritative', 'medium', 'low', 'none']);
-  assert.equal(PROVENANCE_VALUES.length, 10);
+  assert.equal(PROVENANCE_VALUES.length, 14);
   assert.deepEqual(COLLECTOR_ERROR_CODES, [
     'TMUX_BINARY_UNAVAILABLE',
     'TMUX_SOCKET_REJECTED',
@@ -777,7 +777,7 @@ test('tmux schema compatibility matrix accepts exactly nine exhaustive combinati
       }
     }
   }
-  assert.equal(testedCount, 5600);
+  assert.equal(testedCount, 10080);
   assert.equal(acceptedCount, 9);
 });
 

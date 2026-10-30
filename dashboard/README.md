@@ -50,7 +50,7 @@ root:
 node dashboard/export-tmux.mjs /tmp/dashboard-tmux-snapshot.json
 ```
 
-The collector makes exactly one hardened `list-panes -a` call. It reads pane
+The title-only collector makes exactly one hardened `list-panes -a` call. It reads pane
 metadata only: socket/server epoch identifiers, tmux IDs, window name, pane
 index, pane title, current command, and the window's last-activity epoch. It
 never reads pane content or history. The emitted file contains opaque stable
@@ -72,6 +72,18 @@ sockets/server names, alternate tmux paths, unsafe executables/sockets,
 timeouts, stderr, malformed or oversized output, or any validation error. A
 failure writes one closed error code to stderr, exits nonzero, and writes
 nothing to stdout.
+
+## Shared hook evidence (optional)
+
+Add `--hook-evidence` to the collector, exporter or live-server command to read
+the dedicated sanitized local observation store. This requires Python 3.9+
+and the upgraded Claude hook/helper pair; a new SessionStart establishes its
+identity. No legacy marker, transcript or pane-content reads are added. Without
+this flag, collection retains the exact version-2 format and title-only behavior.
+Hook-enabled version-3 exports preserve questions, permissions, turn ends and
+producer event times separately. Imports support both versions; older consumers
+reject version 3. See the [approved observation contract](../docs/activity-observations.md)
+for commands, privacy bounds, lifecycle/ordering limits, and regression coverage.
 
 ## How a session is judged active or idle
 
@@ -108,7 +120,7 @@ Claude's hook observations precedence over title fallback; the dashboard uses
 titles and window activity alone. The two surfaces can disagree, including
 when a sibling pane produces output. [#100](https://github.com/ajason13/terminal-dotfiles/issues/100)
 records the [historical comparison and current title-alignment results](../docs/activity-evidence-research.md).
-Shared hook collection remains deferred pending identity/privacy decisions.
+Shared hook collection is available only through the explicit option described above; the research deferral was superseded by the approved #122 contract.
 Existing exported fields and the validator's closed tuple vocabulary are
 unchanged, including support for historical `tmux_title_ready_idle` snapshots.
 
