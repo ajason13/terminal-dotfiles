@@ -18,7 +18,8 @@ busy/needs/subagent markers. `explain %3` identifies the winning shared rule;
 the table distinguishes `? input` and `ended`. Presence/title fallbacks can still
 differ intentionally: tmux asserts presence, while dashboard window silence is
 only an idle heuristic. The separate unseen-turn-end badge retains its existing
-acknowledgement rules and never asserts verified success.
+acknowledgement rules and never asserts verified success; `○ unseen` takes
+precedence over the table’s ordinary `ended` label until acknowledged.
 
 The dashboard reads the observation store only with an explicit option:
 

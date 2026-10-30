@@ -1004,7 +1004,7 @@ render_table() {  # [tree]
     pad PROJECT "${projects[i]}" "$project_w"
     key="${TABLE_KEYS:i:1}"
     TABLE_PANES+=("$pane_id")
-    case "$state" in question) label='? input' ;; ended) label='ended' ;; waiting) label='! needs' ;; active) label='working' ;; *) if [[ "$rank" == 2 ]]; then label='○ unseen'; else label='idle'; fi ;; esac
+    case "$state" in question) label='? input' ;; ended) if [[ "$rank" == 2 ]]; then label='○ unseen'; else label='ended'; fi ;; waiting) label='! needs' ;; active) label='working' ;; *) if [[ "$rank" == 2 ]]; then label='○ unseen'; else label='idle'; fi ;; esac
     # A corrupt reading must cost one cell, not the table: printf dies on non-numbers.
     ctx='-'; [[ "$META_CTX" =~ ^[0-9]+([.][0-9]+)?$ ]] && ctx="$(LC_NUMERIC=C printf '%.0f%%' "$META_CTX")"
     printf '%-3s %s %-8s %4s %3s %4s %-9.9s %s %-*.*s' \

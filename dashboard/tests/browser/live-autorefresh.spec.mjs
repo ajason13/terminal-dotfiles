@@ -185,9 +185,9 @@ test('hook snapshot imports distinguish input questions and turn ended without s
     name: 'synthetic-hooks.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(data)),
   });
   await expect(page.locator('#source-label')).toHaveText('Live · one-shot tmux observation');
-  // The state class is applied to the car itself; check accessible labels directly.
-  await expect(page.locator('.session-car.state-waiting-for-input')).toHaveAttribute('aria-label', /Waiting for input/);
-  await expect(page.locator('.session-car.state-turn-ended')).toHaveAttribute('aria-label', /Turn ended/);
-  await expect(page.locator('.session-car.state-turn-ended')).not.toHaveAttribute('aria-label', /Complete|success/i);
+  // State belongs to the wrapper; accessible labels belong to its button.
+  await expect(page.locator('.state-waiting-for-input .session-car')).toHaveAttribute('aria-label', /Waiting for input/);
+  await expect(page.locator('.state-turn-ended .session-car')).toHaveAttribute('aria-label', /Turn ended/);
+  await expect(page.locator('.state-turn-ended .session-car')).not.toHaveAttribute('aria-label', /Complete|success/i);
   await expect(page.locator('.invalid-snapshot')).toHaveCount(0);
 });

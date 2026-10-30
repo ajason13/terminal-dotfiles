@@ -32,7 +32,9 @@ def main():
         env = {**os.environ, 'HOME': str(root), 'TMUX_SOCKET': str(socket),
                'TMUX_AGENT_OBSERVATION_HOME': str(root / 'observations'),
                'TMUX_AGENT_OBSERVATION_BIN': str(HELPER), 'TMUX_LLM_STATUS_BIN': str(STATUS),
-               'TMUX_LLM_STATE_HOME': str(root / 'legacy'), 'TMUX_LLM_NOTIFY': '0'}
+               'TMUX_LLM_STATE_HOME': str(root / 'legacy'), 'TMUX_LLM_NOTIFY': '0',
+               'TMUX_LLM_ORG_LOCK': '/dev/null', 'TMUX_LLM_ANNOUNCE_LOG': str(root / 'absent-log'),
+               'TMUX_LLM_CLAUDE_SESSIONS': str(root / 'sessions')}
         env.pop('TMUX', None)
         env.pop('TMUX_PANE', None)
 
@@ -90,6 +92,7 @@ if(normalized.sessions[0].status!==expected) throw Error('dashboard parity');'''
         try:
             tmux('new-session', '-d', '-s', 'synthetic', command())
             pane = tmux('list-panes', '-F', '#{pane_id}')
+            tmux('select-pane', '-t', pane, '-T', '✳ fixture')
             fire('SessionStart')
             assert read().get('state') == 'unknown', tmux('capture-pane', '-p', '-t', pane)
             fire('UserPromptSubmit')
@@ -105,6 +108,11 @@ if(normalized.sessions[0].status!==expected) throw Error('dashboard parity');'''
             parity('active')
             fire('Stop')
             parity('ended')
+            table = subprocess.check_output([str(STATUS), 'table'], env=env, text=True)
+            assert '○ unseen' in table, 'shared turn-end must retain unseen table badge'
+            subprocess.check_call([str(STATUS), 'ack', pane], env=env)
+            table = subprocess.check_output([str(STATUS), 'table'], env=env, text=True)
+            assert 'ended' in table and '○ unseen' not in table, 'ack reveals observed end, not success'
             # Old generations and unbound legacy files cannot re-open work.
             fire('UserPromptSubmit', session_id='wrong-session')
             parity('ended')
