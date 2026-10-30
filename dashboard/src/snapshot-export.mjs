@@ -205,8 +205,12 @@ export async function runSnapshotExportCli({
   exportSnapshot = exportTmuxSnapshot,
 } = {}) {
   try {
-    if (argv.length !== 1) destinationInvalid();
-    await exportSnapshot(argv[0]);
+    if (argv.length === 2 && argv[1] === '--hook-evidence') {
+      await exportSnapshot(argv[0], { collect: () => collectTmuxSnapshot({ hookEvidence: true }) });
+    } else {
+      if (argv.length !== 1) destinationInvalid();
+      await exportSnapshot(argv[0]);
+    }
     return 0;
   } catch (error) {
     stderr.write(`${primaryErrorCode(error)}\n`);

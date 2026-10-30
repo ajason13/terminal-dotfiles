@@ -164,3 +164,30 @@ test('repeated 503s from the live endpoint fall back to fixtures with a rejectio
   await expect(page.locator('#source-notice')).toHaveText('Live snapshot rejected; showing fixtures.');
   expect(calls).toBeGreaterThanOrEqual(3);
 });
+
+test('hook snapshot imports distinguish input questions and turn ended without success claims', async ({ page }) => {
+  const at = new Date().toISOString();
+  const expiresAt = new Date(Date.parse(at) + 1200000).toISOString();
+  const data = {
+    schemaVersion: 3,
+    source: { kind: 'tmux_oneshot', collectorVersion: '2.0.0' },
+    observedAt: at,
+    sessions: [
+      { status: 'waiting_for_input', provenance: 'tmux_hook_question', displayName: 'Question fixture' },
+      { status: 'turn_ended', provenance: 'tmux_hook_turn_ended', displayName: 'Ended fixture' },
+    ].map((session, i) => ({
+      ...session, id: `tmux-${String(i).repeat(32)}`, permissionState: 'unknown',
+      confidence: 'medium', activity: { kind: 'observed', at },
+      evidence: { kind: 'hook', eventAt: at, expiresAt },
+    })),
+  };
+  await page.locator('#snapshot-file').setInputFiles({
+    name: 'synthetic-hooks.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(data)),
+  });
+  await expect(page.locator('#source-label')).toHaveText('Live · one-shot tmux observation');
+  // State belongs to the wrapper; accessible labels belong to its button.
+  await expect(page.locator('.state-waiting-for-input .session-car')).toHaveAttribute('aria-label', /Waiting for input/);
+  await expect(page.locator('.state-turn-ended .session-car')).toHaveAttribute('aria-label', /Turn ended/);
+  await expect(page.locator('.state-turn-ended .session-car')).not.toHaveAttribute('aria-label', /Complete|success/i);
+  await expect(page.locator('.invalid-snapshot')).toHaveCount(0);
+});

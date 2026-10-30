@@ -47,6 +47,8 @@ is_llm_command() {
 STATE_HOME="${TMUX_LLM_STATE_HOME:-${HOME:-}/.local/state/tmux-llm}"
 # Panes of live Claude sessions, " %1 %2 "; filled by collect_rows only.
 SESSION_PANES=' '
+SHARED_OBSERVATIONS=''
+SHARED_OBSERVATIONS_READY=0
 
 # How long a busy marker stays believable without a heartbeat. `Stop` does not
 # fire when you interrupt a turn, so freshness - not mere existence - is what
@@ -300,20 +302,49 @@ is_active_title() {
   esac
 }
 
+# Batch once per render/pass. Children inherit this snapshot when count_window
+# runs in a process substitution; no Python/list-panes call per classified pane.
+prepare_shared_observations() {
+  local helper="${TMUX_AGENT_OBSERVATION_BIN:-${HOME:-}/.local/bin/tmux-agent-observation}"
+  SHARED_OBSERVATIONS=''
+  if [[ -x "$helper" ]]; then
+    SHARED_OBSERVATIONS="$("$helper" rows 2>/dev/null || true)"
+  fi
+  SHARED_OBSERVATIONS_READY=1
+}
+
 # One pane's state into PANE_STATE (waiting|active|present|none), plus AGENT_COUNT and PANE_REASON (a fixed, safe diagnostic label).
 # Shared by the status bar and the table so the two can never disagree.
 classify_pane() {
   local pane_id="$1" command="$2" title="$3"
-  count_agents "$pane_id"
+  local observation_bin="${TMUX_AGENT_OBSERVATION_BIN:-${HOME:-}/.local/bin/tmux-agent-observation}"
+  local observation_state='' _observation_reason='' observation_id='' observation_agents=0
+  AGENT_COUNT=0
+  if [[ -x "$observation_bin" ]]; then
+    # New installations share the safe observation reader. Never fall back to
+    # unbound legacy markers when the shared helper is present but evidence fails.
+    (( SHARED_OBSERVATIONS_READY )) || prepare_shared_observations
+    while IFS=$'\t' read -r observation_id observation_state _observation_reason observation_agents; do
+      [[ "$observation_id" == "$pane_id" ]] && break
+      observation_state='' observation_agents=0
+    done <<< "$SHARED_OBSERVATIONS"
+    [[ "$observation_agents" =~ ^[0-9]{1,2}$ ]] && AGENT_COUNT="$observation_agents"
+  else
+    count_agents "$pane_id"
+  fi
   PANE_UNSEEN=0
   # A blocked prompt outranks every working signal: the turn cannot move without you.
-  if is_pane_blocked "$pane_id" && ! is_shell_command "${command##*/}"; then PANE_STATE=waiting; PANE_REASON='needs-marker'
+  if [[ "$observation_state" == permission || "$observation_state" == question ]]; then
+    PANE_STATE=waiting; PANE_REASON="shared-hook-$observation_state"
+  elif [[ "$observation_state" == active ]]; then PANE_STATE=active; PANE_REASON='shared-hook-active'
+  elif [[ "$observation_state" == ended ]]; then PANE_STATE=present; PANE_REASON='shared-hook-turn-ended'
+  elif [[ ! -x "$observation_bin" ]] && is_pane_blocked "$pane_id" && ! is_shell_command "${command##*/}"; then PANE_STATE=waiting; PANE_REASON='needs-marker'
   # Depth wins over the title: a lead that fanned out and went quiet reports an
   # idle title while its agents are still running, which is the case this exists for.
   elif (( AGENT_COUNT > 0 )); then PANE_STATE=active; PANE_REASON='subagent-depth'
   # Ahead of every title matcher: a working Claude pane's title is now
   # indistinguishable from an idle one, so the marker is the only truth.
-  elif is_pane_busy "$pane_id"; then PANE_STATE=active; PANE_REASON='fresh-busy-marker'
+  elif [[ ! -x "$observation_bin" ]] && is_pane_busy "$pane_id"; then PANE_STATE=active; PANE_REASON='fresh-busy-marker'
   elif has_spinner_title "$title"; then PANE_STATE=active; PANE_REASON='spinner-title'
   elif is_active_title "$title"; then PANE_STATE=active; PANE_REASON='active-title-prefix'
   elif is_waiting_title "$title"; then PANE_STATE=waiting; PANE_REASON='waiting-title-prefix'
@@ -353,6 +384,7 @@ explain_pane() {
   command="$(tmux_cmd display-message -p -t "$target" '#{pane_current_command}' 2>/dev/null)" || return 1
   title="$(tmux_cmd display-message -p -t "$target" '#{pane_title}' 2>/dev/null)" || return 1
   refresh_now
+  prepare_shared_observations
   SESSION_PANES=' '
   classify_pane "$target" "$command" "$title"
   status_state="$PANE_STATE" status_reason="$PANE_REASON"
@@ -361,7 +393,8 @@ explain_pane() {
   [[ "$SESSION_PANES" != *" $target "* ]] || sessions=yes
   classify_pane "$target" "$command" "$title"
   printf 'Table: %s; winning rule: %s\n' "$PANE_STATE" "$PANE_REASON"
-  printf 'Precedence: needs > subagents > fresh busy > spinner > active title > waiting title > agent title/command > table session > none\n'
+  printf 'Shared hook reader: %s (permission/question > active > observed turn end; 20-minute per-fact expiry)\n' "$( [[ -x "${TMUX_AGENT_OBSERVATION_BIN:-${HOME:-}/.local/bin/tmux-agent-observation}" ]] && echo enabled || echo unavailable-legacy-mode )"
+  printf 'Legacy/fallback precedence: needs > subagents > fresh busy > spinner > active title > waiting title > agent title/command > table session > none\n'
   if is_pane_blocked "$target"; then
     needs=present
     if is_shell_command "${command##*/}"; then needs=ignored-on-shell; fi
@@ -387,7 +420,7 @@ explain_pane() {
   printf 'Unseen completion eligible for display: %d (separate from lifecycle state; ack with tmux-llm-status ack %s)\n' "$PANE_UNSEEN" "$target"
   printf 'Live session record: %s (table only; unavailable when jq/records are absent)\n' "$sessions"
   printf 'Missing hooks cannot be distinguished from idle/no published evidence. Lower-priority evidence above is ignored when a higher rule wins.\n'
-  printf 'Expired/malformed busy markers are ignored; future-clock stamps follow the existing classifier. Hook identity/freshness cannot prove a reused pane is the same process.\n'
+  printf 'Legacy markers above are diagnostic only when the shared reader is enabled. Shared observations reject future clocks and unverified/reused process/session identities.\n'
 }
 
 # Scan a window's panes and echo five space-separated counts:
@@ -454,6 +487,7 @@ format_fleet() {
 }
 
 window_status() {
+  prepare_shared_observations
   ack_viewed
   local target="${1:?window target required}"
   local active present waiting depth unseen
@@ -464,6 +498,7 @@ window_status() {
 # Roll-up for one session, defaulting to the current one. Falls back to every
 # window only when run outside tmux, where there is no session to scope to.
 fleet_summary() {
+  prepare_shared_observations
   ack_viewed
   local target="${1:-}"
   local window active present waiting depth unseen
@@ -490,6 +525,7 @@ fleet_summary() {
 # Jump to the next window (after the current one, wrapping) blocked on you, or
 # failing that, one with an agent present but not working.
 next_waiting() {
+  prepare_shared_observations
   local current window active present waiting depth unseen
   local windows=()
 
@@ -558,6 +594,7 @@ update_all_windows() {
   # Once per pass, so busy markers age against the current clock in the daemon's
   # long-lived process rather than against whenever it started.
   refresh_now
+  prepare_shared_observations
   ack_viewed
 
   # Clear the global fallback so a session created between passes renders empty
@@ -629,20 +666,23 @@ read_meta() {
 # tree key, title. Most urgent first, or with "tree" in choose-tree's session/window/pane order.
 # The title stays last: tab is IFS whitespace, so an empty field mid-row would collapse.
 collect_rows() {  # [tree]
-  local pane_id pane_pid name activity command path session sid widx pidx title rank age
+  local pane_id pane_pid name activity command path session sid widx pidx title rank age row_state
   local -a order=('-k1,1n' '-k2,2n')
   [[ "${1:-}" == tree ]] && order=('-k10,10n')
   refresh_now
-  # Once per render, not per pane: the one-second status path stays fork-free and title-only.
+  prepare_shared_observations
+  # Legacy session records are table-only and never shared with the dashboard.
   SESSION_PANES=" $(agent_panes | cut -f1 | tr '\n' ' ')"
   while IFS=$'\t' read -r pane_id pane_pid name activity command path session sid widx pidx title; do
     classify_pane "$pane_id" "$command" "${title:-}"
     case "$PANE_STATE" in
       waiting) rank=0 ;; active) rank=1 ;; present) rank=$((3 - PANE_UNSEEN)) ;; *) continue ;;
     esac
+    row_state="$PANE_STATE"
+    case "$PANE_REASON" in shared-hook-question) row_state=question ;; shared-hook-turn-ended) row_state=ended ;; esac
     age=$(( NOW - ${activity:-$NOW} )); (( age >= 0 )) || age=0
     # choose-tree orders sessions by id (creation), then window and pane index.
-    printf '%d\t%d\t%s\t%s\t%s\t%d\t%s\t%s\t%s\t%d\t%s\n' "$rank" "$age" "$pane_id" "$name" "$PANE_STATE" \
+    printf '%d\t%d\t%s\t%s\t%s\t%d\t%s\t%s\t%s\t%d\t%s\n' "$rank" "$age" "$pane_id" "$name" "$row_state" \
       "$AGENT_COUNT" "$pane_pid" "$path" "$session" $(( ${sid#\$} * 1000000 + widx * 1000 + pidx )) "${title:-}"
   done < <(tmux_cmd list-panes -a -F '#{pane_id}	#{pane_pid}	#{window_name}	#{window_activity}	#{pane_current_command}	#{pane_current_path}	#{session_name}	#{session_id}	#{window_index}	#{pane_index}	#{pane_title}' 2>/dev/null || true) \
     | sort -t "$(printf '\t')" "${order[@]}"
@@ -858,7 +898,7 @@ render_table() {  # [tree]
     IFS=$'\t' read -r rank age pane_id name state agents pane_pid path session tree title <<< "$row"
     names+=("$name")
     row_panes+="$pane_id "
-    case "$state" in waiting) need=$((need + 1)) ;; active) work=$((work + 1)) ;; esac
+    case "$state" in waiting | question) need=$((need + 1)) ;; active) work=$((work + 1)) ;; esac
     subs=$((subs + agents))
     read_meta "$pane_id"
     # Limits are account-wide, so the freshest reading from any pane wins.
@@ -964,7 +1004,7 @@ render_table() {  # [tree]
     pad PROJECT "${projects[i]}" "$project_w"
     key="${TABLE_KEYS:i:1}"
     TABLE_PANES+=("$pane_id")
-    case "$state" in waiting) label='! needs' ;; active) label='working' ;; *) if [[ "$rank" == 2 ]]; then label='○ unseen'; else label='idle'; fi ;; esac
+    case "$state" in question) label='? input' ;; ended) if [[ "$rank" == 2 ]]; then label='○ unseen'; else label='ended'; fi ;; waiting) label='! needs' ;; active) label='working' ;; *) if [[ "$rank" == 2 ]]; then label='○ unseen'; else label='idle'; fi ;; esac
     # A corrupt reading must cost one cell, not the table: printf dies on non-numbers.
     ctx='-'; [[ "$META_CTX" =~ ^[0-9]+([.][0-9]+)?$ ]] && ctx="$(LC_NUMERIC=C printf '%.0f%%' "$META_CTX")"
     printf '%-3s %s %-8s %4s %3s %4s %-9.9s %s %-*.*s' \

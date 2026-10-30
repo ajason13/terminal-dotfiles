@@ -3,13 +3,25 @@
 [Back to setup and keybindings](../README.md). Commands below run from the
 repository root unless a block names another location.
 
+## Shared hook observations
+
+Current installs include `tmux-agent-observation` (Python 3.9+), which binds
+Claude events to the live server/process/session generation and expires every
+fact after 20 minutes. Both tmux and the explicitly enabled dashboard use the
+same decisions; the table distinguishes questions (`? input`) and observed turn
+ends (`ended`). Missing/invalid evidence uses title/presence heuristics; it does
+not re-enable legacy markers. See the [shared observation contract](activity-observations.md)
+for setup, identity, ordering, file safety and version-3 exports. The marker-file
+mechanics below describe legacy installs without the shared helper; completion
+acknowledgement remains separate and applies to current installs too.
+
 ## Status bar markers
 
 | Marker | Meaning |
 | --- | --- |
 | `⠹` | a turn is running, no fan-out |
 | `⠹N` | N subagents in flight |
-| `◆` | agent present, idle |
+| `◆` | agent present; presence does not prove idle or successful completion |
 | `○` | Claude turn ended while unviewed; awaiting acknowledgement |
 | `!` | a permission or question prompt is waiting on you |
 

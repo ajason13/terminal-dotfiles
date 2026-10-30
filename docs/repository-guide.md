@@ -90,6 +90,8 @@ bash scripts/test-import-background-inbox.sh
 bash scripts/test-sf-lease-hooks.sh
 bash scripts/test-sf-lease-liveness.sh
 bash scripts/test-sf-lease-process.sh
+python3 scripts/test-tmux-agent-observation.py
+python3 scripts/test-tmux-observation-integration.py
 ```
 
 Syntax checking visits each shell file individually, including extensionless

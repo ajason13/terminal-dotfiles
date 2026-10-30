@@ -1,0 +1,502 @@
+#!/usr/bin/env python3
+"""Private, generation-bound Claude observations. No transcripts or pane contents.
+
+Observe is called synchronously by a hook; read/rows are read-only. Both consumers
+use the same decision function. Python 3.9+, macOS/libproc or Linux/procfs.
+"""
+import argparse
+import ctypes
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import secrets
+import selectors
+import stat
+import subprocess
+import sys
+import time
+
+TTL_NS = 1200 * 1_000_000_000
+MAX_BYTES = 32768
+MAX_FACTS = 64
+MAX_RECORDS = 256
+FORMAT = '#{pid}|#{start_time}|#{pane_id}|#{pane_pid}|#{pane_dead}|#{@llm_observation}'
+TOKEN = re.compile(r'^[a-f0-9]{32}$')
+OPAQUE = re.compile(r'^[A-Za-z0-9_-]{1,256}$')
+PANE = re.compile(r'^%[0-9]{1,10}$')
+EVENTS = {'SessionStart', 'SessionEnd', 'UserPromptSubmit', 'PostToolBatch',
+          'Stop', 'StopFailure', 'SubagentStart', 'SubagentStop', 'Notification'}
+
+
+def digest(value):
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def run(argv):
+    # Bound output while reading, not after communicate has allocated it all.
+    proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL,
+                            env={'PATH': '/usr/bin:/bin', 'LC_ALL': 'C'})
+    output = bytearray()
+    deadline = time.monotonic() + 2
+    try:
+        with selectors.DefaultSelector() as selector:
+            selector.register(proc.stdout, selectors.EVENT_READ)
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not selector.select(remaining):
+                    raise ValueError('tmux deadline')
+                chunk = os.read(proc.stdout.fileno(), 4096)
+                if not chunk:
+                    break
+                output.extend(chunk)
+                if len(output) > 65536:
+                    raise ValueError('output limit')
+        proc.wait(timeout=max(.01, deadline - time.monotonic()))
+        if proc.returncode:
+            raise ValueError('tmux failed')
+        return output.decode('utf-8', errors='strict').rstrip('\n')
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait()
+        proc.stdout.close()
+
+
+class BSDInfo(ctypes.Structure):
+    # proc_bsdinfo, sys/proc_info.h, PROC_PIDTBSDINFO (3).
+    _fields_ = [(name, ctypes.c_uint32) for name in (
+        'flags', 'status', 'xstatus', 'pid', 'ppid', 'uid', 'gid', 'ruid', 'rgid',
+        'svuid', 'svgid', 'reserved')] + [
+        ('comm', ctypes.c_char * 16), ('name', ctypes.c_char * 32),
+        *[(name, ctypes.c_uint32) for name in ('nfiles', 'pgid', 'jobc', 'tdev', 'tpgid')],
+        ('nice', ctypes.c_int32), ('sec', ctypes.c_uint64), ('usec', ctypes.c_uint64)]
+
+
+def process(pid):
+    """Generation precision is procfs ticks / libproc microseconds, never PID alone."""
+    pid = int(pid)
+    if pid <= 1:
+        raise ValueError('process')
+    if sys.platform == 'darwin':
+        info = BSDInfo()
+        lib = ctypes.CDLL('/usr/lib/libproc.dylib', use_errno=True)
+        if lib.proc_pidinfo(pid, 3, 0, ctypes.byref(info), ctypes.sizeof(info)) != ctypes.sizeof(info):
+            raise ValueError('process unavailable')
+        if info.pid != pid or info.uid != os.getuid() or info.status == 5:
+            raise ValueError('process owner')
+        return {'pid': pid, 'start': f'{info.sec}:{info.usec}', 'parent': info.ppid,
+                'command': bytes(info.comm).decode(errors='replace')}
+    if sys.platform == 'linux':
+        path = Path(f'/proc/{pid}/stat')
+        if path.stat().st_uid != os.getuid():
+            raise ValueError('process owner')
+        data = path.read_text()
+        end = data.rindex(')')
+        fields = data[end + 2:].split()
+        if fields[0] in {'Z', 'X'}:
+            raise ValueError('dead process')
+        # fields[0] = field 3 (state), [19] = field 22 (starttime).
+        return {'pid': pid, 'start': fields[19], 'parent': int(fields[1]),
+                'command': data[data.index('(') + 1:end]}
+    raise ValueError('unsupported process generation')
+
+
+def generation(proc):
+    return {'pid': proc['pid'], 'start': proc['start']}
+
+
+def descendant(pid, root):
+    for _ in range(64):
+        item = process(pid)
+        if generation(item) == root:
+            return True
+        pid = item['parent']
+        if pid <= 1:
+            break
+    return False
+
+
+def producer(root):
+    """Skip hook/intermediate shells; bind the persistent spawning agent process."""
+    pid = os.getppid()
+    for _ in range(64):
+        item = process(pid)
+        if not descendant(pid, root):
+            raise ValueError('not a pane descendant')
+        command = os.path.basename(item['command']).lstrip('-')
+        if command not in {'bash', 'sh', 'zsh', 'dash', 'fish', 'ksh', 'tcsh'}:
+            return generation(item)
+        if generation(item) == root:
+            break
+        pid = item['parent']
+    raise ValueError('no agent ancestor')
+
+
+class Tmux:
+    def __init__(self, socket):
+        if not os.path.isabs(socket) or '\0' in socket:
+            raise ValueError('socket')
+        info = os.lstat(socket)
+        if not stat.S_ISSOCK(info.st_mode) or info.st_uid != os.getuid():
+            raise ValueError('socket')
+        binary = next((p for p in ('/opt/homebrew/bin/tmux', '/usr/local/bin/tmux', '/usr/bin/tmux')
+                       if os.path.isfile(p) and os.access(p, os.X_OK)), None)
+        if not binary:
+            raise ValueError('tmux unavailable')
+        self.argv = [binary, '-S', socket]
+
+    def panes(self):
+        result = {}
+        for line in run(self.argv + ['list-panes', '-a', '-F', FORMAT]).splitlines():
+            fields = line.split('|')
+            if len(fields) != 6:
+                raise ValueError('pane fields')
+            server, epoch, pane, pid, dead, token = fields
+            if not (server.isdecimal() and epoch.isdecimal() and pid.isdecimal()
+                    and PANE.fullmatch(pane) and dead in {'0', '1'}
+                    and (not token or TOKEN.fullmatch(token))):
+                raise ValueError('pane identity')
+            if pane in result or len(result) >= 256:
+                raise ValueError('pane limit')
+            if dead == '0':
+                result[pane] = {'server': generation(process(server)),
+                                'pane': generation(process(pid)),
+                                'id': pane, 'token': token, 'epoch': epoch}
+        return result
+
+    def token(self, pane, value):
+        run(self.argv + ['set-option', '-pq', '-t', pane, '@llm_observation', value])
+
+
+def safe_dir(path, create=False):
+    """Walk with directory descriptors; no symlinks or check/open pathname race."""
+    if path == '/' or not os.path.isabs(path) or any(p in {'.', '..'} for p in path.split('/')):
+        raise ValueError('store path')
+    fd = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        parts = [p for p in path.split('/') if p]
+        for index, part in enumerate(parts):
+            try:
+                child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            except FileNotFoundError:
+                if not create:
+                    raise
+                os.mkdir(part, 0o700, dir_fd=fd)
+                child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = child
+            info = os.fstat(fd)
+            if info.st_uid not in {0, os.getuid()} or (info.st_mode & 0o022 and not info.st_mode & stat.S_ISVTX):
+                raise ValueError('unsafe parent')
+            if index == len(parts) - 1 and (info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700):
+                raise ValueError('private store required')
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def safe_open(directory, name, flags):
+    fd = os.open(name, flags | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600, dir_fd=directory)
+    info = os.fstat(fd)
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1 or stat.S_IMODE(info.st_mode) != 0o600:
+        os.close(fd)
+        raise ValueError('unsafe file')
+    return fd
+
+
+def no_duplicates(pairs):
+    out = {}
+    for key, value in pairs:
+        if key in out:
+            raise ValueError('duplicate key')
+        out[key] = value
+    return out
+
+
+def load(directory, key):
+    try:
+        fd = safe_open(directory, key + '.json', os.O_RDONLY)
+    except FileNotFoundError:
+        return None
+    with os.fdopen(fd, 'rb') as stream:
+        data = stream.read(MAX_BYTES + 1)
+    if len(data) > MAX_BYTES:
+        raise ValueError('record limit')
+    return json.loads(data, object_pairs_hook=no_duplicates)
+
+
+def save(directory, key, record):
+    data = json.dumps(record, separators=(',', ':')).encode()
+    if len(data) > MAX_BYTES:
+        raise ValueError('record limit')
+    name = '.' + secrets.token_hex(16)
+    try:
+        fd = safe_open(directory, name, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(data)
+        os.replace(name, key + '.json', src_dir_fd=directory, dst_dir_fd=directory)
+    finally:
+        try:
+            os.unlink(name, dir_fd=directory)
+        except FileNotFoundError:
+            pass
+
+
+def maintain_store(directory, now, key, reclaim):
+    """Writer-only, bounded retention; unknown/unsafe entries fail closed.
+
+    One directory lock covers publication and reclamation. At most 256 records,
+    one lock and one atomic-write temporary are created by this implementation.
+    """
+    names = []
+    with os.scandir(directory) as entries:
+        for entry in entries:
+            if len(names) >= MAX_RECORDS + 2:
+                raise ValueError('store entry limit')
+            names.append(entry.name)
+    records = set()
+    for name in names:
+        if name == 'store.lock':
+            continue
+        temporary = re.fullmatch(r'\.[a-f0-9]{32}', name)
+        if not temporary and not re.fullmatch(r'[a-f0-9]{64}\.json', name):
+            raise ValueError('unknown store entry')
+        fd = safe_open(directory, name, os.O_RDONLY)
+        try:
+            if os.fstat(fd).st_size > MAX_BYTES:
+                raise ValueError('record limit')
+        finally:
+            os.close(fd)
+        if temporary:
+            # Only the directory-lock owner may create/write temporary files.
+            # A leftover here is from an interrupted publication, never a reader.
+            os.unlink(name, dir_fd=directory)
+            continue
+        record_key = name[:-5]
+        if reclaim and record_key != key:
+            old = load(directory, record_key)
+            if not valid(old):
+                raise ValueError('invalid retained record')
+            if now >= old['order'] and now - old['order'] >= TTL_NS:
+                os.unlink(name, dir_fd=directory)
+                continue
+        records.add(record_key)
+    if key not in records and len(records) >= MAX_RECORDS:
+        raise ValueError('store capacity')
+
+
+def record_key(identity):
+    return digest(json.dumps([identity['server'], identity['id']], sort_keys=True))
+
+
+def valid_generation(value):
+    return (isinstance(value, dict) and set(value) == {'pid', 'start'}
+            and type(value['pid']) is int and value['pid'] > 1
+            and isinstance(value['start'], str) and re.fullmatch(r'[0-9:]{1,40}', value['start']))
+
+
+def valid(record):
+    if not isinstance(record, dict) or set(record) != {'version', 'server', 'pane', 'actor', 'id', 'session', 'token', 'order', 'closed', 'facts'}:
+        return False
+    if (type(record['version']) is not int or record['version'] != 1 or any(not valid_generation(record[k]) for k in ('server', 'pane', 'actor'))
+            or not isinstance(record['id'], str) or not PANE.fullmatch(record['id'])
+            or not isinstance(record['session'], str) or not re.fullmatch('[a-f0-9]{64}', record['session'])
+            or not isinstance(record['token'], str) or not TOKEN.fullmatch(record['token'])
+            or type(record['order']) is not int or not 0 < record['order'] < 10**20
+            or type(record['closed']) is not bool
+            or not isinstance(record['facts'], dict) or len(record['facts']) > MAX_FACTS):
+        return False
+    for key, fact in record['facts'].items():
+        if not re.fullmatch(r'lead|end|(?:wait|agent):[a-f0-9]{64}', key):
+            return False
+        if (not isinstance(fact, dict) or set(fact) != {'kind', 'at'}
+                or fact['kind'] not in {'active', 'permission', 'question', 'ended'}
+                or type(fact['at']) is not int or not 0 < fact['at'] <= record['order']):
+            return False
+        expected = 'active' if key == 'lead' or key.startswith('agent:') else 'ended' if key == 'end' else None
+        if (expected and fact['kind'] != expected) or (expected is None and fact['kind'] not in {'permission', 'question'}):
+            return False
+    return True
+
+
+def matches(record, identity):
+    return all(record[k] == identity[k] for k in ('server', 'pane', 'id', 'token'))
+
+
+def alive(record):
+    return (generation(process(record['actor']['pid'])) == record['actor']
+            and descendant(record['actor']['pid'], record['pane']))
+
+
+def fresh(facts, now):
+    return {key: fact for key, fact in facts.items() if 0 <= now - fact['at'] < TTL_NS}
+
+
+def decision(record, identity, now):
+    unknown = {'state': 'unknown', 'reason': 'unavailable', 'at': None, 'agents': 0}
+    if not record or not valid(record) or not matches(record, identity) or record['closed']:
+        return unknown
+    if record['order'] > now or not alive(record):
+        return unknown
+    facts = fresh(record['facts'], now)
+    agents = sum(key.startswith('agent:') for key in facts)
+    for state in ('permission', 'question', 'active', 'ended'):
+        winning = [fact['at'] for fact in facts.values() if fact['kind'] == state]
+        if winning:
+            return {'state': state, 'reason': 'hook_' + state, 'at': max(winning), 'agents': agents}
+    return {**unknown, 'reason': 'expired'}
+
+
+def reduce_event(record, event, agent, ntype, now):
+    """Only this reducer knows semantics; per-fact TTLs cannot renew each other."""
+    facts = fresh(record['facts'], now)
+    owner = digest(agent or 'lead')
+    wait = 'wait:' + owner
+    child = 'agent:' + owner
+    fact = lambda kind: {'kind': kind, 'at': now}
+    if event == 'SessionStart':
+        facts = {}
+    elif event == 'SessionEnd' and not agent:
+        facts = {}
+        record['closed'] = True
+    elif event == 'UserPromptSubmit' and not agent:
+        facts = {'lead': fact('active')}
+    elif event == 'PostToolBatch':
+        if agent and child in facts:
+            facts[child] = fact('active')
+        elif not agent and 'lead' in facts:
+            facts['lead'] = fact('active')
+        facts.pop(wait, None)
+    elif event == 'SubagentStart' and agent and 'lead' in facts:
+        facts[child] = fact('active')
+    elif event == 'SubagentStop' and agent:
+        facts.pop(child, None)
+        facts.pop(wait, None)
+    elif event == 'Notification' and ntype in {'permission_prompt', 'elicitation_dialog'}:
+        # A parked lead can be observed even if an earlier active heartbeat expired.
+        # A subagent must already belong to this observed generation/turn.
+        if not agent or child in facts:
+            facts[wait] = fact('permission' if ntype == 'permission_prompt' else 'question')
+    elif event in {'Stop', 'StopFailure'}:
+        if not agent:
+            facts.pop('lead', None)
+            facts['end'] = fact('ended')
+        facts.pop(wait, None)
+    if len(facts) > MAX_FACTS:
+        raise ValueError('fact limit')
+    record['facts'] = facts
+    record['order'] = now
+    return record
+
+
+def observe(tmux, store, event, session, agent='', ntype='', now=None):
+    now = time.time_ns() if now is None else now
+    pane = os.environ.get('TMUX_PANE', '')
+    inherited = os.environ.get('TMUX', '').split(',')
+    if event not in EVENTS or not PANE.fullmatch(pane) or not OPAQUE.fullmatch(session):
+        return
+    if agent and (not OPAQUE.fullmatch(agent) or event in {'SessionStart', 'SessionEnd', 'UserPromptSubmit'}):
+        return
+    identity = tmux.panes().get(pane)
+    if not identity or len(inherited) != 3 or inherited[1] != str(identity['server']['pid']):
+        return
+    actor = producer(identity['pane'])
+    directory = safe_dir(store, create=True)
+    try:
+        key = record_key(identity)
+        lock = safe_open(directory, 'store.lock', os.O_RDWR | os.O_CREAT)
+        try:
+            # Never let a hook hang behind another writer. Missing event => fallback.
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            record = load(directory, key)
+            if record is not None and not valid(record):
+                return  # do not adopt or repair an unsafe/malformed observation
+            if record and now <= record['order']:
+                return
+            maintain_store(directory, now, key, reclaim=event == 'SessionStart')
+            if event == 'SessionStart' and not agent:
+                record = {'version': 1, 'server': identity['server'], 'pane': identity['pane'],
+                          'actor': actor, 'id': pane, 'session': digest(session),
+                          'token': secrets.token_hex(16), 'order': now,
+                          'closed': False, 'facts': {}}
+                # Recheck live identity under lock before setting generation token.
+                current = tmux.panes().get(pane)
+                if current != identity:
+                    return
+                tmux.token(pane, record['token'])
+            elif (not record or not matches(record, identity) or record['closed']
+                  or record['actor'] != actor or record['session'] != digest(session)):
+                return
+            record = reduce_event(record, event, agent, ntype, now)
+            save(directory, key, record)
+        finally:
+            os.close(lock)
+    finally:
+        os.close(directory)
+
+
+def read(tmux, store, panes, now=None, server_start=None):
+    now = time.time_ns() if now is None else now
+    identities = tmux.panes()
+    result = {}
+    directory = None
+    try:
+        directory = safe_dir(store)
+        for pane in (identities if panes is None else panes):
+            if not PANE.fullmatch(pane):
+                raise ValueError('pane')
+            identity = identities.get(pane)
+            if identity and (server_start is None or identity['epoch'] == server_start):
+                try:
+                    result[pane] = decision(load(directory, record_key(identity)), identity, now)
+                except (OSError, ValueError, TypeError, KeyError):
+                    pass
+        # Snapshot/record must still refer to the same live server/pane/session.
+        after = tmux.panes()
+        return {pane: value for pane, value in result.items() if identities[pane] == after.get(pane)}
+    finally:
+        if directory is not None:
+            os.close(directory)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('command', choices=['observe', 'read', 'rows'])
+    parser.add_argument('--socket', default=os.environ.get('TMUX_SOCKET') or os.environ.get('TMUX', '').split(',')[0] or f"{'/private/tmp' if sys.platform == 'darwin' else '/tmp'}/tmux-{os.getuid()}/default")
+    parser.add_argument('--store', default=os.environ.get('TMUX_AGENT_OBSERVATION_HOME') or str(Path.home() / '.local/state/tmux-observations-v1'))
+    parser.add_argument('--pane', action='append', default=[])
+    parser.add_argument('--server-start')
+    parser.add_argument('--event', default='')
+    parser.add_argument('--session', default='')
+    parser.add_argument('--agent', default='')
+    parser.add_argument('--notification', default='')
+    args = parser.parse_args()
+    result = {}
+    try:
+        tmux = Tmux(args.socket)
+        if args.command == 'observe':
+            observe(tmux, args.store, args.event, args.session, args.agent, args.notification)
+            return
+        if len(args.pane) > 256:
+            raise ValueError('pane limit')
+        panes = None if args.command == 'rows' and not args.pane else args.pane
+        result = read(tmux, args.store, panes, server_start=args.server_start)
+        for item in result.values():
+            if item['at'] is not None:
+                item['at'] //= 1_000_000
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+        pass  # fail closed, no sensitive paths or raw exception diagnostics
+    if args.command == 'read':
+        print(json.dumps(result, separators=(',', ':')))
+    elif args.command == 'rows':
+        for pane, item in result.items():
+            print('\t'.join([pane, item['state'], item['reason'], str(item['agents'])]))
+
+
+if __name__ == '__main__':
+    main()

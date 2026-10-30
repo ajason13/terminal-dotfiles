@@ -1,5 +1,5 @@
 export const SESSION_STATUSES = Object.freeze([
-  'active', 'thinking', 'waiting_for_permission', 'idle', 'error', 'complete', 'unknown',
+  'active', 'thinking', 'waiting_for_permission', 'idle', 'error', 'complete', 'unknown', 'waiting_for_input', 'turn_ended',
 ]);
 
 export const PERMISSION_STATES = Object.freeze([
@@ -7,6 +7,8 @@ export const PERMISSION_STATES = Object.freeze([
 ]);
 
 export const STATE_PRESENTATION = Object.freeze({
+  waiting_for_input: Object.freeze({ label: 'Waiting for input', glyph: '?', pool: 'pit' }),
+  turn_ended: Object.freeze({ label: 'Turn ended', glyph: '‖', pool: 'pit' }),
   active: Object.freeze({ label: 'Active', glyph: '›', pool: 'route' }),
   thinking: Object.freeze({ label: 'Thinking', glyph: '…', pool: 'route' }),
   waiting_for_permission: Object.freeze({ label: 'Waiting for permission', glyph: '!', pool: 'pit' }),

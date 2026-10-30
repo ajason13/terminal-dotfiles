@@ -64,6 +64,14 @@ IFS=$'\x1f' read -r event agent source subagent ntype message session < <(
     2>/dev/null || true
 )
 
+# Publish only normalized lifecycle fields to the shared observation store.
+# This helper validates ancestry/session/generation itself; no message text crosses.
+observation_bin="${TMUX_AGENT_OBSERVATION_BIN:-${HOME:-}/.local/bin/tmux-agent-observation}"
+if [[ -x "$observation_bin" ]]; then
+  "$observation_bin" observe --event "$event" --session "$session" \
+    --agent "$subagent" --notification "$ntype" >/dev/null 2>&1 || true
+fi
+
 # The installed status helper owns pane-local completion evidence. Older installs
 # retain their existing lifecycle behavior until the helper is upgraded too.
 if [[ -z "$subagent" ]] && [[ "$event" == SessionStart || "$event" == SessionEnd ||

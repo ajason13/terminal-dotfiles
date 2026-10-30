@@ -97,7 +97,7 @@ services. Claude hook registration and all integration opt-ins remain manual.
 `dotfiles-doctor` checks the core tools on PATH, the managed targets from the
 installer inventory, and the installation home's `.local/bin` PATH entry. Run
 from the repository root with **Python 3.11+** on PATH (`brew install python`
-if needed). This runtime is required only for this optional diagnostic command.
+if needed). Python 3.11+ is required for this diagnostic command; the [shared activity helper](activity-observations.md) separately requires Python 3.9+.
 The normal copy/link installer installs the command; uninstall removes or
 restores it through the same inventory.
 

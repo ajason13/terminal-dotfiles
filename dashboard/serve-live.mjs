@@ -18,7 +18,7 @@ export function parseServeArgs(argv) {
       i += 1;
     }
   }
-  return { port };
+  return { port, ...(argv.includes('--hook-evidence') ? { hookEvidence: true } : {}) };
 }
 
 // Normalize a Node request into the pure handler's shape.
@@ -67,8 +67,8 @@ export async function createLiveServer({
 }
 
 export async function runServeCli({ argv = process.argv.slice(2), stdout = process.stdout } = {}) {
-  const { port } = parseServeArgs(argv);
-  const { port: actualPort } = await createLiveServer({ port });
+  const { port, hookEvidence = false } = parseServeArgs(argv);
+  const { port: actualPort } = await createLiveServer({ port, collect: () => collectTmuxSnapshot({ hookEvidence }) });
   stdout.write(`dashboard live server on http://127.0.0.1:${actualPort} (Ctrl-C to stop)\n`);
   return 0;
 }

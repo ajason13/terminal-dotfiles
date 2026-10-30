@@ -76,7 +76,7 @@ function expectInvalid(value, pattern) {
 
 test('exports the exact status, permission, and six visual mappings', () => {
   assert.deepEqual(SESSION_STATUSES, [
-    'active', 'thinking', 'waiting_for_permission', 'idle', 'error', 'complete', 'unknown',
+    'active', 'thinking', 'waiting_for_permission', 'idle', 'error', 'complete', 'unknown', 'waiting_for_input', 'turn_ended',
   ]);
   assert.deepEqual(PERMISSION_STATES, [
     'not_required', 'requested', 'granted', 'denied', 'unknown',
@@ -90,11 +90,13 @@ test('exports the exact status, permission, and six visual mappings', () => {
     error: ['Error', '×', 'pit'],
     complete: ['Complete', '✓', 'pit'],
     unknown: ['Unknown', '?', 'pit'],
+    waiting_for_input: ['Waiting for input', '?', 'pit'],
+    turn_ended: ['Turn ended', '‖', 'pit'],
   });
 });
 
 test('normalizes every state into its required pool and accessible text', () => {
-  const statuses = SESSION_STATUSES.filter((status) => status !== 'unknown');
+  const statuses = SESSION_STATUSES.filter((status) => !['unknown', 'waiting_for_input', 'turn_ended'].includes(status));
   const data = normalized(statuses.map((status, index) => session(`state-${index}`, status)));
   const placements = allocateSessions(data.sessions);
   const expectedPools = ['route', 'route', 'pit', 'pit', 'pit', 'pit'];
@@ -594,7 +596,7 @@ test('canonical 24-session fixture has exact distribution, unique anchors, and n
   ]));
   assert.deepEqual(counts, {
     active: 6, thinking: 6, waiting_for_permission: 3, idle: 3, error: 3, complete: 3,
-    unknown: 0,
+    unknown: 0, waiting_for_input: 0, turn_ended: 0,
   });
   const placements = allocateSessions(data.sessions);
   assert.equal(placements.length, 24);

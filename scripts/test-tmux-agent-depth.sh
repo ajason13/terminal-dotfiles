@@ -3,6 +3,8 @@
 # Claude Code does - JSON on stdin, TMUX_PANE in the environment - and asserts on
 # the resulting state directory.
 set -euo pipefail
+# This suite exercises legacy markers; shared evidence has separate isolated coverage.
+export TMUX_AGENT_OBSERVATION_BIN=/dev/null
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 hook="$repo_root/claude/hooks/tmux-agent-depth.sh"

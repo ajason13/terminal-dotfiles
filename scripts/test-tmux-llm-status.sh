@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# This suite exercises legacy markers; shared evidence has separate isolated coverage.
+export TMUX_AGENT_OBSERVATION_BIN=/dev/null
 
 # Behavioural tests for tmux/tmux-llm-status. Runs against a private tmux server
 # via TMUX_SOCKET so it never reads or mutates live session state.
