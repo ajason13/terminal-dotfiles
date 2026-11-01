@@ -10,6 +10,9 @@ This guide covers the terminal and tmux workflow. It does not install the option
 Neovim configuration, Codex/Claude tooling or Salesforce integrations. Do not run
 `install-macos.sh` or the Brewfile for this setup.
 
+For the native Codex desktop workflow, install the shared instructions and skills
+using the separate [Codex app setup guide](codex-app-windows.md).
+
 Platform branches are covered by mocked Lua tests and tmux checks. Native Windows
 and WSL execution still require the smoke checks below on your laptop.
 
