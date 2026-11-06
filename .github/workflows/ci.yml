@@ -12,7 +12,8 @@ permissions:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    # Playwright 1.60 supports 24.04; avoid unreviewed ubuntu-latest upgrades.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -138,7 +139,7 @@ jobs:
 
   dashboard:
     name: Dashboard verification
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: dashboard
