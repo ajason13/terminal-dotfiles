@@ -11,8 +11,8 @@ permissions:
   contents: read
 
 jobs:
+  # Keep Linux checks on the supported image; Playwright 1.60 rejects 26.04.
   validate:
-    # Playwright 1.60 supports 24.04; avoid unreviewed ubuntu-latest upgrades.
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
