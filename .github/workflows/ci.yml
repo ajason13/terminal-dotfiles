@@ -11,8 +11,9 @@ permissions:
   contents: read
 
 jobs:
+  # Keep Linux checks on the supported image; Playwright 1.60 rejects 26.04.
   validate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -138,7 +139,7 @@ jobs:
 
   dashboard:
     name: Dashboard verification
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: dashboard
