@@ -17,6 +17,8 @@ return {
   '200-anime/attack-on-titan/018-training-trio-pose.png',
   '200-anime/attack-on-titan/019-mikasa-cabin-blade.png',
   '200-anime/attack-on-titan/020-whispered-restorationist.png',
+  '200-anime/black-clover/001-asta-defiant-closeup.png',
+  '200-anime/black-clover/002-asta-embers-roar.png',
   '200-anime/dragon-ball-z/002-armored-warrior-last-stand.png',
   '200-anime/dragon-ball-z/004-super-saiyan-awakening.png',
   '200-anime/initial-d/005-ae86-rx7-forest-chase.jpg',
