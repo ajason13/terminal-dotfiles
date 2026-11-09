@@ -5,9 +5,7 @@ description: Complete exactly one Ready GitHub issue through the current reposit
 
 # Complete One GitHub Issue
 
-When invoked, carry out the following request in the current project. Follow applicable repository instructions and existing delivery authority; this skill does not grant additional permissions.
-
-Complete one GitHub issue through this repository’s AI SDLC.
+Complete one GitHub issue through the current repository's AI SDLC. Follow applicable repository instructions and delivery authority, including the owner-approved private repository fallback below.
 
 Read applicable AGENTS.md instructions and check usage allowance before
 starting. Confirm the Git remote and inspect the worktree. Preserve unrelated
@@ -22,7 +20,23 @@ the chosen issue and acceptance criteria before implementation.
 Implement the smallest complete change, run proportional verification, perform
 required review, and resolve material findings. Update the issue with material
 progress, blockers, verification, and linked follow-ups. Create a linked PR and
-complete delivery under existing authority and branch protections.
+complete delivery under the applicable merge authority and branch protections.
+
+## Merge delivery
+
+Before merging or enabling native auto-merge, verify the repository, PR author,
+base branch, exact reviewed head SHA, required checks and reviews, and merge
+eligibility. Prefer native auto-merge when available and authorized.
+
+An explicit owner invocation of this skill to deliver an issue in an
+`ajason13`-owned private repository authorizes a direct PR merge when native
+auto-merge is disabled or unavailable. Apply this fallback only to an
+`ajason13`-authored PR for the selected issue. Use a repository-allowed merge
+method and bind the merge to the reviewed head, for example with
+`gh pr merge --match-head-commit <reviewed-sha>`. A changed head requires
+reverification and any required review before delivery. Honor branch
+protections, required human approvals, and any explicit instruction to hold
+the merge. If the PR is blocked, record the blocker and next action.
 
 Confirm the PR actually merged into main before marking implementation Done.
 Update the issue with completion evidence and identify the next recommended
