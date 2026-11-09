@@ -77,6 +77,14 @@ Give that review the acceptance criteria, final diff, and verification output.
 It is a Codex review, not an external-model or Notion gate; resolve material
 findings before handoff.
 
+## Markdown Files
+
+Table cells hold a word, number, status or path, never a sentence; rows stay
+under ~90 chars. Why: the user reads in a half-screen nvim split, and longer
+rows wrap and break render-markdown's borders. Items with prose (findings,
+risks, steps) use `### <label> - <path:line>` headings with `- Problem:` /
+`- Fix:` bullets, not table rows.
+
 ## Usage And Context
 
 Before large work and between tasks, use `codex-budget status --model <active-model>`
