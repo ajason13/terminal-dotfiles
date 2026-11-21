@@ -734,11 +734,23 @@ project_of() {
 # tmux's global PATH omits ~/.local/bin, where org-lock installs, so the popup fell back to "free".
 ORG_LOCK_BIN="${TMUX_LLM_ORG_LOCK:-$(command -v org-lock 2>/dev/null || printf '%s' "${HOME:-}/.local/bin/org-lock")}"
 
+# org-lock runs under `env node`, and tmux's PATH has no nvm node, so the popup read "unavailable".
+node_path() {
+  local nvm="${NVM_DIR:-${HOME:-}/.nvm}" v='' d
+  command -v node >/dev/null 2>&1 && { printf '%s' "$PATH"; return 0; }
+  read -r v < "$nvm/alias/default" 2>/dev/null || true
+  d="$nvm/versions/node/v${v#v}/bin"
+  if [[ -z "$v" || ! -x "$d/node" ]]; then
+    for d in "$nvm"/versions/node/*/bin; do :; done
+  fi
+  if [[ -x "$d/node" ]]; then printf '%s:%s' "$d" "$PATH"; else printf '%s' "$PATH"; fi
+}
+
 # Locks as "alias<TAB>pid<TAB>status"; returns 1 when org-lock or jq is missing or fails.
 lock_rows() {
   local json
   command -v "$ORG_LOCK_BIN" >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || return 1
-  json="$("$ORG_LOCK_BIN" list --json 2>/dev/null)" || return 1
+  json="$(PATH="$(node_path)" "$ORG_LOCK_BIN" list --json 2>/dev/null)" || return 1
   jq -r '.[] | [.alias, (.pid | tostring), .status] | @tsv' <<< "$json" 2>/dev/null || return 1
 }
 

@@ -625,6 +625,22 @@ home_bin="$(
     COLUMNS=200 "$bin" table
 )"
 check "org-lock is found in ~/.local/bin off PATH" "yes" "$(has "$home_bin" "canarys held by pid $outside_pid, not in a pane")"
+# The real org-lock runs under `env node`, and node lives in nvm, which tmux's PATH also omits.
+nvm_bin="$test_home/.nvm/versions/node/v22.0.0/bin"
+mkdir -p "$nvm_bin" "$test_home/.nvm/alias"
+printf '#!/bin/bash\nexec /bin/bash "$@"\n' > "$nvm_bin/node"
+printf '22.0.0\n' > "$test_home/.nvm/alias/default"
+{ printf '#!/usr/bin/env node\n'; tail -n +2 "$fake_bin/org-lock"; } > "$test_home/.local/bin/org-lock"
+chmod +x "$nvm_bin/node" "$test_home/.local/bin/org-lock"
+bare_path="/usr/bin:/bin:$(dirname "$(command -v tmux)"):$(dirname "$(command -v jq)")"
+# A system node on that PATH (some CI images) would run the bash stub as JS, so the case needs none.
+if ! PATH="$bare_path" command -v node >/dev/null 2>&1; then
+  nvm_node="$(
+    unset TMUX_LLM_ORG_LOCK NVM_DIR
+    HOME="$test_home" PATH="$bare_path" COLUMNS=200 "$bin" table
+  )"
+  check "an env-node org-lock finds nvm node off PATH" "yes" "$(has "$nvm_node" "canarys held by pid $outside_pid, not in a pane")"
+fi
 printf '[]\n' > "$FAKE_LOCKS"
 rm -f "$TMUX_LLM_ANNOUNCE_LOG"
 no_held="$(COLUMNS=200 "$bin" table)"
